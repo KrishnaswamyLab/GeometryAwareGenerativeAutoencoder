@@ -1,0 +1,15 @@
+program: main.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val_loss
+  goal: minimize
+parameters:
+  lr:
+    values: [0.001, 0.01, 0.1]
+  w:
+    values: [64, 128, 256]
+  activation:
+    values: ['relu', 'leaky_relu', 'sigmoid']

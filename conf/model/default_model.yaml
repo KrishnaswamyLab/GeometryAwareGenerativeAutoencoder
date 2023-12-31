@@ -1,0 +1,5 @@
+emb_dim: 2
+log_dist: true
+w: 64
+lr: 1e-3
+activation: 'relu'

@@ -1,0 +1,5 @@
+use_wandb: True
+entity: xingzhis
+project: "dmae"
+# tags: ['swiss_roll']
+tags: ['eb_hv_pca', 'subset']

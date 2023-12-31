@@ -93,8 +93,9 @@ class AEDist(BaseAE):
         dist_reg_weight=1.0,
         log_dist=False,
         eps=1e-10,
+        lr=1e-3,
     ):
-        super().__init__(dim, emb_dim, w=w, activation_fn=activation_fn, log_dist=log_dist, eps=eps)
+        super().__init__(dim, emb_dim, w=w, activation_fn=activation_fn, log_dist=log_dist, eps=eps, lr=lr)
         self.dist_reg = dist_reg
         self.dist_reg_weight = dist_reg_weight
 
@@ -134,8 +135,9 @@ class VAEDist(BaseAE):
         dist_reg_weight=1.0,
         log_dist=False,
         eps=1e-10,
+        lr=1e-3,
     ):
-        super().__init__(dim, emb_dim, w, activation_fn, log_dist=log_dist, eps=eps)
+        super().__init__(dim, emb_dim, w, activation_fn, log_dist=log_dist, eps=eps, lr=lr)
 
         self.dist_reg = dist_reg
         self.dist_reg_weight = dist_reg_weight

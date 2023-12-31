@@ -129,3 +129,9 @@ dmypy.json
 
 notebooks/lightning_logs/*
 data/*
+wandb/*
+*.out
+*.tsv
+src/lightning_logs/*
+src/outputs
+src/wandb

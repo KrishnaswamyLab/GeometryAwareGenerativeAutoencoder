@@ -1,0 +1,7 @@
+defaults:
+  - logger: default_logger
+  - model: default_model
+  - data: default_data
+  - training: default_training
+  - phate: default_phate
+# Add other global configs here
