@@ -7,9 +7,9 @@ metric:
   name: val_loss
   goal: minimize
 parameters:
-  lr:
+  model.lr:
     values: [0.001, 0.01, 0.1]
-  w:
+  model.w:
     values: [64, 128, 256]
-  activation:
+  model.activation:
     values: ['relu', 'leaky_relu', 'sigmoid']

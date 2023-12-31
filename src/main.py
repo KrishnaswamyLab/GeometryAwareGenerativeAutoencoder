@@ -17,20 +17,43 @@ import hydra
 import os
 from omegaconf import DictConfig, OmegaConf
 
+def create_nested_config(flat_config):
+    nested_config = {}
+    for key, value in flat_config.items():
+        parts = key.split('.')
+        current_level = nested_config
+
+        for part in parts[:-1]:
+            if part not in current_level:
+                current_level[part] = {}
+            current_level = current_level[part]
+
+        current_level[parts[-1]] = value
+    
+    return nested_config
+
 @hydra.main(version_base=None, config_path='../conf', config_name='config')
 def main(cfg: DictConfig):
     config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
-    out_dir = os.getcwd()
-    config["out_dir"] = out_dir
-
     run = wandb.init(
         entity=cfg.logger.entity,
         project=cfg.logger.project,
         tags=cfg.logger.tags,
         reinit=True,
-        config=config,
         settings=wandb.Settings(start_method="thread"),
     )
+
+    nested_wandb_config = create_nested_config(dict(wandb.config))
+    print('nested______:')
+    print(nested_wandb_config)
+    print('cfg______:')
+    print(cfg)
+    print('wandb.config______:')
+    print(wandb.config)
+    cfg = OmegaConf.merge(cfg, OmegaConf.create(nested_wandb_config))
+    print('merged______:')
+    print(cfg)
+    wandb.config.update(OmegaConf.to_container(cfg, resolve=True), allow_val_change=True)
 
     if cfg.data.file_type == 'h5ad':
         adata = sc.read_h5ad(cfg.data.datapath)

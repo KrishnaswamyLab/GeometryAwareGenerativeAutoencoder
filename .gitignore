@@ -135,3 +135,5 @@ wandb/*
 src/lightning_logs/*
 src/outputs
 src/wandb
+notebooks/wandb
+conf/wandb
