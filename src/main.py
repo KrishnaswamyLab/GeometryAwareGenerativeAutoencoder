@@ -109,7 +109,7 @@ def main(cfg: DictConfig):
         logger=wandb_logger,
         max_epochs=cfg.training.max_epochs, 
         accelerator=cfg.training.accelerator,
-        callbacks=[early_stopping],
+        callbacks=[early_stopping,checkpoint_callback],
         log_every_n_steps=cfg.training.log_every_n_steps,
     )
 
