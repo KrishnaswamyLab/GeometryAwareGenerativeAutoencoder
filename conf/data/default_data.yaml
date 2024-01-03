@@ -2,6 +2,8 @@ batch_size: 1024
 # file_format: 'h5ad'
 # datapath: '../data/opc.h5ad'
 file_type: 'npy'
-# datapath: '../data/swiss_roll.npy'
+datapath: '../data/swiss_roll.npy'
 # datapath: '../data/eb_hv_pca.npy'
-datapath: '../data/eb_hv_pca_subset.npy'
+# datapath: '../data/eb_hv_pca_subset.npy'
+require_phate: True
+phate_dim: 2

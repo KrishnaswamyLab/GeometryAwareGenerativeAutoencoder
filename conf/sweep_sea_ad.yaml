@@ -3,6 +3,9 @@ command:
   - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
   - ${program}
   - ${args_no_hyphens}
+  - data.file_type=h5ad 
+  - data.require_phate=False 
+  - data.datapath=../data/sea_ad_merfish_used_in_analysis_subset12000.h5ad
 method: grid  # or 'random', 'bayes'
 metric:
   name: val_loss

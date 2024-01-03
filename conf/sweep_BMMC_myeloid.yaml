@@ -3,6 +3,9 @@ command:
   - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
   - ${program}
   - ${args_no_hyphens}
+  - data.file_type=h5ad 
+  - data.require_phate=False 
+  - data.datapath=../data/BMMC_myeloid.h5ad
 method: grid  # or 'random', 'bayes'
 metric:
   name: val_loss

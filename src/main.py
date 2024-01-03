@@ -2,6 +2,8 @@ import sys
 from data import train_and_testloader_from_pc
 from model import AEDist
 import numpy as np
+import scipy.sparse
+import pandas as pd
 import torch
 import phate
 from heatgeo.embedding import HeatGeo
@@ -17,20 +19,16 @@ import hydra
 import os
 from omegaconf import DictConfig, OmegaConf
 
-def create_nested_config(flat_config):
-    nested_config = {}
-    for key, value in flat_config.items():
-        parts = key.split('.')
-        current_level = nested_config
 
-        for part in parts[:-1]:
-            if part not in current_level:
-                current_level[part] = {}
-            current_level = current_level[part]
-
-        current_level[parts[-1]] = value
-    
-    return nested_config
+def to_dense_array(X):
+    if scipy.sparse.issparse(X):  # Check if X is a sparse matrix
+        return X.toarray()
+    elif isinstance(X, np.ndarray):  # Check if X is already a numpy array
+        return X
+    elif isinstance(X, pd.DataFrame):  # Check if X is a pandas DataFrame
+        return X.values  # or X.to_numpy()
+    else:
+        raise TypeError("Input is neither a sparse matrix, a numpy array, nor a pandas DataFrame")
 
 @hydra.main(version_base=None, config_path='../conf', config_name='config')
 def main(cfg: DictConfig):
@@ -40,37 +38,39 @@ def main(cfg: DictConfig):
         project=cfg.logger.project,
         tags=cfg.logger.tags,
         reinit=True,
+        config=config,
         settings=wandb.Settings(start_method="thread"),
     )
 
-    nested_wandb_config = create_nested_config(dict(wandb.config))
-    print('nested______:')
-    print(nested_wandb_config)
     print('cfg______:')
     print(cfg)
     print('wandb.config______:')
     print(wandb.config)
-    cfg = OmegaConf.merge(cfg, OmegaConf.create(nested_wandb_config))
-    print('merged______:')
-    print(cfg)
-    wandb.config.update(OmegaConf.to_container(cfg, resolve=True), allow_val_change=True)
 
     if cfg.data.file_type == 'h5ad':
         adata = sc.read_h5ad(cfg.data.datapath)
-        X = adata.X[:,:].toarray()
+        X = to_dense_array(adata.X[:,:])
+        if not cfg.data.require_phate:
+            phate_coords = adata.obsm['X_phate']
+            emb_dim = phate_coords.shape[1]
     elif cfg.data.file_type == 'npy':
         X = np.load(cfg.data.datapath)
+        if not cfg.data.require_phate:
+            phate_coords = np.load(cfg.data.phatepath)
+            emb_dim = phate_coords.shape[1]
     else:
         raise ValueError('Unknown file type')
-    phate_op = phate.PHATE(
-        random_state=cfg.phate.random_state,
-        n_components=cfg.model.emb_dim,
-        knn=cfg.phate.knn,
-        decay=cfg.phate.decay,
-        t=cfg.phate.t,
-        n_jobs=cfg.phate.n_jobs,
-    )
-    phate_coords = phate_op.fit_transform(X)
+    if cfg.data.require_phate:
+        emb_dim = cfg.data.phate_dim
+        phate_op = phate.PHATE(
+            random_state=cfg.phate.random_state,
+            n_components=emb_dim,
+            knn=cfg.phate.knn,
+            decay=cfg.phate.decay,
+            t=cfg.phate.t,
+            n_jobs=cfg.phate.n_jobs,
+        )
+        phate_coords = phate_op.fit_transform(X)
     phate_coordst = torch.tensor(phate_coords)
     phate_D = torch.cdist(phate_coordst, phate_coordst).cpu().detach().numpy()
 
@@ -91,7 +91,7 @@ def main(cfg: DictConfig):
 
     model = AEDist(
         dim=train_sample['x'].shape[1],
-        emb_dim=cfg.model.emb_dim,
+        emb_dim=emb_dim,
         log_dist=cfg.model.log_dist,
         w=cfg.model.w,
         lr=cfg.model.lr,

@@ -1,5 +1,4 @@
-emb_dim: 2
 log_dist: true
-w: 64
+w: 256
 lr: 1e-3
-activation: 'relu'
+activation: 'leaky_relu'
