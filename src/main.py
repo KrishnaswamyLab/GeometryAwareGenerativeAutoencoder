@@ -6,7 +6,7 @@ import scipy.sparse
 import pandas as pd
 import torch
 import phate
-from heatgeo.embedding import HeatGeo
+# from heatgeo.embedding import HeatGeo
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping
 from scipy.spatial import procrustes
