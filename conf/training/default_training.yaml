@@ -1,4 +1,4 @@
-max_epochs: 5
+max_epochs: 50
 patience: 10
 monitor: 'val_loss'
 accelerator: 'cuda'
