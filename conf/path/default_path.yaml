@@ -1,3 +1,7 @@
+save: True
 root: '../results/'
-model: 'model/'
-plots: 'plots/'
+model: 'model'
+procrustes: 'procrustes'
+plots: ''
+log: ''
+out_data: ''

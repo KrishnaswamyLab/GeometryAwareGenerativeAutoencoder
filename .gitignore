@@ -137,3 +137,6 @@ src/outputs
 src/wandb
 notebooks/wandb
 conf/wandb
+*.old
+results/
+results_swiss_roll/

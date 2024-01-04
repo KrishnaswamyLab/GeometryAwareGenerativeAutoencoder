@@ -9,10 +9,11 @@ import phate
 # from heatgeo.embedding import HeatGeo
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping
-from scipy.spatial import procrustes
+from procrustes import Procrustes
+import pickle
 import scanpy as sc
 import matplotlib.pyplot as plt
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 import wandb
 import hydra
@@ -32,20 +33,16 @@ def to_dense_array(X):
 
 @hydra.main(version_base=None, config_path='../conf', config_name='config')
 def main(cfg: DictConfig):
-    config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
-    run = wandb.init(
-        entity=cfg.logger.entity,
-        project=cfg.logger.project,
-        tags=cfg.logger.tags,
-        reinit=True,
-        config=config,
-        settings=wandb.Settings(start_method="thread"),
-    )
-
-    print('cfg______:')
-    print(cfg)
-    print('wandb.config______:')
-    print(wandb.config)
+    if cfg.logger.use_wandb:
+        config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
+        run = wandb.init(
+            entity=cfg.logger.entity,
+            project=cfg.logger.project,
+            tags=cfg.logger.tags,
+            reinit=True,
+            config=config,
+            settings=wandb.Settings(start_method="thread"),
+        )
 
     if cfg.data.file_type == 'h5ad':
         adata = sc.read_h5ad(cfg.data.datapath)
@@ -98,15 +95,25 @@ def main(cfg: DictConfig):
         activation_fn=activation_fn,
     )
     early_stopping = EarlyStopping(cfg.training.monitor, patience=cfg.training.patience)
-    wandb_logger = WandbLogger()
-    checkpoint_callback = ModelCheckpoint(
-        dirpath=wandb.run.dir,  # Save checkpoints in wandb directory
-        save_top_k=3,  # Save the top 3 models
-        monitor='val_loss',  # Model selection based on validation loss
-        mode='min'  # Minimize validation loss
-    )
+    if cfg.logger.use_wandb:
+        logger = WandbLogger()
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=wandb.run.dir,  # Save checkpoints in wandb directory
+            save_top_k=3,  # Save the top 3 models
+            monitor='val_loss',  # Model selection based on validation loss
+            mode='min'  # Minimize validation loss
+        )
+    else:
+        logger = TensorBoardLogger(save_dir=os.path.join(cfg.path.root, cfg.path.log))
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=cfg.path.root,  # Save checkpoints in wandb directory
+            filename=cfg.path.model,
+            save_top_k=1,
+            monitor='val_loss',  # Model selection based on validation loss
+            mode='min'  # Minimize validation loss
+        )
     trainer = Trainer(
-        logger=wandb_logger,
+        logger=logger,
         max_epochs=cfg.training.max_epochs, 
         accelerator=cfg.training.accelerator,
         callbacks=[early_stopping,checkpoint_callback],
@@ -122,9 +129,14 @@ def main(cfg: DictConfig):
     X_tensor = torch.from_numpy(X).float()
     emb_z = model(X_tensor)[1].cpu().detach().numpy()
 
-    pc_s, z, disparity = procrustes(phate_coords, emb_z)
+    procrustes = Procrustes()
+    pc_s, z, disparity = procrustes.fit_transform(phate_coords, emb_z)
+    if cfg.path.save:
+        with open(os.path.join(cfg.path.root, f'{cfg.path.procrustes}.pkl'), 'wb') as file:
+            pickle.dump(procrustes, file)
 
-    wandb.log({'procrustes_disparity': disparity})
+    if cfg.logger.use_wandb:
+        wandb.log({'procrustes_disparity': disparity})
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
 
@@ -139,10 +151,14 @@ def main(cfg: DictConfig):
     ax2.set_yticks([])
 
     fig.suptitle('Comparison of PHATE and Latent Space')
+    if cfg.path.save:
+        plotdir = os.path.join(cfg.path.root, cfg.path.plots)
+        os.makedirs(plotdir, exist_ok=True)
+        plt.savefig(f'{plotdir}/comparison.pdf', dpi=300)
 
-    wandb.log({'Comparison Plot': plt})
-
-    run.finish()
+    if cfg.logger.use_wandb:
+        wandb.log({'Comparison Plot': plt})
+        run.finish()
 
 if __name__ == "__main__":
     main()

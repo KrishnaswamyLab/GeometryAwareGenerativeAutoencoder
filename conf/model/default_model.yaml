@@ -1,4 +1,4 @@
 log_dist: true
-w: 256
-lr: 1e-3
+w: 64
+lr: 0.001
 activation: 'leaky_relu'
