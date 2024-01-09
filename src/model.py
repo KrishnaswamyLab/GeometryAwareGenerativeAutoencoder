@@ -8,30 +8,33 @@ import pytorch_lightning as pl
 from abc import ABC, abstractmethod
 
 class MLP(torch.nn.Module):
-    def __init__(self, dim, out_dim=None, w=64, activation_fn=torch.nn.ReLU()):
+    def __init__(self, dim, out_dim=None, layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU()):
         super().__init__()
         if out_dim is None:
             out_dim = dim // 2
-        self.net = torch.nn.Sequential(
-            torch.nn.Linear(dim, w),
-            activation_fn,
-            torch.nn.Linear(w, w),
-            activation_fn,
-            torch.nn.Linear(w, w),
-            activation_fn,
-            torch.nn.Linear(w, out_dim),
-        )
+        if len(layer_widths) < 2:
+            raise ValueError("layer_widths list must contain at least 2 elements")
+
+        layers = [torch.nn.Linear(dim, layer_widths[0]), activation_fn]
+
+        for i in range(1, len(layer_widths)):
+            layers.append(torch.nn.Linear(layer_widths[i-1], layer_widths[i]))
+            layers.append(activation_fn)
+
+        layers.append(torch.nn.Linear(layer_widths[-1], out_dim))
+
+        self.net = torch.nn.Sequential(*layers)
 
     def forward(self, x):
         return self.net(x)
 
 class BaseAE(pl.LightningModule, ABC):
-    def __init__(self, dim, emb_dim, w=64, activation_fn=torch.nn.ReLU(), log_dist=False, eps=1e-10, lr=1e-3):
+    def __init__(self, dim, emb_dim, layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), log_dist=False, eps=1e-10, lr=1e-3):
         super().__init__()
         self.dim = dim
         self.emb_dim = emb_dim
-        self.encoder = MLP(dim, emb_dim, w=w, activation_fn=activation_fn)
-        self.decoder = MLP(emb_dim, dim, w=w, activation_fn=activation_fn)
+        self.encoder = MLP(dim, emb_dim, layer_widths=layer_widths, activation_fn=activation_fn)
+        self.decoder = MLP(emb_dim, dim, layer_widths=layer_widths[::-1], activation_fn=activation_fn) # reverse the widths for decoder
         self.log_dist = log_dist
         self.eps = eps
         self.lr = lr
@@ -87,17 +90,18 @@ class AEDist(BaseAE):
         self,
         dim,
         emb_dim,
-        w=64,
+        layer_widths=[64, 64, 64],
         activation_fn=torch.nn.ReLU(),
         dist_reg=True,
-        dist_reg_weight=1.0,
+        dist_reconstr_weights=[1.0, 1.0],
         log_dist=False,
         eps=1e-10,
         lr=1e-3,
     ):
-        super().__init__(dim, emb_dim, w=w, activation_fn=activation_fn, log_dist=log_dist, eps=eps, lr=lr)
+        super().__init__(dim, emb_dim, layer_widths=layer_widths, activation_fn=activation_fn, log_dist=log_dist, eps=eps, lr=lr)
         self.dist_reg = dist_reg
-        self.dist_reg_weight = dist_reg_weight
+        self.dist_reg_weight = dist_reconstr_weights[0]
+        self.reconstr_weight = dist_reconstr_weights[1]
 
     def forward(self, x):
         z = self.encode(x)
@@ -111,12 +115,14 @@ class AEDist(BaseAE):
             assert len(input) == 2
             x, dist_gt = input
             dist_emb = torch.nn.functional.pdist(z)
-            loss += self.dist_reg_weight * self.dist_loss(
-                dist_emb, dist_gt
-            )
+            dl = self.dist_loss(dist_emb, dist_gt)
+            self.log('dist_loss', dl, prog_bar=True, on_epoch=True)
+            loss += self.dist_reg_weight * dl
         else:
             x = input
-        loss += torch.nn.functional.mse_loss(x, x_hat)
+        rl = torch.nn.functional.mse_loss(x, x_hat)
+        self.log('reconstr_loss', rl, prog_bar=True, on_epoch=True)
+        loss += self.reconstr_weight * rl
         return loss
 
     @torch.no_grad()
@@ -129,18 +135,19 @@ class VAEDist(BaseAE):
         self,
         dim,
         emb_dim,
-        w=64,
+        layer_widths=[64, 64, 64],
         activation_fn=torch.nn.ReLU(),
         dist_reg=True,
-        dist_reg_weight=1.0,
+        dist_reconstr_weights=[1.0, 1.0],
         log_dist=False,
         eps=1e-10,
         lr=1e-3,
     ):
-        super().__init__(dim, emb_dim, w, activation_fn, log_dist=log_dist, eps=eps, lr=lr)
+        super().__init__(dim, emb_dim, layer_widths, activation_fn, log_dist=log_dist, eps=eps, lr=lr)
 
         self.dist_reg = dist_reg
-        self.dist_reg_weight = dist_reg_weight
+        self.dist_reg_weight = dist_reconstr_weights[0]
+        self.reconstr_weight = dist_reconstr_weights[1]
         self.fc_mu = torch.nn.Linear(emb_dim, emb_dim)
         self.fc_var = torch.nn.Linear(emb_dim, emb_dim)
 
@@ -190,7 +197,7 @@ class VAEDist(BaseAE):
             x = input
         recon_loss = torch.nn.functional.mse_loss(x, x_hat)
         kl_loss = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
-        loss += recon_loss + kl_loss
+        loss += self.reconstr_weight * (recon_loss + kl_loss)
         return loss
 
     @torch.no_grad()

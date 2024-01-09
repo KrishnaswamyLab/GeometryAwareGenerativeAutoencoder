@@ -1,4 +1,5 @@
 log_dist: true
-w: 64
+layer_widths: [64, 64, 64]
 lr: 0.001
-activation: 'leaky_relu'
+activation: 'relu'
+dist_reconstr_weights: [0.5, 0.5]

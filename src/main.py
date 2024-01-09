@@ -48,7 +48,7 @@ def main(cfg: DictConfig):
         adata = sc.read_h5ad(cfg.data.datapath)
         X = to_dense_array(adata.X[:,:])
         if not cfg.data.require_phate:
-            phate_coords = adata.obsm['X_phate']
+            phate_coords = adata.obsm[cfg.data.adata_phate_name]
             emb_dim = phate_coords.shape[1]
     elif cfg.data.file_type == 'npy':
         X = np.load(cfg.data.datapath)
@@ -89,10 +89,11 @@ def main(cfg: DictConfig):
     model = AEDist(
         dim=train_sample['x'].shape[1],
         emb_dim=emb_dim,
-        log_dist=cfg.model.log_dist,
-        w=cfg.model.w,
-        lr=cfg.model.lr,
+        layer_widths=cfg.model.layer_widths,
         activation_fn=activation_fn,
+        dist_reconstr_weights=cfg.model.dist_reconstr_weights,
+        log_dist=cfg.model.log_dist,
+        lr=cfg.model.lr,
     )
     early_stopping = EarlyStopping(cfg.training.monitor, patience=cfg.training.patience)
     if cfg.logger.use_wandb:

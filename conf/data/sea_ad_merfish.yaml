@@ -1,0 +1,6 @@
+batch_size: 1024
+file_type: 'h5ad'
+datapath: '../data/sea_ad_merfish_used_in_analysis_subset12000.h5ad'
+adata_phate_name: 'X_phate'
+require_phate: False
+phate_dim: 2
