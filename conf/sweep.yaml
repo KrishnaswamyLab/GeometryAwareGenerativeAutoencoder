@@ -13,6 +13,10 @@ parameters:
   model.layer_widths:
     values: [[64, 64], [64, 64, 64], [256, 128, 64]]
   model.dist_reconstr_weights:
-    values: [[0.5, 0.5], [0.1, 0.9], [0.9, 0.1], [0., 1.], [1., 0.]]
+    # values: [[0.5, 0.5], [0.1, 0.9], [0.9, 0.1], [0., 1.], [1., 0.]]
+    values: [[0.1, 0.6, 0.3], [0.3, 0.3, 0.3], [0.1, 0.2, 0.7]]
+  model.log_dist:
+    values: [True, False]
   data:
-    values: ['eb', 'bmmc_myeloid', 'sea_ad_merfish']
+    # values: ['eb', 'bmmc_myeloid', 'sea_ad_merfish']
+    values: ['eb_pca']
