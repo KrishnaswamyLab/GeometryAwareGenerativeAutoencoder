@@ -140,3 +140,9 @@ conf/wandb
 *.old
 results/
 results_swiss_roll/
+job-*
+job_*
+dsq_*
+dsq-*
+lightning_logs/
+settings.json
