@@ -1,0 +1,25 @@
+program: main.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val_loss
+  goal: minimize
+parameters:
+  model.lr:
+    values: [0.001, 0.01]
+  model.layer_widths:
+    values: [[64, 64], [64, 64, 64], [256, 128, 64]]
+  model.dist_reconstr_weights:
+    # values: [[0.5, 0.5], [0.1, 0.9], [0.9, 0.1], [0., 1.], [1., 0.]]
+    values: [[0.5, 0.5, 0.], [0.1, 0.9, 0.], [0.9, 0.1, 0.]]
+    # values: [[0.1, 0.6, 0.3], [0.3, 0.3, 0.3], [0.1, 0.2, 0.7]]
+  model.log_dist:
+    values: [True, False]
+  data:
+    # values: ['eb', 'bmmc_myeloid', 'sea_ad_merfish']
+    values: ['eb_subset_heatgeo']
+  path.save:
+    values: [False]

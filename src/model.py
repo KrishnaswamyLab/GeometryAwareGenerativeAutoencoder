@@ -92,19 +92,16 @@ class AEDist(BaseAE):
         emb_dim,
         layer_widths=[64, 64, 64],
         activation_fn=torch.nn.ReLU(),
-        dist_reg=True,
-        dist_reconstr=True,
         dist_reconstr_weights=[0.1, 0.6, 0.3],
         log_dist=False,
         eps=1e-10,
         lr=1e-3,
     ):
         super().__init__(dim, emb_dim, layer_widths=layer_widths, activation_fn=activation_fn, log_dist=log_dist, eps=eps, lr=lr)
-        self.dist_reg = dist_reg
-        self.dist_reconstr=dist_reconstr
-        self.dist_reg_weight = dist_reconstr_weights[0] if self.dist_reg else 0.0
+        self.dist_reg_weight = dist_reconstr_weights[0]
         self.reconstr_weight = dist_reconstr_weights[1]
-        self.dist_reconstr_weight = dist_reconstr_weights[2] if self.dist_reconstr else 0.0
+        self.dist_reconstr_weight = dist_reconstr_weights[2]
+        assert self.dist_reg_weight + self.reconstr_weight + self.dist_reconstr_weight > 0.0
 
     def forward(self, x):
         z = self.encode(x)
@@ -114,7 +111,7 @@ class AEDist(BaseAE):
         """output are the outputs of forward method"""
         loss = 0.0
         x_hat, z = output
-        if self.dist_reg:
+        if self.dist_reg_weight > 0.0:
             assert len(input) == 2
             x, dist_gt = input
             dist_emb = torch.nn.functional.pdist(z)
@@ -123,15 +120,16 @@ class AEDist(BaseAE):
             loss += self.dist_reg_weight * dl
         else:
             x = input
-        if self.dist_reconstr:
+        if self.dist_reconstr_weight > 0.0:
             dist_orig = torch.nn.functional.pdist(x)
             dist_reconstr = torch.nn.functional.pdist(x_hat)
             drl = self.dist_loss(dist_reconstr, dist_orig)
             self.log('dist_reconstr_loss', drl, prog_bar=True, on_epoch=True)
             loss += self.dist_reconstr_weight * drl
-        rl = torch.nn.functional.mse_loss(x, x_hat)
-        self.log('reconstr_loss', rl, prog_bar=True, on_epoch=True)
-        loss += self.reconstr_weight * rl
+        if self.reconstr_weight > 0.0:
+            rl = torch.nn.functional.mse_loss(x, x_hat)
+            self.log('reconstr_loss', rl, prog_bar=True, on_epoch=True)
+            loss += self.reconstr_weight * rl
         return loss
 
     @torch.no_grad()

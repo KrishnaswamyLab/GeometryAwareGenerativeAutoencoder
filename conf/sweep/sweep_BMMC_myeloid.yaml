@@ -1,0 +1,19 @@
+program: main.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+  - data.file_type=h5ad 
+  - data.require_phate=False 
+  - data.datapath=../data/BMMC_myeloid.h5ad
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val_loss
+  goal: minimize
+parameters:
+  model.lr:
+    values: [0.001, 0.01, 0.1]
+  model.w:
+    values: [64, 128, 256]
+  model.activation:
+    values: ['relu', 'leaky_relu', 'sigmoid']
