@@ -2,6 +2,7 @@ batch_size: 1024
 file_type: 'npy'
 datapath: '../data/swiss_roll.npy'
 phatepath: '../data/swiss_roll_phate.npy'
+colorpath: '../data/swiss_roll_color.csv'
 adata_phate_name: 'X_phate'
 require_phate: False
 phate_dim: 2

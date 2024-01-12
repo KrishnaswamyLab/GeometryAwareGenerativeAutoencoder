@@ -77,15 +77,13 @@ def main(cfg: DictConfig):
         batch_size=cfg.data.batch_size,)
     train_sample = next(iter(trainloader))
 
-    if cfg.model.activation == 'relu':
-        activation_fn = torch.nn.ReLU()
-    elif cfg.model.activation == 'leaky_relu':
-        activation_fn = torch.nn.LeakyReLU()
-    elif cfg.model.activation == 'sigmoid':
-        activation_fn = torch.nn.Sigmoid()
-    else:
-        raise ValueError('Unknown activation function')
+    activation_dict = {
+        'relu': torch.nn.ReLU(),
+        'leaky_relu': torch.nn.LeakyReLU(),
+        'sigmoid': torch.nn.Sigmoid()
+    }
 
+    activation_fn = activation_dict[cfg.model.activation]
     model = AEDist(
         dim=train_sample['x'].shape[1],
         emb_dim=emb_dim,
@@ -128,7 +126,9 @@ def main(cfg: DictConfig):
     )
 
     X_tensor = torch.from_numpy(X).float()
-    emb_z = model(X_tensor)[1].cpu().detach().numpy()
+    x_hat, emb_z = model(X_tensor)
+    x_hat = x_hat.cpu().detach().numpy()
+    emb_z = emb_z.cpu().detach().numpy()
 
     procrustes = Procrustes()
     pc_s, z, disparity = procrustes.fit_transform(phate_coords, emb_z)
@@ -137,28 +137,56 @@ def main(cfg: DictConfig):
             pickle.dump(procrustes, file)
 
     if cfg.logger.use_wandb:
-        wandb.log({'procrustes_disparity': disparity})
+        wandb.log({'procrustes_disparity_latent': disparity})
 
+    colors = pd.read_csv(cfg.data.colorpath, index_col=0).iloc[:, 0].values if cfg.data.colorpath is not None else 'b'
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
 
-    ax1.scatter(phate_coords[:,0], phate_coords[:,1])
+    ax1.scatter(phate_coords[:,0], phate_coords[:,1], c=colors, s=1, cmap='Spectral')
     ax1.set_title('PHATE')
     ax1.set_xticks([])
     ax1.set_yticks([])
 
-    ax2.scatter(z[:,0], z[:,1])
+    ax2.scatter(z[:,0], z[:,1], c=colors, s=1, cmap='Spectral')
     ax2.set_title('Latent Space')
     ax2.set_xticks([])
     ax2.set_yticks([])
 
     fig.suptitle('Comparison of PHATE and Latent Space')
+    
     if cfg.path.save:
         plotdir = os.path.join(cfg.path.root, cfg.path.plots)
         os.makedirs(plotdir, exist_ok=True)
-        plt.savefig(f'{plotdir}/comparison.pdf', dpi=300)
+        plt.savefig(f'{plotdir}/comparison_latent.pdf', dpi=300)
 
     if cfg.logger.use_wandb:
-        wandb.log({'Comparison Plot': plt})
+        wandb.log({'Comparison Plot Latent': plt})
+
+    procrustes = Procrustes()
+    _, xh, disparity = procrustes.fit_transform(X, x_hat)
+    if cfg.logger.use_wandb:
+        wandb.log({'procrustes_disparity_reconstruction': disparity})
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
+
+    ax1.scatter(X[:,0], X[:,1], c=colors, s=1, cmap='Spectral')
+    ax1.set_title('PHATE')
+    ax1.set_xticks([])
+    ax1.set_yticks([])
+
+    ax2.scatter(z[:,0], z[:,1], c=colors, s=1, cmap='Spectral')
+    ax2.set_title('Latent Space')
+    ax2.set_xticks([])
+    ax2.set_yticks([])
+
+    fig.suptitle('Comparison of PHATE and Latent Space')
+    
+    if cfg.path.save:
+        plotdir = os.path.join(cfg.path.root, cfg.path.plots)
+        os.makedirs(plotdir, exist_ok=True)
+        plt.savefig(f'{plotdir}/comparison_reconstr.pdf', dpi=300)
+
+    if cfg.logger.use_wandb:
+        wandb.log({'Comparison Plot Reconstruction': plt})
         run.finish()
 
 if __name__ == "__main__":
