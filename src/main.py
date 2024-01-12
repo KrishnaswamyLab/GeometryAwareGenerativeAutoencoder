@@ -92,6 +92,7 @@ def main(cfg: DictConfig):
         dist_reconstr_weights=cfg.model.dist_reconstr_weights,
         log_dist=cfg.model.log_dist,
         lr=cfg.model.lr,
+        dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
     )
     early_stopping = EarlyStopping(cfg.training.monitor, patience=cfg.training.patience)
     if cfg.logger.use_wandb:

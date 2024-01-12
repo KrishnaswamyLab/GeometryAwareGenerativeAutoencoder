@@ -1,4 +1,4 @@
-save: True
+save: False
 root: '../results/'
 model: 'model'
 procrustes: 'procrustes'
