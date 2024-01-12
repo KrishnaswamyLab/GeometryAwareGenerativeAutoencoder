@@ -1,3 +1,4 @@
+project: dmae
 program: main.py
 command:
   - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
@@ -11,12 +12,12 @@ parameters:
   model.lr:
     values: [0.001, 0.01]
   model.layer_widths:
-    values: [[64, 64], [64, 64, 64], [256, 128, 64]]
+    values: [[256, 128, 64]]
   model.dist_reconstr_weights:
     # values: [[0.5, 0.5], [0.1, 0.9], [0.9, 0.1], [0., 1.], [1., 0.]]
-    values: [[0.1, 0.6, 0.3], [0.3, 0.3, 0.3], [0.1, 0.2, 0.7]]
+    values: [[0.3, 0.3, 0.3], [0.1, 0.9, 0.]]
   model.log_dist:
     values: [True, False]
   data:
     # values: ['eb', 'bmmc_myeloid', 'sea_ad_merfish']
-    values: ['eb_pca']
+    values: ['eb_pca', 'eb_subset_heatgeo', 'bmmc_myeloid', 'bmmc_myeloid_heatgeo', 'sea_ad_merfish', 'sea_ad_merfish_heatgeo', 'sea_ad_rnaseq', 'sea_ad_rnaseq_heatgeo']

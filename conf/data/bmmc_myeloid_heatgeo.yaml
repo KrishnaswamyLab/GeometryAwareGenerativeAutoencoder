@@ -1,6 +1,6 @@
 batch_size: 1024
 file_type: 'npy'
 datapath: '../data/myeloid.npy'
-phatepath: '../data/myeloid_phate.npy'
+phatepath: '../data/myeloid_heatgeo.npy'
 require_phate: False
 phate_dim: 2
