@@ -75,9 +75,3 @@ def mAP(embeddings: np.ndarray,
     mAP = np.mean(AP)
 
     return mAP
-        
-
-
-
-    raise NotImplementedError
-    
