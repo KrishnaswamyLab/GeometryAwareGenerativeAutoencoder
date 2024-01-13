@@ -20,6 +20,7 @@ parameters:
     values: [True]
   model.dist_recon_topk_coords:
     values: [2, 10]
-  data:
+  data.name:
     # values: ['eb', 'bmmc_myeloid', 'sea_ad_merfish']
-    values: ['eb_pca', 'eb_subset_heatgeo', 'bmmc_myeloid', 'bmmc_myeloid_heatgeo', 'sea_ad_merfish', 'sea_ad_merfish_heatgeo', 'sea_ad_rnaseq', 'sea_ad_rnaseq_heatgeo']
+    # values: ['eb_pca', 'eb_subset_heatgeo', 'bmmc_myeloid', 'bmmc_myeloid_heatgeo', 'sea_ad_merfish', 'sea_ad_merfish_heatgeo', 'sea_ad_rnaseq', 'sea_ad_rnaseq_heatgeo']
+    values: ['swiss_roll']

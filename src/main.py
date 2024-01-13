@@ -1,4 +1,3 @@
-# import sys
 from data import train_valid_testloader_from_pc
 from model import AEDist
 import numpy as np
@@ -6,13 +5,10 @@ import scipy.sparse
 from scipy.spatial.distance import pdist, squareform
 import pandas as pd
 import torch
-# import phate
-# from heatgeo.embedding import HeatGeo
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping
 from procrustes import Procrustes
 import pickle
-# import scanpy as sc
 import matplotlib.pyplot as plt
 from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -45,7 +41,8 @@ def main(cfg: DictConfig):
             settings=wandb.Settings(start_method="thread"),
         )
     ## Now only supports npz file for simplicity.
-    data = np.load(cfg.data.datapath, allow_pickle=True)
+    data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
+    data = np.load(data_path, allow_pickle=True)
     # sanity check the data is not empty
     assert 'data' in data.files and 'phate' in data.files and 'colors' in data.files and 'dist' in data.files, "Some required files are missing in the 'data' variable."
     X = data['data']
@@ -55,32 +52,6 @@ def main(cfg: DictConfig):
     assert X.shape[0] == phate_coords.shape[0] == colors.shape[0] == dist.shape[0], "The number of cells in the data, phate, and colors variables do not match."
     emb_dim = phate_coords.shape[1]
 
-    # if cfg.data.file_type == 'h5ad':
-    #     adata = sc.read_h5ad(cfg.data.datapath)
-    #     X = to_dense_array(adata.X[:,:])
-    #     # if not cfg.data.require_phate:
-    #     phate_coords = adata.obsm[cfg.data.adata_phate_name]
-    #     emb_dim = phate_coords.shape[1]
-    # elif cfg.data.file_type == 'npy':
-    #     X = np.load(cfg.data.datapath)
-    #     # if not cfg.data.require_phate:
-    #     phate_coords = np.load(cfg.data.phatepath)
-    #     emb_dim = phate_coords.shape[1]
-    # else:
-    #     raise ValueError('Unknown file type')
-    # if cfg.data.require_phate:
-        # emb_dim = cfg.data.phate_dim
-        # phate_op = phate.PHATE(
-        #     random_state=cfg.phate.random_state,
-        #     n_components=emb_dim,
-        #     knn=cfg.phate.knn,
-        #     decay=cfg.phate.decay,
-        #     t=cfg.phate.t,
-        #     n_jobs=cfg.phate.n_jobs,
-        # )
-        # phate_coords = phate_op.fit_transform(X)
-    phate_coordst = torch.tensor(phate_coords)
-    # phate_D = torch.cdist(phate_coordst, phate_coordst).cpu().detach().numpy()
     if cfg.training.match_potential:
         phate_D = dist
     else:

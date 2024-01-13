@@ -1,7 +1,0 @@
-batch_size: 1024
-file_type: 'npy'
-datapath: '../data/sea_ad_rnaseq_pca.npy'
-phatepath: '../data/sea_ad_rnaseq_phate.npy'
-colorpath: '../data/sea_ad_rnaseq_celltypes.csv'
-require_phate: False
-phate_dim: 2

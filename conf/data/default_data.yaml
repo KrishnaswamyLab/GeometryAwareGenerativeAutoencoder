@@ -1,2 +1,4 @@
-datapath: '../data/swiss_roll.npz'
+root: '../data'
+filetype: '.npz'
+name: 'swiss_roll'
 preprocess: 'standardize'
