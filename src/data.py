@@ -47,3 +47,26 @@ def train_and_testloader_from_pc(
     trainloader = dataloader_from_pc(X_train, D_train, batch_size)
     testloader = dataloader_from_pc(X_test, D_test, batch_size)
     return trainloader, testloader
+
+def train_valid_testloader_from_pc(
+    pointcloud, distances, batch_size = 64, train_test_split = 0.8, train_valid_split = 0.8, shuffle=True, seed=42
+):
+    X = pointcloud
+    D = distances
+    np.random.seed(seed)
+    if shuffle:
+        idxs = np.random.permutation(len(X))
+        X = X[idxs]
+        D = D[idxs][:,idxs]
+    split_idx = int(len(X)*train_test_split)
+    split_val_idx = int(split_idx*train_valid_split)
+    X_train = X[:split_val_idx]
+    X_valid = X[split_val_idx:split_idx]
+    X_test = X[split_idx:]
+    D_train = D[:split_val_idx,:split_val_idx]
+    D_valid = D[split_val_idx:split_idx,split_val_idx:split_idx]
+    D_test = D[split_idx:,split_idx:]
+    trainloader = dataloader_from_pc(X_train, D_train, batch_size)
+    validloader = dataloader_from_pc(X_valid, D_valid, batch_size)
+    testloader = dataloader_from_pc(X_test, D_test, batch_size)
+    return trainloader, validloader, testloader

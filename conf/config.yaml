@@ -3,6 +3,6 @@ defaults:
   - model: default_model
   - data: default_data
   - training: default_training
-  - phate: default_phate
+  # - phate: default_phate
   - path: default_path
 # Add other global configs here

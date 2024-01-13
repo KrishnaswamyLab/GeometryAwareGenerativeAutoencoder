@@ -1,5 +1,0 @@
-random_state: 42
-knn: 4
-decay: 15
-t: 12
-n_jobs: -2
