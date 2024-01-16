@@ -1,4 +1,4 @@
-from data import train_valid_testloader_from_pc
+from data import train_valid_testloader_from_pc, LogTransform, NonTransform, StandardScaler, MinMaxScaler, PowerTransformer
 from model import AEDist
 import numpy as np
 import scipy.sparse
@@ -16,7 +16,6 @@ import wandb
 import hydra
 import os
 from omegaconf import DictConfig, OmegaConf
-
 
 def to_dense_array(X):
     if scipy.sparse.issparse(X):  # Check if X is a sparse matrix
@@ -56,6 +55,18 @@ def main(cfg: DictConfig):
         phate_D = dist
     else:
         phate_D = squareform(pdist(phate_coords))
+    
+    preprocessor_dict = {
+        'standard': StandardScaler(),
+        'minmax': MinMaxScaler(),
+        'power': PowerTransformer(),
+        'log': LogTransform(),
+        'none': NonTransform()
+    }
+    pp = preprocessor_dict[cfg.data.preprocess]
+    shapes = phate_D.shape
+    phate_D = pp.fit_transform(phate_D.reshape(-1,1)).reshape(shapes)
+    # todo: add preprocessing of distances.
     trainloader, valloader, testloader = train_valid_testloader_from_pc(
         X, # <---- Pointcloud
         phate_D, # <---- Distance matrix to match
@@ -79,7 +90,7 @@ def main(cfg: DictConfig):
         layer_widths=cfg.model.layer_widths,
         activation_fn=activation_fn,
         dist_reconstr_weights=cfg.model.dist_reconstr_weights,
-        log_dist=cfg.model.log_dist,
+        pp=pp,
         lr=cfg.model.lr,
         dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
     )
@@ -112,7 +123,7 @@ def main(cfg: DictConfig):
     trainer.fit(
         model=model,
         train_dataloaders=trainloader,
-        val_dataloaders=testloader,
+        val_dataloaders=valloader,
     )
 
     trainer.test(
@@ -158,17 +169,17 @@ def main(cfg: DictConfig):
         wandb.log({'Comparison Plot Latent': plt})
 
     procrustes = Procrustes()
-    _, xh, disparity = procrustes.fit_transform(X, x_hat)
+    xo, xh, disparity = procrustes.fit_transform(X, x_hat)
     if cfg.logger.use_wandb:
         wandb.log({'procrustes_disparity_reconstruction': disparity})
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
 
-    ax1.scatter(X[:,0], X[:,1], c=colors, s=1, cmap='Spectral')
+    ax1.scatter(xo[:,0], xo[:,1], c=colors, s=1, cmap='Spectral')
     ax1.set_title('PHATE')
     ax1.set_xticks([])
     ax1.set_yticks([])
 
-    ax2.scatter(z[:,0], z[:,1], c=colors, s=1, cmap='Spectral')
+    ax2.scatter(xh[:,0], xh[:,1], c=colors, s=1, cmap='Spectral')
     ax2.set_title('Latent Space')
     ax2.set_xticks([])
     ax2.set_yticks([])
