@@ -22,6 +22,7 @@ def distance_distortion(pred_distances: np.ndarray,
 
     return float(distortion)
 
+
 def mAP(embeddings: np.ndarray, 
         input: np.ndarray,
         graph_adjacency: np.ndarray,
@@ -33,7 +34,7 @@ def mAP(embeddings: np.ndarray,
     distance_op: str, 'norm'|'dot'|'cosine'
     
     AP_(xi, xj) := \frac{the number of neighbors of xi, \
-    enclosed by smallest ball that contains xj centered at xi}{the number of neighbors of xi}
+    enclosed by smallest ball that contains xj centered at xi}{the points enclosed by the ball centered at xi}
 
     graph_adjacency[i, j] = 1 if i and j are neighbors, 0 otherwise
 
@@ -63,14 +64,18 @@ def mAP(embeddings: np.ndarray,
         # find the neighbors of i
         neighbors = np.argwhere(graph_adjacency[i] == 1).flatten()
         # compute the distance between i and its neighbors
-        balls = distance_matrix[i, neighbors] # (n_neighbors, )
+        distances = distance_matrix[i, neighbors] # (n_neighbors, )
         for j in range(len(neighbors)):
-            # compute the number of neighbors of i enclosed by the ball_j centered at i
-            n_enclosed_j = np.sum(balls <= balls[j])
+            # compute the number of points enclosed by the ball_j centered at i
+            all_enclosed = np.argwhere(distance_matrix[i] <= distances[j]).flatten() 
+            # compute the number of neighbors of enclosed by the ball_j centered at i
+            n_enclosed_j = len(np.intersect1d(all_enclosed, neighbors))
             # compute the AP
-            AP[i] += n_enclosed_j / balls[j]
+            if n_enclosed_j > 0:
+                AP[i] += n_enclosed_j / all_enclosed.shape[0]
         
-        AP[i] /= len(neighbors)
+        if len(neighbors) > 0:
+            AP[i] /= len(neighbors)
     
     mAP = np.mean(AP)
 
