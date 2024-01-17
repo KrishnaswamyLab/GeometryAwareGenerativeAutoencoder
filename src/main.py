@@ -16,6 +16,7 @@ import wandb
 import hydra
 import os
 from omegaconf import DictConfig, OmegaConf
+from metrics import distance_distortion, mAP
 
 def to_dense_array(X):
     if scipy.sparse.issparse(X):  # Check if X is a sparse matrix
@@ -193,6 +194,9 @@ def main(cfg: DictConfig):
 
     if cfg.logger.use_wandb:
         wandb.log({'Comparison Plot Reconstruction': plt})
+        dist_distort = distance_distortion(dist, squareform(pdist(emb_z)))
+        wandb.log({'distance_distortion': dist_distort})
+        # TODO mAP score needs input graph.
         run.finish()
 
 if __name__ == "__main__":

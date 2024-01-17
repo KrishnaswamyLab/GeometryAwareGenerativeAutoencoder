@@ -18,7 +18,7 @@ def distance_distortion(pred_distances: np.ndarray,
 
     # compute the distortion
     eps = 1e-8
-    distortion = np.mean(np.abs(gt_distances - pred_distances) / gt_distances + eps)
+    distortion = np.mean(np.abs(gt_distances - pred_distances) / (gt_distances + eps))
 
     return float(distortion)
 

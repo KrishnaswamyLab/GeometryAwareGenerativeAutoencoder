@@ -13,19 +13,20 @@ parameters:
     values: [0.001]
   model.layer_widths:
     # values: [[256, 128, 64], [64, 64, 64], [64, 32, 16]]
-    values: [[256, 128, 64]]
+    values: [[256, 128, 64], [64, 64, 64]]
   model.dist_reconstr_weights:
     # values: [[0.5, 0.5], [0.1, 0.9], [0.9, 0.1], [0., 1.], [1., 0.]]
     # values: [[0.3, 0.4, 0.3], [0.1, 0.9, 0.]]
-    values: [[0.5, 0.5, 0.],[0.9,0.1,0.]]
-  model.dist_recon_topk_coords:
-    values: [10]
+    values: [[0.9,0.1,0.]]
+  # model.dist_recon_topk_coords:
+  #   values: [10]
   data.preprocess:
     values: ['standard', 'minmax', 'none', 'log', 'power']
   data.name:
     # values: ['eb', 'bmmc_myeloid', 'sea_ad_merfish']
     # values: ['eb_pca', 'eb_subset_heatgeo', 'bmmc_myeloid', 'bmmc_myeloid_heatgeo', 'sea_ad_merfish', 'sea_ad_merfish_heatgeo', 'sea_ad_rnaseq', 'sea_ad_rnaseq_heatgeo']
     # values: ['eb_subset', 'eb_subset_heatgeo']
-    values: ['eb_subset']
+    # values: ['eb_subset', 'eb_subset_heatgeo', 'myeloid', 'myeloid_heatgeo', 'sea_ad', 'sea_ad_heatgeo']
+    values: ['sea_ad_gaba', 'sea_ad_gaba_heatgeo']
   training.match_potential:
     values: [True, False]
