@@ -37,12 +37,17 @@ def dataloader_from_pc(pointcloud, distances, batch_size = 64, shuffle=True):
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=None, shuffle=shuffle)
     return dataloader
 
-def train_and_testloader_from_pc(
-    pointcloud, distances, batch_size = 64, train_test_split = 0.8
+def train_valid_loader_from_pc(
+    pointcloud, distances, batch_size = 64, train_valid_split = 0.8, shuffle=True, seed=42
 ):
     X = pointcloud
     D = distances
-    split_idx = int(len(X)*train_test_split)
+    np.random.seed(seed)
+    if shuffle:
+        idxs = np.random.permutation(len(X))
+        X = X[idxs]
+        D = D[idxs][:,idxs]
+    split_idx = int(len(X)*train_valid_split)
     X_train = X[:split_idx]
     X_test = X[split_idx:]
     D_train = D[:split_idx,:split_idx]

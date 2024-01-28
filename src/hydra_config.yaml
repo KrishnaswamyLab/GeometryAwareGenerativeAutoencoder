@@ -1,0 +1,44 @@
+data:
+  filetype: .npz
+  name: sea_ad_gaba
+  preprocess: none
+  root: ../data
+logger:
+  entity: xingzhis
+  project: dmae
+  tags:
+  - default
+  use_wandb: true
+model:
+  activation: relu
+  dist_recon_topk_coords: 0
+  dist_reconstr_weights:
+  - 0.9
+  - 0.1
+  - 0
+  layer_widths:
+  - 256
+  - 128
+  - 64
+  log_dist: true
+  lr: 0.001
+path:
+  log: ''
+  model: model
+  out_data: ''
+  plots: ''
+  procrustes: procrustes
+  root: ../results/
+  save: false
+training:
+  accelerator: cuda
+  batch_size: 1024
+  log_every_n_steps: 100
+  match_potential: true
+  max_epochs: 50
+  monitor: val_loss
+  patience: 10
+  seed: 42
+  shuffle: true
+  train_test_split: 0.8
+  train_valid_split: 0.8

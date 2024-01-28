@@ -2,6 +2,7 @@
 Various metrics for evaluating the performance of modeling the data manifold.
 '''
 import numpy as np
+from sklearn.neighbors import NearestNeighbors
 
 def distance_distortion(pred_distances: np.ndarray, 
                         gt_distances: np.ndarray) -> float:
@@ -80,3 +81,26 @@ def mAP(embeddings: np.ndarray,
     mAP = np.mean(AP)
 
     return mAP
+
+def computeKNNmAP(embeddings: np.ndarray, 
+        input: np.ndarray,
+        k: int,
+        distance_op: str = 'norm') -> float:
+    # Create the k-NN model
+    knn = NearestNeighbors(n_neighbors=k)
+    knn.fit(input)
+
+    # Find k-nearest neighbors for each point in X
+    distances, indices = knn.kneighbors(input)
+
+    # Initialize the affinity matrix
+    n_samples = input.shape[0]
+    affinity_matrix = np.zeros((n_samples, n_samples))
+
+    # Update the affinity matrix
+    for i in range(n_samples):
+        for j in indices[i]:
+            if i != j:  # Exclude self-loops
+                affinity_matrix[i, j] = 1
+    mapscore = mAP(embeddings, input, affinity_matrix, distance_op)
+    return mapscore

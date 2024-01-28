@@ -5,7 +5,9 @@ class Procrustes():
     def __init__(self):
         self.is_fit = False
         self.mean = None
+        self.mean1 = None
         self.norm = None
+        self.norm1 = None
         self.R = None
         self.s = None
         self.disparity = None
@@ -109,19 +111,19 @@ class Procrustes():
             raise ValueError("Input matrices must be >0 rows and >0 cols")
 
         # translate all the data to the origin
-        mean1 = np.mean(mtx1, 0)
+        self.mean1 = np.mean(mtx1, 0)
         self.mean = np.mean(mtx2, 0)
-        mtx1 -= mean1
+        mtx1 -= self.mean1
         mtx2 -= self.mean
 
-        norm1 = np.linalg.norm(mtx1)
+        self.norm1 = np.linalg.norm(mtx1)
         self.norm = np.linalg.norm(mtx2)
 
-        if norm1 == 0 or self.norm == 0:
+        if self.norm1 == 0 or self.norm == 0:
             raise ValueError("Input matrices must contain >1 unique points")
 
         # change scaling of data (in rows) such that trace(mtx*mtx') = 1
-        mtx1 /= norm1
+        mtx1 /= self.norm1
         mtx2 /= self.norm
 
         # transform mtx2 to minimize disparity
@@ -134,6 +136,8 @@ class Procrustes():
         self.s = s
         self.is_fit = True
         self.disparity = disparity
+        mtx1 = self.norm1 * mtx1 + self.mean1
+        mtx2 = self.norm1 * mtx2 + self.mean1
         return mtx1, mtx2, disparity
 
     def transform(self, data2):
@@ -142,11 +146,13 @@ class Procrustes():
         mtx2 -= self.mean
         mtx2 /= self.norm
         mtx2 = np.dot(mtx2, self.R.T) * self.s
+        mtx2 = self.norm1 * mtx2 + self.mean1
         return mtx2
     
     def inverse_transform(self, datat):
         assert self.is_fit
         mtxt = np.array(datat, dtype=np.double, copy=True)
+        mtxt = (mtxt - self.mean1) / self.norm1
         mtx2 = self.norm * mtxt @ self.R / self.s + self.mean
         return mtx2
 

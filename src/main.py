@@ -1,4 +1,4 @@
-from data import train_valid_testloader_from_pc, LogTransform, NonTransform, StandardScaler, MinMaxScaler, PowerTransformer
+from data import train_valid_loader_from_pc, LogTransform, NonTransform, StandardScaler, MinMaxScaler, PowerTransformer
 from model import AEDist
 import numpy as np
 import scipy.sparse
@@ -16,6 +16,8 @@ import wandb
 import hydra
 import os
 from omegaconf import DictConfig, OmegaConf
+import yaml
+
 from metrics import distance_distortion, mAP
 
 def to_dense_array(X):
@@ -40,6 +42,16 @@ def main(cfg: DictConfig):
             config=config,
             settings=wandb.Settings(start_method="thread"),
         )
+
+        # Save the dictionary to a YAML file
+        with open("hydra_config.yaml", "w") as yaml_file:
+            yaml.dump(config, yaml_file, default_flow_style=False)
+
+        # Log the YAML file as an artifact
+        artifact = wandb.Artifact('hydra_config_artifact', type='config')
+        artifact.add_file('hydra_config.yaml')
+        wandb.log_artifact(artifact)
+
     ## Now only supports npz file for simplicity.
     data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
     data = np.load(data_path, allow_pickle=True)
@@ -68,11 +80,18 @@ def main(cfg: DictConfig):
     shapes = phate_D.shape
     phate_D = pp.fit_transform(phate_D.reshape(-1,1)).reshape(shapes)
     # todo: add preprocessing of distances.
-    trainloader, valloader, testloader = train_valid_testloader_from_pc(
+    # trainloader, valloader, testloader = train_valid_testloader_from_pc(
+    #     X, # <---- Pointcloud
+    #     phate_D, # <---- Distance matrix to match
+    #     batch_size=cfg.training.batch_size,
+    #     train_test_split=cfg.training.train_test_split,
+    #     train_valid_split=cfg.training.train_valid_split,
+    #     shuffle=cfg.training.shuffle,
+    #     seed=cfg.training.seed,)
+    trainloader, valloader = train_valid_loader_from_pc(
         X, # <---- Pointcloud
         phate_D, # <---- Distance matrix to match
         batch_size=cfg.training.batch_size,
-        train_test_split=cfg.training.train_test_split,
         train_valid_split=cfg.training.train_valid_split,
         shuffle=cfg.training.shuffle,
         seed=cfg.training.seed,)
@@ -127,10 +146,10 @@ def main(cfg: DictConfig):
         val_dataloaders=valloader,
     )
 
-    trainer.test(
-        model=model,
-        dataloaders=testloader,
-    )
+    # trainer.test(
+    #     model=model,
+    #     dataloaders=testloader,
+    # )
 
     X_tensor = torch.from_numpy(X).float()
     x_hat, emb_z = model(X_tensor)
