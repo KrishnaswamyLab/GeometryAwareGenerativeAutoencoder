@@ -4,3 +4,5 @@ lr: 0.001
 activation: 'relu'
 dist_reconstr_weights: [0.5, 0.5, 0.]
 dist_recon_topk_coords: 0
+type: 'ae'
+kl_weight: 1.0

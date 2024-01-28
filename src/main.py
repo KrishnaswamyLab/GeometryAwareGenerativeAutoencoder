@@ -1,5 +1,5 @@
 from data import train_valid_loader_from_pc, LogTransform, NonTransform, StandardScaler, MinMaxScaler, PowerTransformer
-from model import AEDist
+from model import AEDist, VAEDist
 import numpy as np
 import scipy.sparse
 from scipy.spatial.distance import pdist, squareform
@@ -104,16 +104,31 @@ def main(cfg: DictConfig):
     }
 
     activation_fn = activation_dict[cfg.model.activation]
-    model = AEDist(
-        dim=train_sample['x'].shape[1],
-        emb_dim=emb_dim,
-        layer_widths=cfg.model.layer_widths,
-        activation_fn=activation_fn,
-        dist_reconstr_weights=cfg.model.dist_reconstr_weights,
-        pp=pp,
-        lr=cfg.model.lr,
-        dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
-    )
+    if cfg.model.type == 'ae':
+        model = AEDist(
+            dim=train_sample['x'].shape[1],
+            emb_dim=emb_dim,
+            layer_widths=cfg.model.layer_widths,
+            activation_fn=activation_fn,
+            dist_reconstr_weights=cfg.model.dist_reconstr_weights,
+            pp=pp,
+            lr=cfg.model.lr,
+            dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
+        )
+    elif cfg.model.type == 'vae':
+        model = VAEDist(
+            dim=train_sample['x'].shape[1],
+            emb_dim=emb_dim,
+            layer_widths=cfg.model.layer_widths,
+            activation_fn=activation_fn,
+            dist_reconstr_weights=cfg.model.dist_reconstr_weights,
+            kl_weight=cfg.model.kl_weight,
+            pp=pp,
+            lr=cfg.model.lr,
+            dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
+        )
+    else:
+        raise NotImplementedError(f"Model type {cfg.model.type} not implemented.")
     early_stopping = EarlyStopping(cfg.training.monitor, patience=cfg.training.patience)
     if cfg.logger.use_wandb:
         logger = WandbLogger()
