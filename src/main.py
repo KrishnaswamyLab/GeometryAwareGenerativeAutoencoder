@@ -1,4 +1,5 @@
-from data import train_valid_loader_from_pc, LogTransform, NonTransform, StandardScaler, MinMaxScaler, PowerTransformer
+from data import train_valid_loader_from_pc
+from transformations import LogTransform, NonTransform, StandardScaler, MinMaxScaler, PowerTransformer, KernelTransform
 from model import AEDist, VAEDist
 import numpy as np
 import scipy.sparse
@@ -74,20 +75,18 @@ def main(cfg: DictConfig):
         'minmax': MinMaxScaler(),
         'power': PowerTransformer(),
         'log': LogTransform(),
-        'none': NonTransform()
+        'none': NonTransform(),
+        'kernel': KernelTransform(
+            cfg.data.kernel.type, 
+            cfg.data.kernel.sigma, 
+            cfg.data.kernel.epsilon, 
+            cfg.data.kernel.alpha,
+            cfg.data.kernel.use_std
+            )
     }
     pp = preprocessor_dict[cfg.data.preprocess]
     shapes = phate_D.shape
     phate_D = pp.fit_transform(phate_D.reshape(-1,1)).reshape(shapes)
-    # todo: add preprocessing of distances.
-    # trainloader, valloader, testloader = train_valid_testloader_from_pc(
-    #     X, # <---- Pointcloud
-    #     phate_D, # <---- Distance matrix to match
-    #     batch_size=cfg.training.batch_size,
-    #     train_test_split=cfg.training.train_test_split,
-    #     train_valid_split=cfg.training.train_valid_split,
-    #     shuffle=cfg.training.shuffle,
-    #     seed=cfg.training.seed,)
     trainloader, valloader = train_valid_loader_from_pc(
         X, # <---- Pointcloud
         phate_D, # <---- Distance matrix to match
@@ -160,11 +159,6 @@ def main(cfg: DictConfig):
         train_dataloaders=trainloader,
         val_dataloaders=valloader,
     )
-
-    # trainer.test(
-    #     model=model,
-    #     dataloaders=testloader,
-    # )
 
     X_tensor = torch.from_numpy(X).float()
     x_hat, emb_z = model(X_tensor)

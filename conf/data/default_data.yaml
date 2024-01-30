@@ -1,4 +1,10 @@
 root: '../data'
 filetype: '.npz'
 name: 'swiss_roll'
-preprocess: 'standard'
+preprocess: 'none'
+kernel:
+  type: 'gaussian'
+  sigma: 1.0
+  epsilon: 1.0
+  alpha: 10
+  use_std: true

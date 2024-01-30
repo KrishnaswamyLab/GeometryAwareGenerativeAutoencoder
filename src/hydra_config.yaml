@@ -1,7 +1,13 @@
 data:
   filetype: .npz
+  kernel:
+    alpha: 10
+    epsilon: 1.0
+    sigma: 1.0
+    type: gaussian
+    use_std: true
   name: sea_ad_gaba
-  preprocess: none
+  preprocess: kernel
   root: ../data
 logger:
   entity: xingzhis
@@ -16,12 +22,14 @@ model:
   - 0.9
   - 0.1
   - 0
+  kl_weight: 0.1
   layer_widths:
   - 256
   - 128
   - 64
   log_dist: true
   lr: 0.001
+  type: ae
 path:
   log: ''
   model: model
@@ -34,7 +42,7 @@ training:
   accelerator: cuda
   batch_size: 1024
   log_every_n_steps: 100
-  match_potential: true
+  match_potential: false
   max_epochs: 50
   monitor: val_loss
   patience: 10

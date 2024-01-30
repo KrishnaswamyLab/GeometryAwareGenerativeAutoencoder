@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 from abc import ABC, abstractmethod
-from data import NonTransform
+from transformations import NonTransform
 
 class MLP(torch.nn.Module):
     def __init__(self, dim, out_dim=None, layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU()):
