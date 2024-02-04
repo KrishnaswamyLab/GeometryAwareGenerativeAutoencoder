@@ -1,4 +1,4 @@
-from data import train_valid_loader_from_pc
+from data import train_valid_loader_from_pc, dataloader_from_pc
 from transformations import LogTransform, NonTransform, StandardScaler, MinMaxScaler, PowerTransformer, KernelTransform
 from model import AEDist, VAEDist
 import numpy as np
@@ -43,91 +43,9 @@ def main(cfg: DictConfig):
             config=config,
             settings=wandb.Settings(start_method="thread"),
         )
-
-        # Save the dictionary to a YAML file
-        with open("hydra_config.yaml", "w") as yaml_file:
-            yaml.dump(config, yaml_file, default_flow_style=False)
-
-        # Log the YAML file as an artifact
-        artifact = wandb.Artifact('hydra_config_artifact', type='config')
-        artifact.add_file('hydra_config.yaml')
-        wandb.log_artifact(artifact)
-
-    ## Now only supports npz file for simplicity.
-    data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
-    data = np.load(data_path, allow_pickle=True)
-    # sanity check the data is not empty
-    assert 'data' in data.files and 'phate' in data.files and 'colors' in data.files and 'dist' in data.files, "Some required files are missing in the 'data' variable."
-    X = data['data']
-    phate_coords = data['phate']
-    colors = data['colors']
-    dist = data['dist']
-    assert X.shape[0] == phate_coords.shape[0] == colors.shape[0] == dist.shape[0], "The number of cells in the data, phate, and colors variables do not match."
-    emb_dim = phate_coords.shape[1]
-
-    if cfg.training.match_potential:
-        phate_D = dist
-    else:
-        phate_D = squareform(pdist(phate_coords))
     
-    preprocessor_dict = {
-        'standard': StandardScaler(),
-        'minmax': MinMaxScaler(),
-        'power': PowerTransformer(),
-        'log': LogTransform(),
-        'none': NonTransform(),
-        'kernel': KernelTransform(
-            cfg.data.kernel.type, 
-            cfg.data.kernel.sigma, 
-            cfg.data.kernel.epsilon, 
-            cfg.data.kernel.alpha,
-            cfg.data.kernel.use_std
-            )
-    }
-    pp = preprocessor_dict[cfg.data.preprocess]
-    shapes = phate_D.shape
-    phate_D = pp.fit_transform(phate_D.reshape(-1,1)).reshape(shapes)
-    trainloader, valloader = train_valid_loader_from_pc(
-        X, # <---- Pointcloud
-        phate_D, # <---- Distance matrix to match
-        batch_size=cfg.training.batch_size,
-        train_valid_split=cfg.training.train_valid_split,
-        shuffle=cfg.training.shuffle,
-        seed=cfg.training.seed,)
-    train_sample = next(iter(trainloader))
+    model, trainloader, valloader, X, phate_coords, colors, dist = prep_data_model(cfg)
 
-    activation_dict = {
-        'relu': torch.nn.ReLU(),
-        'leaky_relu': torch.nn.LeakyReLU(),
-        'sigmoid': torch.nn.Sigmoid()
-    }
-
-    activation_fn = activation_dict[cfg.model.activation]
-    if cfg.model.type == 'ae':
-        model = AEDist(
-            dim=train_sample['x'].shape[1],
-            emb_dim=emb_dim,
-            layer_widths=cfg.model.layer_widths,
-            activation_fn=activation_fn,
-            dist_reconstr_weights=cfg.model.dist_reconstr_weights,
-            pp=pp,
-            lr=cfg.model.lr,
-            dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
-        )
-    elif cfg.model.type == 'vae':
-        model = VAEDist(
-            dim=train_sample['x'].shape[1],
-            emb_dim=emb_dim,
-            layer_widths=cfg.model.layer_widths,
-            activation_fn=activation_fn,
-            dist_reconstr_weights=cfg.model.dist_reconstr_weights,
-            kl_weight=cfg.model.kl_weight,
-            pp=pp,
-            lr=cfg.model.lr,
-            dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
-        )
-    else:
-        raise NotImplementedError(f"Model type {cfg.model.type} not implemented.")
     early_stopping = EarlyStopping(cfg.training.monitor, patience=cfg.training.patience)
     if cfg.logger.use_wandb:
         logger = WandbLogger()
@@ -226,6 +144,140 @@ def main(cfg: DictConfig):
         wandb.log({'distance_distortion': dist_distort})
         # TODO mAP score needs input graph.
         run.finish()
+
+def load_data(cfg, load_all=False):
+    if load_all:
+        data_path = os.path.join(cfg.data.root, cfg.data.name + "_all" + cfg.data.filetype)
+    else:
+        data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
+    data = np.load(data_path, allow_pickle=True)
+    # sanity check the data is not empty
+    assert 'data' in data.files and 'phate' in data.files and 'colors' in data.files and 'dist' in data.files, "Some required files are missing in the 'data' variable."
+    X = data['data']
+    phate_coords = data['phate']
+    colors = data['colors']
+    dist = data['dist']
+    assert X.shape[0] == phate_coords.shape[0] == colors.shape[0] == dist.shape[0], "The number of cells in the data, phate, and colors variables do not match."
+    emb_dim = phate_coords.shape[1]
+
+    if cfg.training.match_potential:
+        phate_D = dist
+    else:
+        phate_D = squareform(pdist(phate_coords))
+    
+    ##### [TMP FIX] to be compatible with old runs that don't have the data.kernel field
+    if cfg.data.preprocess == 'kernel': 
+        preprocessor_dict = {
+            'standard': StandardScaler(),
+            'minmax': MinMaxScaler(),
+            'power': PowerTransformer(),
+            'log': LogTransform(),
+            'none': NonTransform(),
+            'kernel': KernelTransform(
+                cfg.data.kernel.type, 
+                cfg.data.kernel.sigma, 
+                cfg.data.kernel.epsilon, 
+                cfg.data.kernel.alpha,
+                cfg.data.kernel.use_std
+                )
+        }
+    else:
+        preprocessor_dict = {
+            'standard': StandardScaler(),
+            'minmax': MinMaxScaler(),
+            'power': PowerTransformer(),
+            'log': LogTransform(),
+            'none': NonTransform(),
+        }
+    
+    pp = preprocessor_dict[cfg.data.preprocess]
+    shapes = phate_D.shape
+    phate_D = pp.fit_transform(phate_D.reshape(-1,1)).reshape(shapes)
+    if load_all:
+        allloader = dataloader_from_pc(
+        X, # <---- Pointcloud
+        phate_D, # <---- Distance matrix to match
+        batch_size=X.shape[0],
+        shuffle=False,)
+        return allloader, None, X, phate_coords, colors, dist, pp
+    else:
+        trainloader, valloader = train_valid_loader_from_pc(
+            X, # <---- Pointcloud
+            phate_D, # <---- Distance matrix to match
+            batch_size=cfg.training.batch_size,
+            train_valid_split=cfg.training.train_valid_split,
+            shuffle=cfg.training.shuffle,
+            seed=cfg.training.seed,)
+        return trainloader, valloader, X, phate_coords, colors, dist, pp
+
+def make_model(cfg, dim, emb_dim, pp, from_checkpoint=False, checkpoint_path=None):
+
+    activation_dict = {
+        'relu': torch.nn.ReLU(),
+        'leaky_relu': torch.nn.LeakyReLU(),
+        'sigmoid': torch.nn.Sigmoid()
+    }
+
+    activation_fn = activation_dict[cfg.model.activation]
+    if cfg.model.type == 'ae':
+        if from_checkpoint:
+            model = AEDist.load_from_checkpoint(
+                checkpoint_path=checkpoint_path,
+                dim=dim,
+                emb_dim=emb_dim,
+                layer_widths=cfg.model.layer_widths,
+                activation_fn=activation_fn,
+                dist_reconstr_weights=cfg.model.dist_reconstr_weights,
+                pp=pp,
+                lr=cfg.model.lr,
+                dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
+            )
+        else:
+            model = AEDist(
+                dim=dim,
+                emb_dim=emb_dim,
+                layer_widths=cfg.model.layer_widths,
+                activation_fn=activation_fn,
+                dist_reconstr_weights=cfg.model.dist_reconstr_weights,
+                pp=pp,
+                lr=cfg.model.lr,
+                dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
+            )
+    elif cfg.model.type == 'vae':
+        if from_checkpoint:
+            model = VAEDist.load_from_checkpoint(
+                checkpoint_path=checkpoint_path,
+                dim=dim,
+                emb_dim=emb_dim,
+                layer_widths=cfg.model.layer_widths,
+                activation_fn=activation_fn,
+                dist_reconstr_weights=cfg.model.dist_reconstr_weights,
+                kl_weight=cfg.model.kl_weight,
+                pp=pp,
+                lr=cfg.model.lr,
+                dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
+            )
+        else:
+            model = VAEDist(
+                dim=dim,
+                emb_dim=emb_dim,
+                layer_widths=cfg.model.layer_widths,
+                activation_fn=activation_fn,
+                dist_reconstr_weights=cfg.model.dist_reconstr_weights,
+                kl_weight=cfg.model.kl_weight,
+                pp=pp,
+                lr=cfg.model.lr,
+                dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
+            )
+    else:
+        raise NotImplementedError(f"Model type {cfg.model.type} not implemented.")
+
+    return model
+
+def prep_data_model(cfg):
+    trainloader, valloader, X, phate_coords, colors, dist, pp = load_data(cfg)
+    model = make_model(cfg, X.shape[1], phate_coords.shape[1], pp)
+    return model, trainloader, valloader, X, phate_coords, colors, dist
 
 if __name__ == "__main__":
     main()
