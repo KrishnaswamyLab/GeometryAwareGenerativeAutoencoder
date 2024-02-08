@@ -210,14 +210,19 @@ def load_data(cfg, load_all=False):
             seed=cfg.training.seed,)
         return trainloader, valloader, X, phate_coords, colors, dist, pp
 
-def make_model(cfg, dim, emb_dim, pp, from_checkpoint=False, checkpoint_path=None):
+def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoint_path=None):
 
     activation_dict = {
         'relu': torch.nn.ReLU(),
         'leaky_relu': torch.nn.LeakyReLU(),
         'sigmoid': torch.nn.Sigmoid()
     }
-
+    if 'use_dist_mse_decay' in cfg.model: # for compatibility with old runs
+        use_dist_mse_decay = cfg.model.use_dist_mse_decay
+        dist_mse_decay = cfg.model.dist_mse_decay / dist_std
+    else:
+        use_dist_mse_decay = False
+        dist_mse_decay = 0.0
     activation_fn = activation_dict[cfg.model.activation]
     if cfg.model.type == 'ae':
         if from_checkpoint:
@@ -231,6 +236,8 @@ def make_model(cfg, dim, emb_dim, pp, from_checkpoint=False, checkpoint_path=Non
                 pp=pp,
                 lr=cfg.model.lr,
                 dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
+                use_dist_mse_decay=use_dist_mse_decay,
+                dist_mse_decay=dist_mse_decay,
             )
         else:
             model = AEDist(
@@ -242,8 +249,11 @@ def make_model(cfg, dim, emb_dim, pp, from_checkpoint=False, checkpoint_path=Non
                 pp=pp,
                 lr=cfg.model.lr,
                 dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
+                use_dist_mse_decay=use_dist_mse_decay,
+                dist_mse_decay=dist_mse_decay,
             )
     elif cfg.model.type == 'vae':
+        # TODO add dist_mse_decay to VAE?
         if from_checkpoint:
             model = VAEDist.load_from_checkpoint(
                 checkpoint_path=checkpoint_path,
@@ -276,7 +286,8 @@ def make_model(cfg, dim, emb_dim, pp, from_checkpoint=False, checkpoint_path=Non
 
 def prep_data_model(cfg):
     trainloader, valloader, X, phate_coords, colors, dist, pp = load_data(cfg)
-    model = make_model(cfg, X.shape[1], phate_coords.shape[1], pp)
+    dist_std = np.std(dist.flatten())
+    model = make_model(cfg, X.shape[1], phate_coords.shape[1], pp, dist_std)
     return model, trainloader, valloader, X, phate_coords, colors, dist
 
 if __name__ == "__main__":

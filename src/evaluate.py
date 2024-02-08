@@ -24,7 +24,8 @@ def get_results(run):
     emb_dim = phate_coords.shape[1]
     data_path = os.path.join(cfg.data.root, cfg.data.name + "_all" + cfg.data.filetype)
     data = np.load(data_path, allow_pickle=True)
-    model = make_model(cfg, X.shape[1], emb_dim, pp, from_checkpoint=True, checkpoint_path=ckpt_path)
+    dist_std = np.std(data['dist'].flatten())
+    model = make_model(cfg, X.shape[1], emb_dim, pp, dist_std, from_checkpoint=True, checkpoint_path=ckpt_path)
     model.eval()
     x_all = next(iter(allloader))['x']
     x_pred, z_pred = model(x_all)
@@ -53,6 +54,7 @@ def get_results(run):
         data=cfg.data.name,
         preprocess=cfg.data.preprocess,
         kernel=cfg.data.kernel.type if cfg.data.preprocess == 'kernel' else None,
+        sigma=cfg.data.kernel.sigma if cfg.data.preprocess == 'kernel' else 0,
         dist_recon_weight = cfg.model.dist_reconstr_weights,
         model_type = cfg.model.type,
         dist_mape_test_test=dist_mape_test_test,

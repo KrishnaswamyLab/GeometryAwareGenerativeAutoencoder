@@ -96,6 +96,8 @@ class AEDist(BaseAE):
         pp=NonTransform(),
         eps=1e-10,
         lr=1e-3,
+        use_dist_mse_decay=False,
+        dist_mse_decay=0.1,
     ):
         super().__init__(dim, emb_dim, layer_widths=layer_widths, activation_fn=activation_fn, eps=eps, lr=lr)
         self.pp = pp
@@ -106,6 +108,8 @@ class AEDist(BaseAE):
         self.reconstr_weight = dist_reconstr_weights[1]
         self.dist_reconstr_weight = dist_reconstr_weights[2]
         assert self.dist_reg_weight + self.reconstr_weight + self.dist_reconstr_weight > 0.0
+        self.use_dist_mse_decay = use_dist_mse_decay
+        self.dist_mse_decay = dist_mse_decay
 
     def forward(self, x):
         z = self.encode(x)
@@ -140,12 +144,21 @@ class AEDist(BaseAE):
             loss += self.reconstr_weight * rl
         return loss
 
+    def dist_loss(self, dist_emb, dist_gt):
+        # dist_emb = self.pp.transform(dist_emb)
+        # dist_gt = self.pp.transform(dist_gt) # it is already transformed!
+        if self.use_dist_mse_decay:
+            return ((dist_emb - dist_gt)**2 * torch.exp(-self.dist_mse_decay * dist_gt)).mean()
+        else:
+            return torch.nn.functional.mse_loss(dist_emb, dist_gt)
+
     @torch.no_grad()
     def generate(self, x):
         return self.decode(self.encode(x))
     
 
 class VAEDist(AEDist):
+    # TODO add dist_mse_decay to VAE?
     def __init__(        
         self,
         dim,
