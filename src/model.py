@@ -146,7 +146,6 @@ class AEDist(BaseAE):
         layer_widths=[64, 64, 64],
         activation_fn=torch.nn.ReLU(),
         dist_reconstr_weights=[0.9, 0.1, 0.0],
-        dist_recon_topk_coords=None,
         preprocessor=NonTransform(),
         eps=1e-10,
         lr=1e-3,

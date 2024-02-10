@@ -1,25 +1,25 @@
-from data import train_valid_loader_from_pc, dataloader_from_pc
-from transformations import LogTransform, NonTransform, StandardScaler, MinMaxScaler, PowerTransformer, KernelTransform
-from model import AEDist, VAEDist
-import numpy as np
-import scipy.sparse
-from scipy.spatial.distance import pdist, squareform
-import pandas as pd
-import torch
-from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import EarlyStopping
-from procrustes import Procrustes
+import os
 import pickle
 import matplotlib.pyplot as plt
-from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
-from pytorch_lightning.callbacks import ModelCheckpoint
 import wandb
 import hydra
-import os
-from omegaconf import DictConfig, OmegaConf
 import yaml
+import numpy as np
+import pandas as pd
+import torch
+import scipy.sparse
+from scipy.spatial.distance import pdist, squareform
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
+from omegaconf import DictConfig, OmegaConf
 
+from data import train_valid_loader_from_pc, dataloader_from_pc
+from transformations import LogTransform, NonTransform, StandardScaler, \
+    MinMaxScaler, PowerTransformer, KernelTransform
+from model import AEDist, VAEDist
 from metrics import distance_distortion, mAP
+from procrustes import Procrustes
 
 def to_dense_array(X):
     if scipy.sparse.issparse(X):  # Check if X is a sparse matrix
@@ -32,7 +32,7 @@ def to_dense_array(X):
         raise TypeError("Input is neither a sparse matrix, a numpy array, nor a pandas DataFrame")
 
 @hydra.main(version_base=None, config_path='../conf', config_name='config')
-def main(cfg: DictConfig):
+def train_eval(cfg: DictConfig):
     if cfg.logger.use_wandb:
         config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
         run = wandb.init(
@@ -64,9 +64,10 @@ def main(cfg: DictConfig):
             monitor='val_loss',  # Model selection based on validation loss
             mode='min'  # Minimize validation loss
         )
+
     trainer = Trainer(
         logger=logger,
-        max_epochs=cfg.training.max_epochs, 
+        max_epochs=cfg.training.max_epochs,
         accelerator=cfg.training.accelerator,
         callbacks=[early_stopping,checkpoint_callback],
         log_every_n_steps=cfg.training.log_every_n_steps,
@@ -78,6 +79,8 @@ def main(cfg: DictConfig):
         val_dataloaders=valloader,
     )
 
+    ''' Evaluation ''' 
+    # TODO: should we have a test set for this? and color pts by train, val, test
     X_tensor = torch.from_numpy(X).float()
     x_hat, emb_z = model(X_tensor)
     x_hat = x_hat.cpu().detach().numpy()
@@ -92,7 +95,6 @@ def main(cfg: DictConfig):
     if cfg.logger.use_wandb:
         wandb.log({'procrustes_disparity_latent': disparity})
 
-    # colors = pd.read_csv(cfg.data.colorpath, index_col=0).iloc[:, 0].values if cfg.data.colorpath is not None else 'b'
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
 
     ax1.scatter(phate_coords[:,0], phate_coords[:,1], c=colors, s=1, cmap='Spectral')
@@ -145,20 +147,24 @@ def main(cfg: DictConfig):
         # TODO mAP score needs input graph.
         run.finish()
 
+
 def load_data(cfg, load_all=False):
     if load_all:
         data_path = os.path.join(cfg.data.root, cfg.data.name + "_all" + cfg.data.filetype)
     else:
         data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
     data = np.load(data_path, allow_pickle=True)
+
     # sanity check the data is not empty
-    assert 'data' in data.files and 'phate' in data.files and 'colors' in data.files and 'dist' in data.files, "Some required files are missing in the 'data' variable."
+    assert 'data' in data.files and 'phate' in data.files and 'colors' in data.files \
+        and 'dist' in data.files, "Some required files are missing in the 'data' variable."
+    
     X = data['data']
     phate_coords = data['phate']
     colors = data['colors']
     dist = data['dist']
-    assert X.shape[0] == phate_coords.shape[0] == colors.shape[0] == dist.shape[0], "The number of cells in the data, phate, and colors variables do not match."
-    emb_dim = phate_coords.shape[1]
+    assert X.shape[0] == phate_coords.shape[0] == colors.shape[0] == dist.shape[0], \
+        "The number of cells in the data, phate, and colors variables do not match."
 
     if cfg.training.match_potential:
         phate_D = dist
@@ -190,16 +196,17 @@ def load_data(cfg, load_all=False):
             'none': NonTransform(),
         }
     
-    pp = preprocessor_dict[cfg.data.preprocess]
+    preprocessor = preprocessor_dict[cfg.data.preprocess]
     shapes = phate_D.shape
-    phate_D = pp.fit_transform(phate_D.reshape(-1,1)).reshape(shapes)
+    phate_D = preprocessor.fit_transform(phate_D.reshape(-1,1)).reshape(shapes)
+
     if load_all:
         allloader = dataloader_from_pc(
         X, # <---- Pointcloud
         phate_D, # <---- Distance matrix to match
         batch_size=X.shape[0],
         shuffle=False,)
-        return allloader, None, X, phate_coords, colors, dist, pp
+        return allloader, None, X, phate_coords, colors, dist, preprocessor
     else:
         trainloader, valloader = train_valid_loader_from_pc(
             X, # <---- Pointcloud
@@ -208,15 +215,17 @@ def load_data(cfg, load_all=False):
             train_valid_split=cfg.training.train_valid_split,
             shuffle=cfg.training.shuffle,
             seed=cfg.training.seed,)
-        return trainloader, valloader, X, phate_coords, colors, dist, pp
+        return trainloader, valloader, X, phate_coords, colors, dist, preprocessor
 
-def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoint_path=None):
+
+def make_model(cfg, dim, emb_dim, preprocessor, dist_std, from_checkpoint=False, checkpoint_path=None):
 
     activation_dict = {
         'relu': torch.nn.ReLU(),
         'leaky_relu': torch.nn.LeakyReLU(),
         'sigmoid': torch.nn.Sigmoid()
     }
+
     if 'use_dist_mse_decay' in cfg.model: # for compatibility with old runs
         use_dist_mse_decay = cfg.model.use_dist_mse_decay
         dist_mse_decay = cfg.model.dist_mse_decay / dist_std
@@ -224,6 +233,7 @@ def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoin
         use_dist_mse_decay = False
         dist_mse_decay = 0.0
     activation_fn = activation_dict[cfg.model.activation]
+
     if cfg.model.type == 'ae':
         if from_checkpoint:
             model = AEDist.load_from_checkpoint(
@@ -233,9 +243,8 @@ def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoin
                 layer_widths=cfg.model.layer_widths,
                 activation_fn=activation_fn,
                 dist_reconstr_weights=cfg.model.dist_reconstr_weights,
-                pp=pp,
+                preprocessor=preprocessor,
                 lr=cfg.model.lr,
-                dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
                 use_dist_mse_decay=use_dist_mse_decay,
                 dist_mse_decay=dist_mse_decay,
             )
@@ -246,9 +255,8 @@ def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoin
                 layer_widths=cfg.model.layer_widths,
                 activation_fn=activation_fn,
                 dist_reconstr_weights=cfg.model.dist_reconstr_weights,
-                pp=pp,
+                preprocessor=preprocessor,
                 lr=cfg.model.lr,
-                dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
                 use_dist_mse_decay=use_dist_mse_decay,
                 dist_mse_decay=dist_mse_decay,
             )
@@ -263,7 +271,7 @@ def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoin
                 activation_fn=activation_fn,
                 dist_reconstr_weights=cfg.model.dist_reconstr_weights,
                 kl_weight=cfg.model.kl_weight,
-                pp=pp,
+                pp=preprocessor,
                 lr=cfg.model.lr,
                 dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
             )
@@ -275,7 +283,7 @@ def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoin
                 activation_fn=activation_fn,
                 dist_reconstr_weights=cfg.model.dist_reconstr_weights,
                 kl_weight=cfg.model.kl_weight,
-                pp=pp,
+                pp=preprocessor,
                 lr=cfg.model.lr,
                 dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
             )
@@ -288,7 +296,8 @@ def prep_data_model(cfg):
     trainloader, valloader, X, phate_coords, colors, dist, pp = load_data(cfg)
     dist_std = np.std(dist.flatten())
     model = make_model(cfg, X.shape[1], phate_coords.shape[1], pp, dist_std)
+
     return model, trainloader, valloader, X, phate_coords, colors, dist
 
 if __name__ == "__main__":
-    main()
+    train_eval()

@@ -19,27 +19,37 @@ class PointCloudDataset(torch.utils.data.Dataset):
         return len(self.pointcloud)
     
     def __getitem__(self, idx):
+        '''
+            Returns a batch of pointclouds and their distances
+            batch['x'] = [B, D]
+            batch['d'] = [B, B(B-1)/2] (upper triangular), assuming symmetric distance matrix
+        '''
         if self.shuffle:
-            batch_idxs = torch.randperm(len(self.pointcloud))[:self.batch_size]
+            # TODO: [fix] generate random permutation once and use it for all batches
+            batch_idxs = torch.randperm(len(self.pointcloud))[:self.batch_size] 
         else:
             batch_idxs = torch.arange(idx, idx+self.batch_size) % len(self.pointcloud)
         batch = {}
         batch['x'] = self.pointcloud[batch_idxs]
         dist_mat = self.distances[batch_idxs][:,batch_idxs]
-        batch['d'] = dist_mat[np.triu_indices(dist_mat.size(0), k=1)]    
+        batch['d'] = dist_mat[np.triu_indices(dist_mat.size(0), k=1)]
+
         return batch
 
 def dataloader_from_pc(pointcloud, distances, batch_size = 64, shuffle=True):
     dataset = PointCloudDataset(pointcloud, distances, batch_size, shuffle=shuffle)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=None, shuffle=shuffle)
+
     return dataloader
 
-def train_valid_loader_from_pc(
-    pointcloud, distances, batch_size = 64, train_valid_split = 0.8, shuffle=True, seed=42
-):
+def train_valid_loader_from_pc(pointcloud, distances, 
+                               batch_size = 64, train_valid_split = 0.8, 
+                               shuffle=True, seed=42):
     X = pointcloud
     D = distances
+    
     np.random.seed(seed)
+
     if shuffle:
         idxs = np.random.permutation(len(X))
         X = X[idxs]
@@ -49,16 +59,22 @@ def train_valid_loader_from_pc(
     X_test = X[split_idx:]
     D_train = D[:split_idx,:split_idx]
     D_test = D[split_idx:,split_idx:]
+    
     trainloader = dataloader_from_pc(X_train, D_train, batch_size)
     testloader = dataloader_from_pc(X_test, D_test, batch_size)
+
     return trainloader, testloader
 
-def train_valid_testloader_from_pc(
-    pointcloud, distances, batch_size = 64, train_test_split = 0.8, train_valid_split = 0.8, shuffle=True, seed=42
+def train_valid_test_loader_from_pc(
+    pointcloud, distances, 
+    batch_size = 64, train_test_split = 0.8, train_valid_split = 0.8, 
+    shuffle=True, seed=42
 ):
     X = pointcloud
     D = distances
+
     np.random.seed(seed)
+
     if shuffle:
         idxs = np.random.permutation(len(X))
         X = X[idxs]
@@ -71,7 +87,9 @@ def train_valid_testloader_from_pc(
     D_train = D[:split_val_idx,:split_val_idx]
     D_valid = D[split_val_idx:split_idx,split_val_idx:split_idx]
     D_test = D[split_idx:,split_idx:]
+
     trainloader = dataloader_from_pc(X_train, D_train, batch_size)
     validloader = dataloader_from_pc(X_valid, D_valid, batch_size)
     testloader = dataloader_from_pc(X_test, D_test, batch_size)
+
     return trainloader, validloader, testloader
