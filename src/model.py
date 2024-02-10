@@ -90,6 +90,54 @@ class BaseAE(pl.LightningModule, ABC):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         return optimizer
 
+
+class ProbabilityEncoder(torch.nn.Module):
+    '''
+        Encoder that matches probability distribution of the input data,
+        and the latent space.
+    '''
+    def __init__(self, dim, emb_dim, 
+                 layer_widths=[64, 32, 16], activation_fn=torch.nn.ReLU(),
+                 prob_method='Guassian'):
+        super().__init__()
+        self.dim = dim
+        self.emb_dim = emb_dim
+
+        self.encoder = MLP(dim, emb_dim, 
+                           layer_widths=layer_widths, 
+                           activation_fn=activation_fn)
+        
+        self.prob_method = prob_method
+
+    def forward(self, x):
+        z = self.encoder(x)
+        probs = self._transition_prob(z)
+
+        return probs
+
+    def _transition_prob(self, z):
+        ''' 
+            Construct the transition probability of the latent space: each row sum to 1.
+            z: [N, emb_dim]
+            output: [N, N]
+        '''
+        probs = None
+
+        if self.prob_method == 'gaussian':
+            raise NotImplementedError('Gaussian transition probability not implemented yet')
+        elif self.prob_method == 'tstudent':
+            dist = torch.nn.functional.cdist(z, z, p=2) ** 2 # [N, N]
+            numerator = (1.0 + dist) ** (-1.0)
+            row_sum = torch.sum(numerator, dim=1, keepdim=True)
+            probs = numerator / row_sum # [N, N]
+        elif self.prob_method == 'phate':
+            raise NotImplementedError('PHATE transition probability not implemented yet')
+        else:
+            raise ValueError('prob_method must be one of gaussian, tstudent, phate')
+
+        return probs
+        
+
 class AEDist(BaseAE):
     def __init__(
         self,
