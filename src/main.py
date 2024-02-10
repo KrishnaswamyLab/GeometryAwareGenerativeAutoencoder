@@ -79,8 +79,6 @@ def main(cfg: DictConfig):
         val_dataloaders=valloader,
     )
 
-    ''' Evaluation ''' 
-    # TODO: should we have a test set for this? and color pts by train, val, test
     X_tensor = torch.from_numpy(X).float()
     x_hat, emb_z = model(X_tensor)
     x_hat = x_hat.cpu().detach().numpy()
@@ -196,17 +194,16 @@ def load_data(cfg, load_all=False):
             'none': NonTransform(),
         }
     
-    preprocessor = preprocessor_dict[cfg.data.preprocess]
+    pp = preprocessor_dict[cfg.data.preprocess]
     shapes = phate_D.shape
-    phate_D = preprocessor.fit_transform(phate_D.reshape(-1,1)).reshape(shapes)
-
+    phate_D = pp.fit_transform(phate_D.reshape(-1,1)).reshape(shapes)
     if load_all:
         allloader = dataloader_from_pc(
         X, # <---- Pointcloud
         phate_D, # <---- Distance matrix to match
         batch_size=X.shape[0],
         shuffle=False,)
-        return allloader, None, X, phate_coords, colors, dist, preprocessor
+        return allloader, None, X, phate_coords, colors, dist, pp
     else:
         trainloader, valloader = train_valid_loader_from_pc(
             X, # <---- Pointcloud
@@ -215,10 +212,9 @@ def load_data(cfg, load_all=False):
             train_valid_split=cfg.training.train_valid_split,
             shuffle=cfg.training.shuffle,
             seed=cfg.training.seed,)
-        return trainloader, valloader, X, phate_coords, colors, dist, preprocessor
+        return trainloader, valloader, X, phate_coords, colors, dist, pp
 
-
-def make_model(cfg, dim, emb_dim, preprocessor, dist_std, from_checkpoint=False, checkpoint_path=None):
+def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoint_path=None):
 
     activation_dict = {
         'relu': torch.nn.ReLU(),
@@ -243,8 +239,9 @@ def make_model(cfg, dim, emb_dim, preprocessor, dist_std, from_checkpoint=False,
                 layer_widths=cfg.model.layer_widths,
                 activation_fn=activation_fn,
                 dist_reconstr_weights=cfg.model.dist_reconstr_weights,
-                preprocessor=preprocessor,
+                pp=pp,
                 lr=cfg.model.lr,
+                dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
                 use_dist_mse_decay=use_dist_mse_decay,
                 dist_mse_decay=dist_mse_decay,
             )
@@ -255,8 +252,9 @@ def make_model(cfg, dim, emb_dim, preprocessor, dist_std, from_checkpoint=False,
                 layer_widths=cfg.model.layer_widths,
                 activation_fn=activation_fn,
                 dist_reconstr_weights=cfg.model.dist_reconstr_weights,
-                preprocessor=preprocessor,
+                pp=pp,
                 lr=cfg.model.lr,
+                dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
                 use_dist_mse_decay=use_dist_mse_decay,
                 dist_mse_decay=dist_mse_decay,
             )
@@ -271,7 +269,7 @@ def make_model(cfg, dim, emb_dim, preprocessor, dist_std, from_checkpoint=False,
                 activation_fn=activation_fn,
                 dist_reconstr_weights=cfg.model.dist_reconstr_weights,
                 kl_weight=cfg.model.kl_weight,
-                pp=preprocessor,
+                pp=pp,
                 lr=cfg.model.lr,
                 dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
             )
@@ -283,7 +281,7 @@ def make_model(cfg, dim, emb_dim, preprocessor, dist_std, from_checkpoint=False,
                 activation_fn=activation_fn,
                 dist_reconstr_weights=cfg.model.dist_reconstr_weights,
                 kl_weight=cfg.model.kl_weight,
-                pp=preprocessor,
+                pp=pp,
                 lr=cfg.model.lr,
                 dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
             )
