@@ -32,7 +32,7 @@ def to_dense_array(X):
         raise TypeError("Input is neither a sparse matrix, a numpy array, nor a pandas DataFrame")
 
 @hydra.main(version_base=None, config_path='../conf', config_name='config')
-def train_eval(cfg: DictConfig):
+def main(cfg: DictConfig):
     if cfg.logger.use_wandb:
         config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
         run = wandb.init(
@@ -300,4 +300,4 @@ def prep_data_model(cfg):
     return model, trainloader, valloader, X, phate_coords, colors, dist
 
 if __name__ == "__main__":
-    train_eval()
+    main()

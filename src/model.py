@@ -182,7 +182,7 @@ class AEDist(BaseAE):
 
             dl = self.dist_loss(dist_emb, dist_gt)          
             self.log('dist_loss', dl, prog_bar=True, on_epoch=True)
-            loss += self.dist_reg_weight * dl
+            loss += self.dist_weight * dl
         if self.reconstr_weight > 0.0:
             rl = torch.nn.functional.mse_loss(x, x_hat)
             self.log('reconstr_loss', rl, prog_bar=True, on_epoch=True)
