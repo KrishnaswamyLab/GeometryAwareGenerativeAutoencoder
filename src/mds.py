@@ -259,3 +259,112 @@ def embed_MDS(
     # re-orient to classic
     _, Y, _ = scipy.spatial.procrustes(Y_classic, Y)
     return Y
+
+def embed_MDS_dist_mat(
+    X_dist,
+    ndim=2,
+    how="metric",
+    distance_metric="euclidean",
+    solver="sgd",
+    n_jobs=1,
+    seed=None,
+    verbose=0,
+):
+    """Performs classic, metric, and non-metric MDS
+
+    Metric MDS is initialized using classic MDS,
+    non-metric MDS is initialized using metric MDS.
+
+    Parameters
+    ----------
+    X: ndarray [n_samples, n_features]
+        2 dimensional input data array with n_samples
+
+    n_dim : int, optional, default: 2
+        number of dimensions in which the data will be embedded
+
+    how : string, optional, default: 'classic'
+        choose from ['classic', 'metric', 'nonmetric']
+        which MDS algorithm is used for dimensionality reduction
+
+    distance_metric : string, optional, default: 'euclidean'
+        choose from ['cosine', 'euclidean']
+        distance metric for MDS
+
+    solver : {'sgd', 'smacof'}, optional (default: 'sgd')
+        which solver to use for metric MDS. SGD is substantially faster,
+        but produces slightly less optimal results. Note that SMACOF was used
+        for all figures in the PHATE paper.
+
+    n_jobs : integer, optional, default: 1
+        The number of jobs to use for the computation.
+        If -1 all CPUs are used. If 1 is given, no parallel computing code is
+        used at all, which is useful for debugging.
+        For n_jobs below -1, (n_cpus + 1 + n_jobs) are used. Thus for
+        n_jobs = -2, all CPUs but one are used
+
+    seed: integer or numpy.RandomState, optional
+        The generator used to initialize SMACOF (metric, nonmetric) MDS
+        If an integer is given, it fixes the seed
+        Defaults to the global numpy random number generator
+
+    Returns
+    -------
+    Y : ndarray [n_samples, n_dim]
+        low dimensional embedding of X using MDS
+    """
+
+    if how not in ["classic", "metric", "nonmetric"]:
+        raise ValueError(
+            "Allowable 'how' values for MDS: 'classic', "
+            "'metric', or 'nonmetric'. "
+            "'{}' was passed.".format(how)
+        )
+    if solver not in ["sgd", "smacof"]:
+        raise ValueError(
+            "Allowable 'solver' values for MDS: 'sgd' or "
+            "'smacof'. "
+            "'{}' was passed.".format(solver)
+        )
+
+    # MDS embeddings, each gives a different output.
+    # X_dist = squareform(pdist(X, distance_metric))
+
+    # initialize all by CMDS
+    Y_classic = classic(X_dist, n_components=ndim, random_state=seed)
+    if how == "classic":
+        return Y_classic
+
+    # metric is next fastest
+    if solver == "sgd":
+        try:
+            # use sgd2 if it is available
+            Y = sgd(X_dist, n_components=ndim, random_state=seed, init=Y_classic)
+            if np.any(~np.isfinite(Y)):
+                _logger.warning("Using SMACOF because SGD returned NaN")
+                raise NotImplementedError
+        except NotImplementedError:
+            # sgd2 currently only supports n_components==2
+            Y = smacof(
+                X_dist,
+                n_components=ndim,
+                random_state=seed,
+                init=Y_classic,
+                metric=True,
+            )
+    elif solver == "smacof":
+        Y = smacof(
+            X_dist, n_components=ndim, random_state=seed, init=Y_classic, metric=True
+        )
+    else:
+        raise RuntimeError
+    if how == "metric":
+        # re-orient to classic
+        _, Y, _ = scipy.spatial.procrustes(Y_classic, Y)
+        return Y
+
+    # nonmetric is slowest
+    Y = smacof(X_dist, n_components=ndim, random_state=seed, init=Y, metric=False)
+    # re-orient to classic
+    _, Y, _ = scipy.spatial.procrustes(Y_classic, Y)
+    return Y

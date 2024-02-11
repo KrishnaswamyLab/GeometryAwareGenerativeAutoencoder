@@ -9,18 +9,27 @@ from abc import ABC, abstractmethod
 from transformations import NonTransform
 
 class MLP(torch.nn.Module):
-    def __init__(self, dim, out_dim=None, layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU()):
+    def __init__(self, dim, out_dim=None, layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), dropout=0.0, batch_norm=False):
         super().__init__()
         if out_dim is None:
             out_dim = dim // 2
         if len(layer_widths) < 2:
             raise ValueError("layer_widths list must contain at least 2 elements")
 
-        layers = [torch.nn.Linear(dim, layer_widths[0]), activation_fn]
+        layers = []
+        for i, width in enumerate(layer_widths):
+            if i == 0:  # First layer, input dimension to first layer width
+                layers.append(torch.nn.Linear(dim, width))
+            else:  # Subsequent layers, previous layer width to current layer width
+                layers.append(torch.nn.Linear(layer_widths[i-1], width))
 
-        for i in range(1, len(layer_widths)):
-            layers.append(torch.nn.Linear(layer_widths[i-1], layer_widths[i]))
+            if batch_norm:
+                layers.append(torch.nn.BatchNorm1d(width))
+
             layers.append(activation_fn)
+
+            if dropout > 0:
+                layers.append(torch.nn.Dropout(dropout))
 
         layers.append(torch.nn.Linear(layer_widths[-1], out_dim))
 
@@ -32,18 +41,20 @@ class MLP(torch.nn.Module):
 class BaseAE(pl.LightningModule, ABC):
     def __init__(self, dim, emb_dim, 
                  layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), 
-                 eps=1e-10, lr=1e-3):
+                 eps=1e-10, lr=1e-3, weight_decay=0.0, dropout=0.0, batch_norm=False):
         super().__init__()
         self.dim = dim
         self.emb_dim = emb_dim
         self.encoder = MLP(dim, emb_dim, 
                            layer_widths=layer_widths, 
-                           activation_fn=activation_fn)
+                           activation_fn=activation_fn, dropout=dropout, batch_norm=batch_norm)
         self.decoder = MLP(emb_dim, dim, 
                            layer_widths=layer_widths[::-1], 
-                           activation_fn=activation_fn) # reverse the widths for decoder
+                           activation_fn=activation_fn, dropout=dropout, batch_norm=batch_norm) # reverse the widths for decoder
         self.eps = eps
         self.lr = lr
+        self.weight_decay = weight_decay
+        self.dropout = dropout
 
     def encode(self, x):
         return self.encoder(x)
@@ -87,7 +98,7 @@ class BaseAE(pl.LightningModule, ABC):
         return loss
     
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         return optimizer
 
 
@@ -150,10 +161,13 @@ class AEDist(BaseAE):
         pp=NonTransform(),
         eps=1e-10,
         lr=1e-3,
+        weight_decay=0.0,
+        dropout=0.0,
+        batch_norm=False,
         use_dist_mse_decay=False,
         dist_mse_decay=0.1,
     ):
-        super().__init__(dim, emb_dim, layer_widths=layer_widths, activation_fn=activation_fn, eps=eps, lr=lr)
+        super().__init__(dim, emb_dim, layer_widths=layer_widths, activation_fn=activation_fn, eps=eps, lr=lr, weight_decay=weight_decay, dropout=dropout, batch_norm=batch_norm)
         self.pp = pp
         if dist_recon_topk_coords is None or dist_recon_topk_coords > dim or dist_recon_topk_coords <= 0:
             dist_recon_topk_coords = dim
@@ -164,6 +178,8 @@ class AEDist(BaseAE):
         assert self.dist_reg_weight + self.reconstr_weight + self.dist_reconstr_weight > 0.0
         self.use_dist_mse_decay = use_dist_mse_decay
         self.dist_mse_decay = dist_mse_decay
+        if self.dist_mse_decay == 0.0:
+            self.use_dist_mse_decay = False
 
     def forward(self, x):
         z = self.encode(x)
