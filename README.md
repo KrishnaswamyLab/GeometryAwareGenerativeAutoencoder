@@ -27,3 +27,15 @@ cd src
 python main.py logger.use_wandb=False data.file_type=h5ad data.require_phate=False data.datapath=../data/BMMC_myeloid.h5ad
 ```
 - check the results: [notebooks/BMMC_myeloid_result.ipynb](notebooks/BMMC_myeloid_result.ipynb)
+
+## Train Probability AE
+- generate data
+```sh
+# example with swiss roll data. The data will be saved in the '../data' folder.
+python data_script.py --data swiss_roll
+```
+- train the model
+```sh
+# example with overwriting the default parameters
+python train_probae.py training.accelerator={cpu} training.max_epochs=5000
+```
