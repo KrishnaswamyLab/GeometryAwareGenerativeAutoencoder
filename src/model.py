@@ -23,7 +23,6 @@ class MLP(torch.nn.Module):
             layers.append(activation_fn)
 
         layers.append(torch.nn.Linear(layer_widths[-1], out_dim))
-
         self.net = torch.nn.Sequential(*layers)
 
     def forward(self, x):
@@ -90,53 +89,94 @@ class BaseAE(pl.LightningModule, ABC):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         return optimizer
 
-
-class ProbabilityEncoder(torch.nn.Module):
-    '''
-        Encoder that matches probability distribution of the input data,
-        and the latent space.
-    '''
+    
+class AEProb(torch.nn.Module):
     def __init__(self, dim, emb_dim, 
-                 layer_widths=[64, 32, 16], activation_fn=torch.nn.ReLU(),
-                 prob_method='Guassian'):
+                 layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), 
+                 prob_method='tstudent', 
+                 dist_reconstr_weights=[0.9, 0.1],
+                 eps=1e-8):
         super().__init__()
         self.dim = dim
         self.emb_dim = emb_dim
+        self.prob_method = prob_method
+        self.dist_reconstr_weights = dist_reconstr_weights
 
         self.encoder = MLP(dim, emb_dim, 
                            layer_widths=layer_widths, 
                            activation_fn=activation_fn)
+        self.decoder = MLP(emb_dim, dim, 
+                           layer_widths=layer_widths[::-1], 
+                           activation_fn=activation_fn) # reverse the widths for decoder
         
-        self.prob_method = prob_method
+        
+        self.eps = eps
 
+    def encode(self, x):
+        return self.encoder(x)
+    
+    def decode(self, x):
+        return self.decoder(x)
+    
     def forward(self, x):
-        z = self.encoder(x)
-        probs = self._transition_prob(z)
+        '''
+            Returns:
+                x_hat: [B, D]
+                z: [B, emb_dim]
+        '''
+        z = self.encode(x)
+        return [self.decode(z), z]
+    
+    def decoder_loss(self, x, x_hat):
+        '''
+            x: [B, D]
+            x_hat: [B, D]
+        '''
+        return torch.nn.functional.mse_loss(x, x_hat)
+    
+    def encoder_loss(self, gt_matrix, pred_matrix, type='kl'):
+        '''
+            Inputs:
+                gt_matrix: [N, N] transition probability matrix
+                pred_matrix: [N, N] transition probability matrix
+                type: str, one of 'kl', 'mse'
+            Returns:
+                loss: scalar
+        '''
+        loss = 0.0
+        if type == 'kl':
+            log_pred_mat = torch.log(pred_matrix + self.eps)
+            loss = torch.nn.functional.kl_div(log_pred_mat, 
+                                              (gt_matrix + self.eps), 
+                                              reduction='batchmean',
+                                              log_target=False)
+        elif type == 'mse':
+            loss = torch.nn.functional.mse_loss(gt_matrix, pred_matrix)
 
-        return probs
-
-    def _transition_prob(self, z):
+        return loss
+    
+    def compute_prob_matrix(self, z):
         ''' 
             Construct the transition probability of the latent space: each row sum to 1.
             z: [N, emb_dim]
             output: [N, N]
         '''
         probs = None
-
         if self.prob_method == 'gaussian':
             raise NotImplementedError('Gaussian transition probability not implemented yet')
         elif self.prob_method == 'tstudent':
-            dist = torch.nn.functional.cdist(z, z, p=2) ** 2 # [N, N]
+            dist = torch.cdist(z, z, p=2) ** 2 # [N, N]
             numerator = (1.0 + dist) ** (-1.0)
             row_sum = torch.sum(numerator, dim=1, keepdim=True)
             probs = numerator / row_sum # [N, N]
+            #print('check probs:', probs.shape, probs.sum(dim=1)[:10])
         elif self.prob_method == 'phate':
             raise NotImplementedError('PHATE transition probability not implemented yet')
         else:
             raise ValueError('prob_method must be one of gaussian, tstudent, phate')
 
         return probs
-        
+    
 
 class AEDist(BaseAE):
     def __init__(
