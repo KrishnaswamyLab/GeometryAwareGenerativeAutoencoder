@@ -71,29 +71,29 @@ class BaseAE(pl.LightningModule, ABC):
         pass
 
     @abstractmethod
-    def loss_function(self, input, output):
+    def loss_function(self, input, output, stage):
         """output are the outputs of forward method"""
         pass
 
-    def step(self, batch, batch_idx):
+    def step(self, batch, batch_idx, stage):
         x = batch['x']
         d = batch['d']
         input = [x, d]
-        loss = self.loss_function(input, self.forward(x))
+        loss = self.loss_function(input, self.forward(x), stage)
         return loss
 
     def training_step(self, batch, batch_idx):
-        loss = self.step(batch, batch_idx)
+        loss = self.step(batch, batch_idx, 'train')
         self.log('train_loss', loss, prog_bar=True, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss = self.step(batch, batch_idx)
+        loss = self.step(batch, batch_idx, 'validation')
         self.log('val_loss', loss, prog_bar=True, on_epoch=True)
         return loss
 
     def test_step(self, batch, batch_idx):
-        loss = self.step(batch, batch_idx)
+        loss = self.step(batch, batch_idx, 'test')
         self.log('test_loss', loss, prog_bar=True, on_epoch=True)
         return loss
     
@@ -166,6 +166,8 @@ class AEDist(BaseAE):
         batch_norm=False,
         use_dist_mse_decay=False,
         dist_mse_decay=0.1,
+        cycle_weight=0.,
+        cycle_dist_weight=0.,
     ):
         super().__init__(dim, emb_dim, layer_widths=layer_widths, activation_fn=activation_fn, eps=eps, lr=lr, weight_decay=weight_decay, dropout=dropout, batch_norm=batch_norm)
         self.pp = pp
@@ -180,12 +182,14 @@ class AEDist(BaseAE):
         self.dist_mse_decay = dist_mse_decay
         if self.dist_mse_decay == 0.0:
             self.use_dist_mse_decay = False
+        self.cycle_weight = cycle_weight
+        self.cycle_dist_weight = cycle_dist_weight
 
     def forward(self, x):
         z = self.encode(x)
         return [self.decode(z), z]
 
-    def loss_function(self, input, output):
+    def loss_function(self, input, output, stage):
         """output are the outputs of forward method"""
         # x, x_hat: [B, D]; z: [B, emb_dim]; gt_dist: [B, (B-1)/2]
         loss = 0.0
@@ -197,8 +201,12 @@ class AEDist(BaseAE):
             dist_emb = torch.nn.functional.pdist(z) # [B, (B-1)/2] 
             dist_emb = self.pp.transform(dist_emb) # assume the ground truth dist is transformed.
             dl = self.dist_loss(dist_emb, dist_gt)
-            self.log('dist_loss', dl, prog_bar=True, on_epoch=True)
+            self.log(f'{stage}/dist_loss', dl, prog_bar=True, on_epoch=True)
             loss += self.dist_reg_weight * dl
+            eps = 1e-10
+            acc = (1-(torch.abs(dist_gt - dist_emb + eps) / (dist_gt + eps)).mean())
+            self.log(f'{stage}/dist_accuracy', acc, prog_bar=True, on_epoch=True)
+
         if self.dist_reconstr_weight > 0.0:
             # only use top k dimensions for distance, to save computation. 
             # This makes sense only if the input is PCA loadings.
@@ -208,11 +216,11 @@ class AEDist(BaseAE):
             dist_orig = self.pp.transform(dist_orig)
             dist_reconstr = self.pp.transform(dist_reconstr)
             drl = self.dist_loss(dist_reconstr, dist_orig)
-            self.log('dist_reconstr_loss', drl, prog_bar=True, on_epoch=True)
+            self.log(f'{stage}/dist_reconstr_loss', drl, prog_bar=True, on_epoch=True)
             loss += self.dist_reconstr_weight * drl
         if self.reconstr_weight > 0.0:
             rl = torch.nn.functional.mse_loss(x, x_hat)
-            self.log('reconstr_loss', rl, prog_bar=True, on_epoch=True)
+            self.log(f'{stage}/reconstr_loss', rl, prog_bar=True, on_epoch=True)
             loss += self.reconstr_weight * rl
 
         return loss
@@ -224,6 +232,27 @@ class AEDist(BaseAE):
             return ((dist_emb - dist_gt)**2 * torch.exp(-self.dist_mse_decay * dist_gt)).mean()
         else:
             return torch.nn.functional.mse_loss(dist_emb, dist_gt)
+
+    def step(self, batch, batch_idx, stage):
+        x = batch['x']
+        d = batch['d']
+        input = [x, d]
+        output = self.forward(x)
+        loss = self.loss_function(input, output, stage)
+        if (self.cycle_weight + self.cycle_dist_weight) > 0.0:
+            xh, z = output
+            z2 = self.encode(xh)
+            if self.cycle_weight > 0.0:
+                l2 = torch.nn.functional.mse_loss(z, z2)
+                self.log(f'{stage}/cycle_loss', l2, prog_bar=True, on_epoch=True)
+                loss += self.cycle_weight * l2
+            if self.cycle_dist_weight > 0.0:
+                dist_emb = torch.nn.functional.pdist(z) # [B, (B-1)/2] 
+                dist_emb = self.pp.transform(dist_emb) # assume the ground truth dist is transformed.
+                dl = self.dist_loss(dist_emb, d)
+                self.log(f'{stage}/dist_loss', dl, prog_bar=True, on_epoch=True)
+                loss += self.dist_reg_weight * dl
+        return loss
 
     @torch.no_grad()
     def generate(self, x):
