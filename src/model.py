@@ -9,18 +9,27 @@ from abc import ABC, abstractmethod
 from transformations import NonTransform
 
 class MLP(torch.nn.Module):
-    def __init__(self, dim, out_dim=None, layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU()):
+    def __init__(self, dim, out_dim=None, layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), dropout=0.0, batch_norm=False):
         super().__init__()
         if out_dim is None:
             out_dim = dim // 2
         if len(layer_widths) < 2:
             raise ValueError("layer_widths list must contain at least 2 elements")
 
-        layers = [torch.nn.Linear(dim, layer_widths[0]), activation_fn]
+        layers = []
+        for i, width in enumerate(layer_widths):
+            if i == 0:  # First layer, input dimension to first layer width
+                layers.append(torch.nn.Linear(dim, width))
+            else:  # Subsequent layers, previous layer width to current layer width
+                layers.append(torch.nn.Linear(layer_widths[i-1], width))
 
-        for i in range(1, len(layer_widths)):
-            layers.append(torch.nn.Linear(layer_widths[i-1], layer_widths[i]))
+            if batch_norm:
+                layers.append(torch.nn.BatchNorm1d(width))
+
             layers.append(activation_fn)
+
+            if dropout > 0:
+                layers.append(torch.nn.Dropout(dropout))
 
         layers.append(torch.nn.Linear(layer_widths[-1], out_dim))
         self.net = torch.nn.Sequential(*layers)
@@ -31,18 +40,20 @@ class MLP(torch.nn.Module):
 class BaseAE(pl.LightningModule, ABC):
     def __init__(self, dim, emb_dim, 
                  layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), 
-                 eps=1e-10, lr=1e-3):
+                 eps=1e-10, lr=1e-3, weight_decay=0.0, dropout=0.0, batch_norm=False):
         super().__init__()
         self.dim = dim
         self.emb_dim = emb_dim
         self.encoder = MLP(dim, emb_dim, 
                            layer_widths=layer_widths, 
-                           activation_fn=activation_fn)
+                           activation_fn=activation_fn, dropout=dropout, batch_norm=batch_norm)
         self.decoder = MLP(emb_dim, dim, 
                            layer_widths=layer_widths[::-1], 
-                           activation_fn=activation_fn) # reverse the widths for decoder
+                           activation_fn=activation_fn, dropout=dropout, batch_norm=batch_norm) # reverse the widths for decoder
         self.eps = eps
         self.lr = lr
+        self.weight_decay = weight_decay
+        self.dropout = dropout
 
     def encode(self, x):
         return self.encoder(x)
@@ -86,7 +97,7 @@ class BaseAE(pl.LightningModule, ABC):
         return loss
     
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         return optimizer
 
     
@@ -186,23 +197,29 @@ class AEDist(BaseAE):
         layer_widths=[64, 64, 64],
         activation_fn=torch.nn.ReLU(),
         dist_reconstr_weights=[0.9, 0.1, 0.0],
-        preprocessor=NonTransform(),
+        dist_recon_topk_coords=None,
+        pp=NonTransform(),
         eps=1e-10,
         lr=1e-3,
+        weight_decay=0.0,
+        dropout=0.0,
+        batch_norm=False,
         use_dist_mse_decay=False,
         dist_mse_decay=0.1,
     ):
-        super().__init__(dim, emb_dim, 
-                         layer_widths=layer_widths, activation_fn=activation_fn, 
-                         eps=eps, lr=lr)
-        self.preprocessor = preprocessor
-        
-        self.dist_weight = dist_reconstr_weights[0]
+        super().__init__(dim, emb_dim, layer_widths=layer_widths, activation_fn=activation_fn, eps=eps, lr=lr, weight_decay=weight_decay, dropout=dropout, batch_norm=batch_norm)
+        self.pp = pp
+        if dist_recon_topk_coords is None or dist_recon_topk_coords > dim or dist_recon_topk_coords <= 0:
+            dist_recon_topk_coords = dim
+        self.dist_recon_topk_coords = dist_recon_topk_coords
+        self.dist_reg_weight = dist_reconstr_weights[0]
         self.reconstr_weight = dist_reconstr_weights[1]
-        assert self.dist_weight + self.reconstr_weight > 0.0
-        
+        self.dist_reconstr_weight = dist_reconstr_weights[2]
+        assert self.dist_reg_weight + self.reconstr_weight + self.dist_reconstr_weight > 0.0
         self.use_dist_mse_decay = use_dist_mse_decay
         self.dist_mse_decay = dist_mse_decay
+        if self.dist_mse_decay == 0.0:
+            self.use_dist_mse_decay = False
 
     def forward(self, x):
         z = self.encode(x)
@@ -215,14 +232,24 @@ class AEDist(BaseAE):
         x_hat, z = output
         x, dist_gt = input
 
-        if self.dist_weight > 0.0:
+        if self.dist_reg_weight > 0.0:
+            assert len(input) == 2
             dist_emb = torch.nn.functional.pdist(z) # [B, (B-1)/2] 
-            if self.preprocessor is not None:
-                dist_emb = self.preprocessor.transform(dist_emb)
-
-            dl = self.dist_loss(dist_emb, dist_gt)          
+            dist_emb = self.pp.transform(dist_emb) # assume the ground truth dist is transformed.
+            dl = self.dist_loss(dist_emb, dist_gt)
             self.log('dist_loss', dl, prog_bar=True, on_epoch=True)
-            loss += self.dist_weight * dl
+            loss += self.dist_reg_weight * dl
+        if self.dist_reconstr_weight > 0.0:
+            # only use top k dimensions for distance, to save computation. 
+            # This makes sense only if the input is PCA loadings.
+            # TODO compute and transform the original distance before training, to speed up!
+            dist_orig = torch.nn.functional.pdist(x[:, :self.dist_recon_topk_coords])
+            dist_reconstr = torch.nn.functional.pdist(x_hat[:, :self.dist_recon_topk_coords])
+            dist_orig = self.pp.transform(dist_orig)
+            dist_reconstr = self.pp.transform(dist_reconstr)
+            drl = self.dist_loss(dist_reconstr, dist_orig)
+            self.log('dist_reconstr_loss', drl, prog_bar=True, on_epoch=True)
+            loss += self.dist_reconstr_weight * drl
         if self.reconstr_weight > 0.0:
             rl = torch.nn.functional.mse_loss(x, x_hat)
             self.log('reconstr_loss', rl, prog_bar=True, on_epoch=True)
@@ -231,6 +258,8 @@ class AEDist(BaseAE):
         return loss
 
     def dist_loss(self, dist_emb, dist_gt):
+        # dist_emb = self.pp.transform(dist_emb)
+        # dist_gt = self.pp.transform(dist_gt) # it is already transformed!
         if self.use_dist_mse_decay:
             return ((dist_emb - dist_gt)**2 * torch.exp(-self.dist_mse_decay * dist_gt)).mean()
         else:

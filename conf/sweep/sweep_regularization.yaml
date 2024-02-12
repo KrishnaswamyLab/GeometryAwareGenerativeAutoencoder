@@ -1,0 +1,33 @@
+project: dmae
+program: main.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val_loss
+  goal: minimize
+parameters:
+  model.type:
+    values: ['ae']
+  model.lr:
+    values: [0.001]
+  model.weight_decay:
+    values: [0,0.0001,0.001]
+  model.dropout:
+    values: [0,0.5,0.2]
+  model.batch_norm:
+    values: [true,false]
+  model.layer_widths:
+    values: [[256,128,64]]
+  model.dist_reconstr_weights:
+    values: [[0.9,0.1,0.]]
+  model.use_dist_mse_decay:
+    values: [true]
+  model.dist_mse_decay:
+    values: [0,0.1,0.2,0.5]
+  data.name:
+    values: ['sea_ad_gaba', 'eb_subset']
+  training.match_potential:
+    values: [True]
