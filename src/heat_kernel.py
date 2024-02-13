@@ -11,7 +11,6 @@ class HeatKernelCheb:
     """
 
     def __init__(self, tau: float, order: int, knn: int):
-        self.data_np = data.detach().cpu().numpy()
         self.tau = tau
         self.order = order
         self.knn = knn
