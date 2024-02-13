@@ -6,16 +6,18 @@ import typing as T
 from scipy.special import ive
 import pygsp
 
-class HeatKernelCheb():
-    """Approximation of the heat kernel. The class has a callable method that computes 
+
+class HeatKernelCheb:
+    """Approximation of the heat kernel. The class has a callable method that computes
     the heat kernel for a given dataset.
     """
+
     def __init__(self, tau: float, order: int, knn: int):
         self.data_np = data.detach().cpu().numpy()
         self.tau = tau
         self.order = order
         self.knn = knn
-        
+
     def __call__(self, data: torch.Tensor):
         """AI is creating summary for __call__
 
@@ -38,8 +40,9 @@ class HeatKernelCheb():
         heat_kernel = (heat_kernel + heat_kernel.T) / 2
         return torch.tensor(heat_kernel).to(device)
 
+
 # TODO: we could use this implementation, but for now it does
-    # not seem to be necessary.
+# not seem to be necessary.
 def expm_multiply(
     L: torch.Tensor,
     X: torch.Tensor,
@@ -69,11 +72,10 @@ def expm_multiply(
 
 
 def compute_chebychev_coeff_all(eigval, tau, K):
-
     return 2.0 * ive(np.arange(0, K + 1), -tau * eigval)
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     data = torch.randn(100, 5)
     heat_op = HeatKernelCheb(tau=1.0, order=10, knn=5)
     heat_kernel = heat_op(data)
@@ -83,4 +85,3 @@ if __name__ == "__main__":
 
     # test if positive
     assert torch.all(heat_kernel >= 0)
-
