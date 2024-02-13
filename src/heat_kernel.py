@@ -1,5 +1,3 @@
-# heat kernel construction from a set of data points.
-
 import torch
 import numpy as np
 import typing as T
