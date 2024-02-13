@@ -18,7 +18,7 @@ from procrustes import Procrustes
 from utils.early_stop import EarlyStopping
 from visualize import visualize
 
-@hydra.main(version_base=None, config_path='../conf', config_name='config')
+@hydra.main(version_base=None, config_path='../conf', config_name='probae_config')
 def train_eval(cfg: DictConfig):
     # if cfg.logger.use_wandb:
     #     config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
@@ -84,7 +84,7 @@ def train_eval(cfg: DictConfig):
     ''' Training '''
     device = cfg.training.accelerator
     epoch = cfg.training.max_epochs
-    batch_size = cfg.training.batch_size
+
     lr = cfg.training.lr
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     early_stopper = EarlyStopping(mode='min',

@@ -7,7 +7,7 @@ import torch.nn as nn
 import pytorch_lightning as pl
 from abc import ABC, abstractmethod
 from transformations import NonTransform
-from src.heat_kernel import HeatKernelCheb
+from heat_kernel import HeatKernelCheb
 
 class MLP(torch.nn.Module):
     def __init__(self, dim, out_dim=None, layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), dropout=0.0, batch_norm=False):

@@ -1,0 +1,52 @@
+data:
+  root: '../data'
+  filetype: '.npz'
+  name: 'swiss_roll'
+  preprocess: 'none'
+  kernel:
+    type: 'gaussian'
+    sigma: 1.0
+    epsilon: 1.0
+    alpha: 10
+    use_std: true
+logger:
+  entity: danqiliao
+  project: dmae
+  tags:
+  - default
+  use_wandb: true
+model:
+  activation: relu
+  dist_recon_topk_coords: 0
+  dist_reconstr_weights:
+  - 0.9
+  - 0.1
+  - 0
+  layer_widths:
+  - 256
+  - 128
+  - 64
+  log_dist: true
+  type: ae
+  prob_method: 'powered_tstudent'
+path:
+  log: ''
+  model: model
+  out_data: ''
+  plots: ''
+  procrustes: procrustes
+  root: ../results/
+  save: false
+training:
+  accelerator: cpu
+  batch_size: 256
+  log_every_n_steps: 100
+  match_potential: false
+  max_epochs: 5000
+  monitor: val_loss
+  patience: 50
+  seed: 2024
+  shuffle: true
+  train_test_split: 0.8
+  train_valid_split: 0.8
+  lr: 1e-3
