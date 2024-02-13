@@ -137,7 +137,9 @@ class RowStochasticDataset(torch.utils.data.Dataset):
             self.row_stochastic_matrix = row_stochastic_matrix
             self.phate_embed = phate_embed
         else:
-            self.row_stochastic_matrix, self.phate_embed = self._set_row_stochastic_matrix()
+            self.row_stochastic_matrix, self.phate_embed, self.phate_op = self._set_row_stochastic_matrix()
+        
+        self.t = self.phate_op._find_optimal_t(t_max=100)
     
     def __len__(self) -> int:
         return len(self.X)
@@ -175,7 +177,7 @@ class RowStochasticDataset(torch.utils.data.Dataset):
             print('checking row sum:', np.allclose(row_stochastic_matrix.sum(axis=1), 1))
             print('row sum: ', row_stochastic_matrix.sum(axis=1)[:20])
 
-            return row_stochastic_matrix, phate_embed
+            return row_stochastic_matrix, phate_embed, phate_op
         else:
             raise ValueError(f"dist_type {self.dist_type} not supported")
         

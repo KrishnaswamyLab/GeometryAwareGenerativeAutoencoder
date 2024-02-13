@@ -166,7 +166,7 @@ class AEProb(torch.nn.Module):
 
         return loss
     
-    def compute_prob_matrix(self, z):
+    def compute_prob_matrix(self, z, t: int=1):
         ''' 
             Construct the transition probability of the latent space: each row sum to 1.
             z: [N, emb_dim]
@@ -180,6 +180,13 @@ class AEProb(torch.nn.Module):
             numerator = (1.0 + dist) ** (-1.0)
             row_sum = torch.sum(numerator, dim=1, keepdim=True)
             probs = numerator / row_sum # [N, N]
+            #print('check probs:', probs.shape, probs.sum(dim=1)[:10])
+        elif self.prob_method == 'powered_tstudent':
+            dist = torch.cdist(z, z, p=2) ** 2 # [N, N]
+            numerator = (1.0 + dist) ** (-1.0)
+            row_sum = torch.sum(numerator, dim=1, keepdim=True)
+            probs = numerator / row_sum # [N, N]
+            probs = torch.linalg.matrix_power(probs, t//2)
             #print('check probs:', probs.shape, probs.sum(dim=1)[:10])
         elif self.prob_method == 'phate':
             raise NotImplementedError('PHATE transition probability not implemented yet')
