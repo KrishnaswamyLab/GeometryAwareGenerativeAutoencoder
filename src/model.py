@@ -177,7 +177,7 @@ class AEProb(torch.nn.Module):
         if self.prob_method == 'gaussian':
             raise NotImplementedError('Gaussian transition probability not implemented yet')
         elif self.prob_method == 'heat_kernel':
-            heat_op = HeatKernelCheb(tau=1.0, order=10, knn=5) # FIXME: add these as params
+            heat_op = HeatKernelCheb(tau=1.0, knn=5) # FIXME: add these as params
             probs = heat_op(z)
         elif self.prob_method == 'tstudent':
             dist = torch.cdist(z, z, p=2) ** 2 # [N, N]

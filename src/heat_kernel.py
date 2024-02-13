@@ -10,8 +10,8 @@ class HeatKernelCheb:
     the heat kernel for a given dataset.
     """
 
-    def __init__(self, tau: float, order: int, knn: int):
-        self.tau = tau
+    def __init__(self, t: float, knn: int, order: int = 30):
+        self.t = t
         self.order = order
         self.knn = knn
 
@@ -28,7 +28,7 @@ class HeatKernelCheb:
         graph = pygsp.graphs.NNGraph(data.detach().cpu().numpy(), k=self.knn)
         graph.compute_laplacian("normalized")
         graph.estimate_lmax()
-        _filter = pygsp.filters.Heat(graph, self.tau)
+        _filter = pygsp.filters.Heat(graph, self.t)
         data_np = data.detach().cpu().numpy()
         identity = np.eye(data_np.shape[0])
         heat_kernel = _filter.filter(identity, order=self.order)
@@ -68,13 +68,13 @@ def expm_multiply(
     return Y
 
 
-def compute_chebychev_coeff_all(eigval, tau, K):
-    return 2.0 * ive(np.arange(0, K + 1), -tau * eigval)
+def compute_chebychev_coeff_all(eigval, t, K):
+    return 2.0 * ive(np.arange(0, K + 1), -t * eigval)
 
 
 if __name__ == "__main__":
     data = torch.randn(100, 5)
-    heat_op = HeatKernelCheb(tau=1.0, order=10, knn=5)
+    heat_op = HeatKernelCheb(t=1.0, order=10, knn=5)
     heat_kernel = heat_op(data)
 
     # test if symmetric
