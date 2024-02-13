@@ -11,3 +11,5 @@ type: 'ae'
 kl_weight: 0.1
 use_dist_mse_decay: false
 dist_mse_decay: 0.1
+cycle_weight: 0.
+cycle_dist_weight: 0.

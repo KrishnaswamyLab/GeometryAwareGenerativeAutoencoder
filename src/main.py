@@ -234,6 +234,10 @@ def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoin
         cfg.model.dropout = 0.0 # for compatibility with old runs
     if 'batch_norm' not in cfg.model:
         cfg.model.batch_norm = False
+    if 'cycle_weight' not in cfg.model:
+        cfg.model.cycle_weight = 0.0
+    if 'cycle_dist_weight' not in cfg.model:
+        cfg.model.cycle_dist_weight = 0.0
     activation_fn = activation_dict[cfg.model.activation]
 
     if cfg.model.type == 'ae':
@@ -253,6 +257,8 @@ def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoin
                 use_dist_mse_decay=use_dist_mse_decay,
                 dist_mse_decay=dist_mse_decay,
                 dropout=cfg.model.dropout,
+                cycle_weight=cfg.model.cycle_weight,
+                cycle_dist_weight=cfg.model.cycle_dist_weight,
             )
         else:
             model = AEDist(
@@ -263,9 +269,14 @@ def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoin
                 dist_reconstr_weights=cfg.model.dist_reconstr_weights,
                 pp=pp,
                 lr=cfg.model.lr,
+                weight_decay=cfg.model.weight_decay,
+                batch_norm=cfg.model.batch_norm,
                 dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
                 use_dist_mse_decay=use_dist_mse_decay,
                 dist_mse_decay=dist_mse_decay,
+                dropout=cfg.model.dropout,
+                cycle_weight=cfg.model.cycle_weight,
+                cycle_dist_weight=cfg.model.cycle_dist_weight,
             )
     elif cfg.model.type == 'vae':
         # TODO add dist_mse_decay to VAE?

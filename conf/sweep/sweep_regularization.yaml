@@ -6,15 +6,15 @@ command:
   - ${args_no_hyphens}
 method: grid  # or 'random', 'bayes'
 metric:
-  name: val_loss
-  goal: minimize
+  name: val_dist_accuracy
+  goal: maximize
 parameters:
   model.type:
     values: ['ae']
   model.lr:
     values: [0.001]
   model.weight_decay:
-    values: [0,0.0001,0.001]
+    values: [0,1e-4,1e-5]
   model.dropout:
     values: [0,0.5,0.2]
   model.batch_norm:
@@ -26,7 +26,11 @@ parameters:
   model.use_dist_mse_decay:
     values: [true]
   model.dist_mse_decay:
-    values: [0,0.1,0.2,0.5]
+    values: [0,0.2,0.5]
+  model.cycle_weight:
+    values: [0.,1.]
+  model.cycle_dist_weight:
+    values: [0.,1.]
   data.name:
     values: ['sea_ad_gaba', 'eb_subset']
   training.match_potential:
