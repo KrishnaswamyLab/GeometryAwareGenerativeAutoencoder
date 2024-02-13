@@ -19,7 +19,7 @@ class HeatKernelCheb:
         self.knn = knn
 
     def __call__(self, data: torch.Tensor):
-        """AI is creating summary for __call__
+        """Compute the heat kernel for a given dataset.
 
         Args:
             data (torch.Tensor): dataset of shape (n_samples, n_features)
