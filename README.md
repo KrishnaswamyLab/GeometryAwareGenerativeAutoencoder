@@ -3,6 +3,7 @@
 conda create -n dmae -c conda-forge python=3.11.5
 conda activate dmae
 pip install -r requirements.txt
+pip install -e . # install the package in dev mode.
 ```
 If you also want to use jupyter notebooks, install
 ```sh
