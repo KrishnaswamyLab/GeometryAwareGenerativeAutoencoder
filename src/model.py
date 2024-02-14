@@ -7,6 +7,7 @@ import torch.nn as nn
 import pytorch_lightning as pl
 from abc import ABC, abstractmethod
 from transformations import NonTransform
+from heat_kernel import HeatKernelCheb
 
 class MLP(torch.nn.Module):
     def __init__(self, dim, out_dim=None, layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), dropout=0.0, batch_norm=False):
@@ -166,7 +167,7 @@ class AEProb(torch.nn.Module):
 
         return loss
     
-    def compute_prob_matrix(self, z):
+    def compute_prob_matrix(self, z, t: int=1):
         ''' 
             Construct the transition probability of the latent space: each row sum to 1.
             z: [N, emb_dim]
@@ -175,11 +176,21 @@ class AEProb(torch.nn.Module):
         probs = None
         if self.prob_method == 'gaussian':
             raise NotImplementedError('Gaussian transition probability not implemented yet')
+        elif self.prob_method == 'heat_kernel':
+            heat_op = HeatKernelCheb(tau=1.0, knn=5) # FIXME: add these as params
+            probs = heat_op(z)
         elif self.prob_method == 'tstudent':
             dist = torch.cdist(z, z, p=2) ** 2 # [N, N]
             numerator = (1.0 + dist) ** (-1.0)
             row_sum = torch.sum(numerator, dim=1, keepdim=True)
             probs = numerator / row_sum # [N, N]
+            #print('check probs:', probs.shape, probs.sum(dim=1)[:10])
+        elif self.prob_method == 'powered_tstudent':
+            dist = torch.cdist(z, z, p=2) ** 2 # [N, N]
+            numerator = (1.0 + dist) ** (-1.0)
+            row_sum = torch.sum(numerator, dim=1, keepdim=True)
+            probs = numerator / row_sum # [N, N]
+            probs = torch.linalg.matrix_power(probs, t//2)
             #print('check probs:', probs.shape, probs.sum(dim=1)[:10])
         elif self.prob_method == 'phate':
             raise NotImplementedError('PHATE transition probability not implemented yet')

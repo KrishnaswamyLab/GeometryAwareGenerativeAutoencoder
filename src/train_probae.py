@@ -18,7 +18,7 @@ from procrustes import Procrustes
 from utils.early_stop import EarlyStopping
 from visualize import visualize
 
-@hydra.main(version_base=None, config_path='../conf', config_name='config')
+@hydra.main(version_base=None, config_path='../conf', config_name='probae_config')
 def train_eval(cfg: DictConfig):
     # if cfg.logger.use_wandb:
     #     config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
@@ -84,7 +84,7 @@ def train_eval(cfg: DictConfig):
     ''' Training '''
     device = cfg.training.accelerator
     epoch = cfg.training.max_epochs
-    batch_size = cfg.training.batch_size
+
     lr = cfg.training.lr
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     early_stopper = EarlyStopping(mode='min',
@@ -116,7 +116,7 @@ def train_eval(cfg: DictConfig):
         train_Z = torch.cat(train_Z, dim=0) #[N, emb_dim]
         #print('train_Z shape:', train_Z.shape)
         train_indices = torch.squeeze(torch.cat(train_indices, dim=0)) # [N,]
-        pred_prob_matrix = model.compute_prob_matrix(train_Z)
+        pred_prob_matrix = model.compute_prob_matrix(train_Z, t=train_dataset.t)
         gt_prob_matrix = train_dataset.row_stochastic_matrix
         encoder_loss = model.encoder_loss(gt_prob_matrix, pred_prob_matrix)
         epoch_loss += encoder_loss
@@ -144,7 +144,7 @@ def train_eval(cfg: DictConfig):
             val_Z = torch.cat(val_Z, dim=0)
             val_indices = torch.squeeze(torch.cat(val_indices, dim=0)) # [N,]
 
-            train_val_pred_prob_matrix = model.compute_prob_matrix(val_Z)
+            train_val_pred_prob_matrix = model.compute_prob_matrix(val_Z, t=train_val_dataset.t)
             gt_train_val_prob_matrix = train_val_dataset.row_stochastic_matrix
             val_encoder_loss = model.encoder_loss(gt_train_val_prob_matrix, 
                                                   train_val_pred_prob_matrix)
