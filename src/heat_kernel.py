@@ -113,7 +113,7 @@ class HeatKernelGaussian:
 
 
 def laplacian_from_data(data: torch.Tensor, sigma: float, alpha: int = 20):
-    affinity = torch.exp(-torch.cdist(data, data) ** alpha / (2 * sigma**2))
+    affinity = torch.exp(-(torch.cdist(data, data) / (2 * sigma)) ** alpha)
     degree = affinity.sum(dim=1)
     inv_deg_sqrt = 1.0 / torch.sqrt(degree)
     D = torch.diag(inv_deg_sqrt)
