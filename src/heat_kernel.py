@@ -36,11 +36,13 @@ class HeatKernelKNN:
         # the heat kernel is symmetric, but numerical errors can make it non-symmetric
         heat_kernel = (heat_kernel + heat_kernel.T) / 2
         return torch.tensor(heat_kernel).to(device)
-    
+
+
 class HeatKernelGaussian:
     """Approximation of the heat kernel with a graph from a gaussian affinity matrix.
     Uses Chebyshev polynomial approximation.
     """
+
     def __init__(self, sigma: float = 1.0, order: int = 30, t: float = 1.0):
         self.sigma = sigma
         self.order = order
@@ -51,13 +53,16 @@ class HeatKernelGaussian:
         eigvals = torch.linalg.eigvals(L).real
         max_eigval = eigvals.max()
         cheb_coeff = compute_chebychev_coeff_all(0.5 * max_eigval, self.t, self.order)
-        heat_kernel = expm_multiply(L, torch.eye(data.shape[0]), cheb_coeff, 0.5 * max_eigval)
+        heat_kernel = expm_multiply(
+            L, torch.eye(data.shape[0]), cheb_coeff, 0.5 * max_eigval
+        )
         # symmetrize the heat kernel, for larger t it may not be symmetric
         heat_kernel = (heat_kernel + heat_kernel.T) / 2
         return heat_kernel
-    
+
+
 def laplacian_from_data(data: torch.Tensor, sigma: float):
-    affinity = torch.exp(-torch.cdist(data, data) ** 2 / (2 * sigma ** 2))
+    affinity = torch.exp(-torch.cdist(data, data) ** 2 / (2 * sigma**2))
     degree = affinity.sum(dim=1)
     inv_deg_sqrt = 1.0 / torch.sqrt(degree)
     D = torch.diag(inv_deg_sqrt)
@@ -92,7 +97,7 @@ def expm_multiply(
 
     return Y
 
+
 @torch.no_grad()
 def compute_chebychev_coeff_all(eigval, t, K):
     return 2.0 * ive(torch.arange(0, K + 1), -t * eigval)
-

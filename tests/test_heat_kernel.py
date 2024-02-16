@@ -2,13 +2,15 @@ import pytest
 import torch
 from src.heat_kernel import HeatKernelKNN, laplacian_from_data, HeatKernelGaussian
 
+
 def gt_heat_kernel_knn(data, t, sigma):
     L = laplacian_from_data(data, sigma)
     # eigendecomposition
     eigvals, eigvecs = torch.linalg.eigh(L)
     # compute the heat kernel
-    heat_kernel = (eigvecs @ torch.diag(torch.exp(-t * eigvals)) @ eigvecs.T)
+    heat_kernel = eigvecs @ torch.diag(torch.exp(-t * eigvals)) @ eigvecs.T
     return heat_kernel
+
 
 def test_heat_kernel_cheb():
     data = torch.randn(100, 5)
@@ -21,6 +23,7 @@ def test_heat_kernel_cheb():
     # test if positive
     assert torch.all(heat_kernel >= 0)
 
+
 def test_laplacian():
     data = torch.randn(100, 5)
     sigma = 1.0
@@ -32,6 +35,7 @@ def test_laplacian():
     min_eigval = eigvals.min()
     assert max_eigval <= 2.0
     torch.testing.assert_allclose(min_eigval, 0.0)
+
 
 @pytest.mark.parametrize("t", [0.1, 1.0, 10.0])
 @pytest.mark.parametrize("order", [10, 30, 50])
@@ -50,6 +54,7 @@ def test_heat_kernel_gaussian(t, order):
     gt_heat_kernel = gt_heat_kernel_knn(data, t=t, sigma=1.0)
     assert torch.allclose(heat_kernel, gt_heat_kernel, atol=1e-3)
 
+
 def test_heat_gauss_differentiable():
     data = torch.randn(100, 5, requires_grad=True)
     heat_op = HeatKernelGaussian(sigma=1.0, t=1.0, order=10)
@@ -57,6 +62,7 @@ def test_heat_gauss_differentiable():
     heat_kernel.sum().backward()
     assert data.grad is not None
     assert torch.all(torch.isfinite(data.grad))
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
