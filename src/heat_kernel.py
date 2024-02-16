@@ -100,7 +100,7 @@ class HeatKernelGaussian:
         self.alpha = alpha if alpha % 2 == 0 else alpha + 1
 
     def __call__(self, data: torch.Tensor):
-        L = laplacian_from_data(data, self.sigma)
+        L = laplacian_from_data(data, self.sigma, alpha=self.alpha)
         eigvals = torch.linalg.eigvals(L).real
         max_eigval = eigvals.max()
         cheb_coeff = compute_chebychev_coeff_all(0.5 * max_eigval, self.t, self.order)
