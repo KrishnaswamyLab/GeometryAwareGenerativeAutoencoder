@@ -167,7 +167,7 @@ class AEProb(torch.nn.Module):
 
         return loss
     
-    def compute_prob_matrix(self, z, t: int=1):
+    def compute_prob_matrix(self, z, t: int=1, alpha: float = 1.0, bandwidth: float =1.0, knn: int=5):
         ''' 
             Construct the transition probability of the latent space: each row sum to 1.
             z: [N, emb_dim]
@@ -175,16 +175,40 @@ class AEProb(torch.nn.Module):
         '''
         probs = None
         if self.prob_method == 'gaussian':
-            raise NotImplementedError('Gaussian transition probability not implemented yet')
-        elif self.prob_method == 'heat_kernel':
-            heat_op = HeatKernelCheb(tau=1.0, knn=5) # FIXME: add these as params
-            probs = heat_op(z)
+            # symmetric Gaussian kernel
+            alpha = alpha
+            bandwidth = bandwidth
+            dist = torch.cdist(z, z, p=2)
+            K = torch.exp(-(dist / bandwidth) ** alpha) # [N, N]
+            row_sum = torch.sum(K, dim=1, keepdim=True)
+            probs = K / row_sum
+            # print('Check symmetry: ', torch.allclose(K, K.T))
+            # print('Check probs:', probs.sum(dim=1)[:5], 
+            #       torch.allclose(probs.sum(dim=1), torch.ones_like(probs.sum(dim=1))))
+        elif self.prob_method == 'adjusted_gaussian':
+            # KNN adjutable bandwidth Gaussian kernel
+            alpha = alpha
+            dist = torch.cdist(z, z, p=2)
+            # Find the k-nearest neighbors (including self-loops)
+            values, _ = torch.topk(dist, knn, largest=False, dim=-1)
+            kth = values[:, -1].unsqueeze(1) # [N, 1]
+            K = torch.exp(-(dist / kth) ** alpha)
+            K = (K + K.T) / 2.0 # symmetrize
+            row_sum = torch.sum(K, dim=1, keepdim=True)
+            probs = K / row_sum
+            # print('Check symmetry: ', torch.allclose(K, K.T))
+            # print('Check probs:', probs.sum(dim=1)[:5], 
+            #       torch.allclose(probs.sum(dim=1), torch.ones_like(probs.sum(dim=1))))
         elif self.prob_method == 'tstudent':
             dist = torch.cdist(z, z, p=2) ** 2 # [N, N]
             numerator = (1.0 + dist) ** (-1.0)
             row_sum = torch.sum(numerator, dim=1, keepdim=True)
             probs = numerator / row_sum # [N, N]
-            #print('check probs:', probs.shape, probs.sum(dim=1)[:10])
+
+        elif self.prob_method == 'heat_kernel':
+            heat_op = HeatKernelCheb(t=1.0, knn=5) # FIXME: add these as params
+            probs = heat_op(z)
+
         elif self.prob_method == 'powered_tstudent':
             dist = torch.cdist(z, z, p=2) ** 2 # [N, N]
             numerator = (1.0 + dist) ** (-1.0)
@@ -195,7 +219,8 @@ class AEProb(torch.nn.Module):
         elif self.prob_method == 'phate':
             raise NotImplementedError('PHATE transition probability not implemented yet')
         else:
-            raise ValueError('prob_method must be one of gaussian, tstudent, phate')
+            raise ValueError('prob_method must be one of gaussian, tstudent, phate, \
+                             heat_kernel, powered_tstudent')
 
         return probs
     

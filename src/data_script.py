@@ -43,6 +43,7 @@ def myeloid_data(fpath: str = '../raw_data/BMMC_myeloid.csv',
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Data preparation script')
     parser.add_argument('--data', type=str, default='swiss_roll', help='Data to prepare')
+    parser.add_argument('--n', type=int, default=3000, help='Number of samples')
     args = parser.parse_args()
 
     data = {
@@ -52,7 +53,7 @@ if __name__ == '__main__':
     
     if args.data == 'swiss_roll':
         # Generate Swiss Roll data
-        X, t = sklearn_swiss_roll(n_samples=3000, noise=0.1, random_state=0)
+        X, t = sklearn_swiss_roll(n_samples=args.n, noise=0.1, random_state=0)
         data['X'] = X
         data['label'] = t
         np.savez('../data/swiss_roll.npz', **data)

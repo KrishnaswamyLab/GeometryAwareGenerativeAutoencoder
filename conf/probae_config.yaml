@@ -27,8 +27,10 @@ model:
   - 128
   - 64
   log_dist: true
-  type: ae
-  prob_method: 'powered_tstudent'
+  type: probae
+  prob_method: 'tstudent'
+  alpha: 1.0
+  bandwidth: 1.0
 path:
   log: ''
   model: model
@@ -44,9 +46,10 @@ training:
   match_potential: false
   max_epochs: 5000
   monitor: val_loss
-  patience: 50
+  patience: 100
   seed: 2024
   shuffle: true
   train_test_split: 0.8
   train_valid_split: 0.8
   lr: 1e-3
+  weight_decay: 1e-4
