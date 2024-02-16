@@ -91,10 +91,13 @@ class HeatKernelGaussian:
     Uses Chebyshev polynomial approximation.
     """
 
-    def __init__(self, sigma: float = 1.0, order: int = 30, t: float = 1.0):
+    def __init__(
+        self, sigma: float = 1.0, alpha: int = 20, order: int = 30, t: float = 1.0
+    ):
         self.sigma = sigma
         self.order = order
         self.t = t
+        self.alpha = alpha if alpha % 2 == 0 else alpha + 1
 
     def __call__(self, data: torch.Tensor):
         L = laplacian_from_data(data, self.sigma)
@@ -109,8 +112,8 @@ class HeatKernelGaussian:
         return heat_kernel
 
 
-def laplacian_from_data(data: torch.Tensor, sigma: float):
-    affinity = torch.exp(-torch.cdist(data, data) ** 2 / (2 * sigma**2))
+def laplacian_from_data(data: torch.Tensor, sigma: float, alpha: int = 20):
+    affinity = torch.exp(-torch.cdist(data, data) ** alpha / (2 * sigma**2))
     degree = affinity.sum(dim=1)
     inv_deg_sqrt = 1.0 / torch.sqrt(degree)
     D = torch.diag(inv_deg_sqrt)

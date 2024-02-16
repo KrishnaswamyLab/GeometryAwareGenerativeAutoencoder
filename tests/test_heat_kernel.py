@@ -7,8 +7,9 @@ def gt_heat_kernel_knn(
     data,
     t,
     sigma,
+    alpha=20,
 ):
-    L = laplacian_from_data(data, sigma)
+    L = laplacian_from_data(data, sigma, alpha=alpha)
     # eigendecomposition
     eigvals, eigvecs = torch.linalg.eigh(L)
     # compute the heat kernel
