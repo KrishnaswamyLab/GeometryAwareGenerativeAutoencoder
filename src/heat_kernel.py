@@ -10,10 +10,57 @@ class HeatKernelKNN:
     the heat kernel for a given dataset.
     """
 
-    def __init__(self, t: float, knn: int, order: int = 30):
+    def __init__(self, t: float, knn: int, order: int = 30, graph_type: str = "torch"):
         self.t = t
         self.order = order
         self.knn = knn
+        assert graph_type in ["torch", "pygsp"]
+        self.graph_type = graph_type
+
+    def get_graph_torch(self, data: torch.Tensor):
+        """Get the graph from the dataset.
+
+        Args:
+            data (torch.Tensor): dataset of shape (n_samples, n_features)
+
+        Returns:
+            torch.Tensor: the graph
+        """
+        pairwise_dist = torch.cdist(data, data)
+        _, indices = torch.topk(pairwise_dist, self.knn, largest=False, dim=-1)
+        # Construct the adjacency matrix
+        n = data.shape[0]
+        A = torch.zeros(n, n, device=data.device)
+        for i in range(n):
+            A[i, indices[i]] = 1
+        A = (A + A.t()) / 2
+
+        # Compute the degree matrix
+        degree = A.sum(dim=1)
+        inv_deg_sqrt = 1.0 / torch.sqrt(degree)
+        D = torch.diag(inv_deg_sqrt)
+        L = torch.eye(n, device=data.device) - D @ A @ D
+
+        eigvals = torch.linalg.eigvals(L).real
+        max_eigval = eigvals.max()
+
+        return L, max_eigval
+
+    @torch.no_grad()
+    def get_graph_pygsp(self, data: torch.Tensor):
+        """Get the graph from the dataset.
+
+        Args:
+            data (torch.Tensor): dataset of shape (n_samples, n_features)
+
+        Returns:
+            pygsp.graphs.Graph: the graph
+        """
+        graph = pygsp.graphs.NNGraph(data.detach().cpu().numpy(), k=self.knn)
+        graph.compute_laplacian("normalized")
+        graph.estimate_lmax()
+        L = torch.tensor(graph.L.todense()).to(data.device, dtype=data.dtype)
+        return L, graph.lmax
 
     def __call__(self, data: torch.Tensor):
         """Compute the heat kernel for a given dataset.
@@ -25,13 +72,14 @@ class HeatKernelKNN:
             [torch.Tensor]: the heat kernel of shape (n_samples, n_samples)
         """
         device = data.device
-        graph = pygsp.graphs.NNGraph(data.detach().cpu().numpy(), k=self.knn)
-        graph.compute_laplacian("normalized")
-        graph.estimate_lmax()
-        _filter = pygsp.filters.Heat(graph, self.t)
-        data_np = data.detach().cpu().numpy()
-        identity = np.eye(data_np.shape[0])
-        heat_kernel = _filter.filter(identity, order=self.order)
+        if self.graph_type == "torch":
+            L, lmax = self.get_graph_torch(data)
+        else:
+            L, lmax = self.get_graph_pygsp(data)
+        cheb_coeff = compute_chebychev_coeff_all(0.5 * lmax, self.t, self.order)
+        heat_kernel = expm_multiply(
+            L, torch.eye(data.shape[0]).to(device), cheb_coeff, 0.5 * lmax
+        )
 
         # the heat kernel is symmetric, but numerical errors can make it non-symmetric
         heat_kernel = (heat_kernel + heat_kernel.T) / 2

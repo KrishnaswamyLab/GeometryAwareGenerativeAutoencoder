@@ -3,7 +3,11 @@ import torch
 from src.heat_kernel import HeatKernelKNN, laplacian_from_data, HeatKernelGaussian
 
 
-def gt_heat_kernel_knn(data, t, sigma):
+def gt_heat_kernel_knn(
+    data,
+    t,
+    sigma,
+):
     L = laplacian_from_data(data, sigma)
     # eigendecomposition
     eigvals, eigvecs = torch.linalg.eigh(L)
@@ -12,9 +16,10 @@ def gt_heat_kernel_knn(data, t, sigma):
     return heat_kernel
 
 
-def test_heat_kernel_cheb():
+@pytest.mark.parametrize("graph_type", ["torch", "pygsp"])
+def test_heat_kernel_cheb(graph_type):
     data = torch.randn(100, 5)
-    heat_op = HeatKernelKNN(t=1.0, order=10, knn=5)
+    heat_op = HeatKernelKNN(t=1.0, order=10, knn=5, graph_type=graph_type)
     heat_kernel = heat_op(data)
 
     # test if symmetric
@@ -22,6 +27,13 @@ def test_heat_kernel_cheb():
 
     # test if positive
     assert torch.all(heat_kernel >= 0)
+
+    # check if the heat kernel is differentiable
+    data = torch.randn(100, 5, requires_grad=True)
+    heat_kernel = heat_op(data)
+    heat_kernel.sum().backward()
+    assert data.grad is not None
+    assert torch.all(torch.isfinite(data.grad))
 
 
 def test_laplacian():
