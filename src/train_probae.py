@@ -17,6 +17,8 @@ from model import AEProb
 from metrics import distance_distortion, mAP, computeKNNmAP
 from procrustes import Procrustes
 from utils.early_stop import EarlyStopping
+from utils.log_utils import log
+from utils.seed import seed_everything
 from visualize import visualize
 # import demap
 
@@ -26,19 +28,22 @@ from scipy.stats import spearmanr
 
 @hydra.main(version_base=None, config_path='../conf', config_name='probae_config')
 def train_eval(cfg: DictConfig):
-    # if cfg.logger.use_wandb:
-    #     config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
-    #     run = wandb.init(
-    #         entity=cfg.logger.entity,
-    #         project=cfg.logger.project,
-    #         tags=cfg.logger.tags,
-    #         reinit=True,
-    #         config=config,
-    #         settings=wandb.Settings(start_method="thread"),
-    #     )
+    if cfg.logger.use_wandb:
+        config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
+        run = wandb.init(
+            entity=cfg.logger.entity,
+            project=cfg.logger.project,
+            tags="probae",
+            name=f'{cfg.model.prob_method}_{cfg.data.name}',
+            reinit=True,
+            config=config,
+            settings=wandb.Settings(start_method="thread"),
+        )
+    log(cfg)
 
-    print(cfg)
-
+    # Seed everything
+    seed_everything(cfg.training.seed)
+    
     ''' Data '''
     true_data = None
     if cfg.data.name == 'demap':
@@ -54,7 +59,7 @@ def train_eval(cfg: DictConfig):
         labels = data['label']
         assert raw_data.shape[0] == labels.shape[0]
 
-    print(f'Done loading raw data. Raw data shape: {raw_data.shape}')
+    log(f'Done loading raw data. Raw data shape: {raw_data.shape}', to_console=True)
 
     shuffle = cfg.training.shuffle
     train_test_split = cfg.training.train_test_split
@@ -73,7 +78,7 @@ def train_eval(cfg: DictConfig):
     train_val_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_val_data, X_labels=None, dist_type='phate_prob')
     whole_dataset = RowStochasticDataset(data_name=cfg.data.name, X=raw_data, X_labels=None, dist_type='phate_prob')
     
-    print(f'Train dataset: {len(train_dataset)}; \
+    log(f'Train dataset: {len(train_dataset)}; \
           Val dataset: {len(train_val_dataset)}; \
           Whole dataset: {len(whole_dataset)}')
 
@@ -105,7 +110,7 @@ def train_eval(cfg: DictConfig):
 
     best_metric = np.inf
     model = model.to(device)
-    print('Training ...')
+    log('Training ...')
     for eid in range(epoch):
         model.train()
         decoder_loss = 0.0
@@ -135,22 +140,25 @@ def train_eval(cfg: DictConfig):
                                                      alpha=cfg.model.alpha, 
                                                      bandwidth=cfg.model.bandwidth)
         gt_prob_matrix = (train_dataset.row_stochastic_matrix).type(torch.float32).to(device)
-
         encoder_loss = model.encoder_loss(gt_prob_matrix, pred_prob_matrix)
+        
         encoder_loss_w, decoder_loss_w = cfg.model.dist_reconstr_weights[0], cfg.model.dist_reconstr_weights[1]
-        #epoch_loss = encoder_loss + (decoder_loss / len(train_loader))
         epoch_loss = encoder_loss * encoder_loss_w + (decoder_loss / len(train_loader)) * decoder_loss_w
 
         epoch_loss.backward()
         optimizer.step()
 
         if eid == 0 or eid % cfg.training.log_every_n_steps == 0:
-            print(f'[Epoch: {eid}]: Encoder Loss: {encoder_loss.item()}, Decoder Loss: {decoder_loss.item()/len(train_loader)}')
-            print('\r[Epoch %d] Loss: %.4f' % (eid, epoch_loss.item()), end='')
+            log(f'[Epoch: {eid}]: Encoder Loss: {encoder_loss.item()}, Decoder Loss: {decoder_loss.item()/len(train_loader)}')
+            log('\r[Epoch %d] Loss: %.4f' % (eid, epoch_loss.item()))
+            wandb.log({'train/encoder_loss': encoder_loss.item(),
+                       'train/decoder_loss': decoder_loss.item()/len(train_loader),
+                       'train/epoch_loss': epoch_loss.item()})
 
         ''' Validation '''
         model.eval()
-        val_loss = 0
+        val_encoder_loss = 0.0
+        val_decoder_loss = 0.0
         val_Z = []
         val_indices = []
         with torch.no_grad():
@@ -160,7 +168,7 @@ def train_eval(cfg: DictConfig):
                 batch_x_hat, batch_z = model(batch_x)
                 val_Z.append(batch_z)
                 val_indices.append(batch_inds.reshape(-1,1)) # [B,1]
-                val_loss += model.decoder_loss(batch_x, batch_x_hat).item()
+                val_decoder_loss += model.decoder_loss(batch_x, batch_x_hat).item()
             
             val_Z = torch.cat(val_Z, dim=0)
             val_indices = torch.squeeze(torch.cat(val_indices, dim=0)) # [N,]
@@ -171,11 +179,31 @@ def train_eval(cfg: DictConfig):
             gt_train_val_prob_matrix = (train_val_dataset.row_stochastic_matrix).type(torch.float32).to(device)
             val_encoder_loss = model.encoder_loss(gt_train_val_prob_matrix, 
                                                   train_val_pred_prob_matrix)
-            val_loss += val_encoder_loss.item()
             
+            val_loss = val_encoder_loss.item() * encoder_loss_w \
+                + (val_decoder_loss / len(train_val_loader)) * decoder_loss_w
+            log(f'\n[Epoch: {eid}]: Val Encoder Loss: {val_encoder_loss.item()}, Val Decoder Loss: {val_decoder_loss/len(train_val_loader)}')
+            log(f'[Epoch: {eid}]: Val Loss: {val_loss}')
+            wandb.log({'val/encoder_loss': val_encoder_loss.item(),
+                          'val/decoder_loss': val_decoder_loss/len(train_val_loader),
+                          'val/loss': val_loss})
+        
+        if cfg.data.name == 'demap':
+            embedding_map = {
+                'probae': val_Z.cpu().detach().numpy(),
+                'phate': whole_dataset.phate_embed.cpu().detach().numpy(),
+                'tsne': tsne_embed
+            }
+            demaps = evaluate_demap(embedding_map, true_data)
+            for k, v in demaps.items():
+                metrics[f'{k}'] = v
+            log(f'[Epoch: {eid}]: DeMAPs: {demaps}')
+            wandb.log({f'validation/DeMAP_{k}': v for k, v in demaps.items()})
+
+        # TODO: maybe want to use a different metric for early stopping
         if val_loss < best_metric:
             if eid == 0 or eid % cfg.training.log_every_n_steps == 0:
-                print('\nBetter model found. Saving best model ...\n')
+                log('\nBetter model found. Saving best model ...\n')
             best_metric = val_loss
             best_model = model.state_dict()
             if cfg.path.save:
@@ -183,7 +211,7 @@ def train_eval(cfg: DictConfig):
             
         # Early Stopping
         if early_stopper.step(val_loss):
-            print('Early stopping criterion met. Ending training.\n')
+            log('Early stopping criterion met. Ending training.\n')
             break
 
 
@@ -216,15 +244,15 @@ def train_eval(cfg: DictConfig):
                                                         log_target=False).item()
         metrics['mAP'] = computeKNNmAP(pred_embed.cpu().detach().numpy(),
                                        whole_dataset.X,
-                                       k=10,
+                                       k=5,
                                        distance_op='norm')
         metrics['mAP_PHATE'] = computeKNNmAP(whole_dataset.phate_embed.cpu().detach().numpy(),
                                              whole_dataset.X,
-                                             k=10,
+                                             k=5,
                                              distance_op='norm')
         metrics['mAP_TSNE'] = computeKNNmAP(tsne_embed,
                                             whole_dataset.X,
-                                            k=10,
+                                            k=5,
                                             distance_op='norm')
     elif cfg.model.type == 'ae':
         # distance matching
@@ -250,8 +278,9 @@ def train_eval(cfg: DictConfig):
         demaps = evaluate_demap(embedding_map, true_data)
         for k, v in demaps.items():
             metrics[f'{k}'] = v
-        print(f'DeMAPs: {demaps}')
+        log(f'Evaluation DeMAPs: {demaps}')
 
+    wandb.log({f'evaluation/{k}': v for k, v in metrics.items()})
 
     ''' Visualize '''
     if labels is not None:
@@ -265,8 +294,11 @@ def train_eval(cfg: DictConfig):
               data_clusters=labels,
               metrics=metrics,
               save_path=os.path.join(cfg.path.root, 
-                                     f'{cfg.model.prob_method}_{cfg.data.name}_bw{cfg.model.bandwidth}_embeddings.png'))
+                                     f'{cfg.model.prob_method}_{cfg.data.name}_bw{cfg.model.bandwidth}_embeddings.png'),
+              wandb_run=run)
 
+    if cfg.logger.use_wandb:
+        run.finish()
 
 def evaluate_demap(embedding_map: dict[str, np.ndarray],
                    true_data: np.ndarray) -> dict[str, float]:

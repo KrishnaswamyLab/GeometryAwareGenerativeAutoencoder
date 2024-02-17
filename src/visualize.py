@@ -1,6 +1,7 @@
 import numpy as np
 import scprep
 import torch
+import wandb
 import matplotlib.pyplot as plt
 from sklearn.metrics import euclidean_distances
 from sklearn.manifold import MDS
@@ -15,7 +16,8 @@ def visualize(pred: np.ndarray,
               dataset_name: str,
               data_clusters: np.ndarray,
               metrics: dict = None,
-              save_path: str = '../embeddings.png'):
+              save_path: str = '../embeddings.png',
+              wandb_run: wandb.sdk.wandb_run.Run = None):
     print("Visualizing Embeddings...")
 
     n_subplots = 3
@@ -98,3 +100,6 @@ def visualize(pred: np.ndarray,
     plt.savefig(save_path)
 
     print("Saved Embeddings to %s" % (save_path))
+
+    if wandb_run is not None:
+        wandb_run.log({"Embeddings": wandb.Image(save_path)})

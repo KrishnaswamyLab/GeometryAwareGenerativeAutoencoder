@@ -13,14 +13,14 @@ logger:
   entity: danqiliao
   project: dmae
   tags:
-  - default
+  - probae
   use_wandb: true
 model:
   activation: relu
   dist_recon_topk_coords: 0
   dist_reconstr_weights:
-  - 0.9
-  - 0.1
+  - 1.0
+  - 0.0
   - 0
   layer_widths:
   - 256
