@@ -122,7 +122,7 @@ class RowStochasticDataset(torch.utils.data.Dataset):
                  phate_embed: Optional[np.ndarray] = None,
                  dist_type: str = "phate_prob",
                  emb_dim: int = 2,
-                 knn: int = 20,
+                 knn: int = 5,
                  shuffle: bool = True) -> None:
         super().__init__()
         self.data_name = data_name
@@ -166,11 +166,8 @@ class RowStochasticDataset(torch.utils.data.Dataset):
                         knn=self.knn,
                         n_landmark=self.X.shape[0]).fit(self.X)
             phate_embed = torch.Tensor(phate_op.transform(self.X))
-            print('phate_embed', phate_embed.shape)
             diff_potential = phate_op.diff_potential
-            print('diff_potential', diff_potential.shape)
             diff_op_t = np.exp(-1 * diff_potential)
-            print('diff_op_t', diff_op_t.shape)
             row_stochastic_matrix = torch.Tensor(diff_op_t)
             print('row_stochastic_matrix', row_stochastic_matrix.shape)
 

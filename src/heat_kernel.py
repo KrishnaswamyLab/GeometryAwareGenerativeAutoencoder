@@ -5,15 +5,62 @@ from scipy.special import ive
 import pygsp
 
 
-class HeatKernelCheb:
+class HeatKernelKNN:
     """Approximation of the heat kernel. The class has a callable method that computes
     the heat kernel for a given dataset.
     """
 
-    def __init__(self, t: float, knn: int, order: int = 30):
+    def __init__(self, t: float, knn: int, order: int = 30, graph_type: str = "torch"):
         self.t = t
         self.order = order
         self.knn = knn
+        assert graph_type in ["torch", "pygsp"]
+        self.graph_type = graph_type
+
+    def get_graph_torch(self, data: torch.Tensor):
+        """Get the graph from the dataset.
+
+        Args:
+            data (torch.Tensor): dataset of shape (n_samples, n_features)
+
+        Returns:
+            torch.Tensor: the graph
+        """
+        pairwise_dist = torch.cdist(data, data)
+        _, indices = torch.topk(pairwise_dist, self.knn, largest=False, dim=-1)
+        # Construct the adjacency matrix
+        n = data.shape[0]
+        A = torch.zeros(n, n, device=data.device)
+        for i in range(n):
+            A[i, indices[i]] = 1
+        A = (A + A.t()) / 2
+
+        # Compute the degree matrix
+        degree = A.sum(dim=1)
+        inv_deg_sqrt = 1.0 / torch.sqrt(degree)
+        D = torch.diag(inv_deg_sqrt)
+        L = torch.eye(n, device=data.device) - D @ A @ D
+
+        eigvals = torch.linalg.eigvals(L).real
+        max_eigval = eigvals.max()
+
+        return L, max_eigval
+
+    @torch.no_grad()
+    def get_graph_pygsp(self, data: torch.Tensor):
+        """Get the graph from the dataset.
+
+        Args:
+            data (torch.Tensor): dataset of shape (n_samples, n_features)
+
+        Returns:
+            pygsp.graphs.Graph: the graph
+        """
+        graph = pygsp.graphs.NNGraph(data.detach().cpu().numpy(), k=self.knn)
+        graph.compute_laplacian("normalized")
+        graph.estimate_lmax()
+        L = torch.tensor(graph.L.todense()).to(data.device, dtype=data.dtype)
+        return L, graph.lmax
 
     def __call__(self, data: torch.Tensor):
         """Compute the heat kernel for a given dataset.
@@ -25,21 +72,55 @@ class HeatKernelCheb:
             [torch.Tensor]: the heat kernel of shape (n_samples, n_samples)
         """
         device = data.device
-        graph = pygsp.graphs.NNGraph(data.detach().cpu().numpy(), k=self.knn)
-        graph.compute_laplacian("normalized")
-        graph.estimate_lmax()
-        _filter = pygsp.filters.Heat(graph, self.t)
-        data_np = data.detach().cpu().numpy()
-        identity = np.eye(data_np.shape[0])
-        heat_kernel = _filter.filter(identity, order=self.order)
+        if self.graph_type == "torch":
+            L, lmax = self.get_graph_torch(data)
+        else:
+            L, lmax = self.get_graph_pygsp(data)
+        cheb_coeff = compute_chebychev_coeff_all(0.5 * lmax, self.t, self.order)
+        heat_kernel = expm_multiply(
+            L, torch.eye(data.shape[0]).to(device), cheb_coeff, 0.5 * lmax
+        )
 
         # the heat kernel is symmetric, but numerical errors can make it non-symmetric
         heat_kernel = (heat_kernel + heat_kernel.T) / 2
         return torch.tensor(heat_kernel).to(device)
 
 
-# TODO: we could use this implementation, but for now it does
-# not seem to be necessary.
+class HeatKernelGaussian:
+    """Approximation of the heat kernel with a graph from a gaussian affinity matrix.
+    Uses Chebyshev polynomial approximation.
+    """
+
+    def __init__(
+        self, sigma: float = 1.0, alpha: int = 20, order: int = 30, t: float = 1.0
+    ):
+        self.sigma = sigma
+        self.order = order
+        self.t = t
+        self.alpha = alpha if alpha % 2 == 0 else alpha + 1
+
+    def __call__(self, data: torch.Tensor):
+        L = laplacian_from_data(data, self.sigma, alpha=self.alpha)
+        eigvals = torch.linalg.eigvals(L).real
+        max_eigval = eigvals.max()
+        cheb_coeff = compute_chebychev_coeff_all(0.5 * max_eigval, self.t, self.order)
+        heat_kernel = expm_multiply(
+            L, torch.eye(data.shape[0]), cheb_coeff, 0.5 * max_eigval
+        )
+        # symmetrize the heat kernel, for larger t it may not be symmetric
+        heat_kernel = (heat_kernel + heat_kernel.T) / 2
+        return heat_kernel
+
+
+def laplacian_from_data(data: torch.Tensor, sigma: float, alpha: int = 20):
+    affinity = torch.exp(-(torch.cdist(data, data) / (2 * sigma)) ** alpha)
+    degree = affinity.sum(dim=1)
+    inv_deg_sqrt = 1.0 / torch.sqrt(degree)
+    D = torch.diag(inv_deg_sqrt)
+    L = torch.eye(data.shape[0]) - D @ affinity @ D
+    return L
+
+
 def expm_multiply(
     L: torch.Tensor,
     X: torch.Tensor,
@@ -68,17 +149,6 @@ def expm_multiply(
     return Y
 
 
+@torch.no_grad()
 def compute_chebychev_coeff_all(eigval, t, K):
-    return 2.0 * ive(np.arange(0, K + 1), -t * eigval)
-
-
-if __name__ == "__main__":
-    data = torch.randn(100, 5)
-    heat_op = HeatKernelCheb(t=1.0, order=10, knn=5)
-    heat_kernel = heat_op(data)
-
-    # test if symmetric
-    assert torch.allclose(heat_kernel, heat_kernel.T)
-
-    # test if positive
-    assert torch.all(heat_kernel >= 0)
+    return 2.0 * ive(torch.arange(0, K + 1), -t * eigval)
