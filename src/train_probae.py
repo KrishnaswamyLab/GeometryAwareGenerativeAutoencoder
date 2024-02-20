@@ -7,6 +7,7 @@ import hydra
 import numpy as np
 import pandas as pd
 import torch
+import pygsp
 import scipy.sparse
 from scipy.spatial.distance import pdist, squareform
 from sklearn.manifold import TSNE
@@ -43,7 +44,7 @@ def train_eval(cfg: DictConfig):
 
     # Seed everything
     seed_everything(cfg.training.seed)
-    
+
     ''' Data '''
     true_data = None
     if cfg.data.name == 'demap':
@@ -55,6 +56,7 @@ def train_eval(cfg: DictConfig):
     else:
         data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
         data = np.load(data_path, allow_pickle=True)
+        true_data = data['gt_X']
         raw_data = data['X']
         labels = data['label']
         assert raw_data.shape[0] == labels.shape[0]
@@ -187,18 +189,19 @@ def train_eval(cfg: DictConfig):
             wandb.log({'val/encoder_loss': val_encoder_loss.item(),
                           'val/decoder_loss': val_decoder_loss/len(train_val_loader),
                           'val/loss': val_loss})
-        
-        if cfg.data.name == 'demap':
-            embedding_map = {
-                'probae': val_Z.cpu().detach().numpy(),
-                'phate': whole_dataset.phate_embed.cpu().detach().numpy(),
-                'tsne': tsne_embed
-            }
-            demaps = evaluate_demap(embedding_map, true_data)
-            for k, v in demaps.items():
-                metrics[f'{k}'] = v
-            log(f'[Epoch: {eid}]: DeMAPs: {demaps}')
-            wandb.log({f'validation/DeMAP_{k}': v for k, v in demaps.items()})
+            
+        # tsne_embed = TSNE(n_components=emb_dim, perplexity=5).fit_transform(train_val_dataset.X)
+        # if true_data is not None:
+        #     embedding_map = {
+        #         'probae': val_Z.cpu().detach().numpy(),
+        #         'phate': whole_dataset.phate_embed.cpu().detach().numpy(),
+        #         'tsne': tsne_embed
+        #     }
+        #     demaps = evaluate_demap(embedding_map, true_data)
+        #     for k, v in demaps.items():
+        #         metrics[f'{k}'] = v
+        #     log(f'[Epoch: {eid}]: DeMAPs: {demaps}')
+        #     wandb.log({f'val/DeMAP_{k}': v for k, v in demaps.items()})
 
         # TODO: maybe want to use a different metric for early stopping
         if val_loss < best_metric:
@@ -269,7 +272,7 @@ def train_eval(cfg: DictConfig):
                                        distance_op='norm')
     
     ''' DeMAP '''
-    if cfg.data.name == 'demap':
+    if true_data is not None:
         embedding_map = {
             'probae': pred_embed.cpu().detach().numpy(),
             'phate': whole_dataset.phate_embed.cpu().detach().numpy(),
@@ -304,14 +307,17 @@ def evaluate_demap(embedding_map: dict[str, np.ndarray],
                    true_data: np.ndarray) -> dict[str, float]:
     demaps = {}
     for k, v in embedding_map.items():
+        print(f'Computing DeMAP for {k} ...'
+              f'embedding shape: {v.shape}, true data shape: {true_data.shape}')
         assert v.shape[0] == true_data.shape[0]
         demaps[k] = DEMaP(true_data, v)
 
     return demaps
 
 
-def DEMaP(data, embedding, knn=30, subsample_idx=None):
+def DEMaP(data, embedding, knn=10, subsample_idx=None):
     geodesic_dist = geodesic_distance(data, knn=knn)
+    #geodesic_dist = compute_geodesic_distances(data, knn_geodesic=knn)
     if subsample_idx is not None:
         geodesic_dist = geodesic_dist[subsample_idx, :][:, subsample_idx]
     geodesic_dist = squareform(geodesic_dist)
@@ -319,9 +325,21 @@ def DEMaP(data, embedding, knn=30, subsample_idx=None):
     return spearmanr(geodesic_dist, embedded_dist).correlation
 
 
-def geodesic_distance(data, knn=30, distance="data"):
+def geodesic_distance(data, knn=10, distance="data"):
     G = graphtools.Graph(data, knn=knn, decay=None)
     return G.shortest_path(distance=distance)
+
+# def compute_geodesic_distances(gt_X, knn_geodesic=10):
+#     # Compute the geodesic distances
+#     graph = pygsp.graphs.NNGraph(gt_X, k=knn_geodesic)
+#     euc_dist = squareform(pdist(gt_X)) # [N, N]
+#     A = graph.A.toarray() # [N, N]
+#     euc_dist[A == 0] = 0 # masking out the non-neighbors
+#     geodesic_dist = scipy.sparse.csgraph.shortest_path(euc_dist, 
+#                                                        method="auto", 
+#                                                        directed=False)
+
+#     return geodesic_dist
 
 
 if __name__ == "__main__":
