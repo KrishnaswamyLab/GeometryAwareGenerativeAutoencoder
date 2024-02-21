@@ -31,6 +31,8 @@ parameters:
     values: [0.]
   model.cycle_dist_weight:
     values: [0.]
+  data.root: 
+    values: [ '../synthetic_data']
   data.name:
     values: ['noisy_42_groups_17580_2000_3_0.2_0.5_all','noisy_42_paths_17580_2000_3_0.2_0.5_all','noisy_43_groups_17580_2000_3_0.2_0.5_all','noisy_43_paths_17580_2000_3_0.2_0.5_all','noisy_42_groups_17580_2000_3_0.4_0.7_all','noisy_42_paths_17580_2000_3_0.4_0.7_all','noisy_43_groups_17580_2000_3_0.4_0.7_all','noisy_43_paths_17580_2000_3_0.4_0.7_all']
   training.match_potential:
