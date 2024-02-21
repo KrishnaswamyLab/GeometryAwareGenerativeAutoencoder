@@ -147,20 +147,25 @@ def main(cfg: DictConfig):
 
 
 def load_data(cfg, load_all=False):
-    if load_all:
-        data_path = os.path.join(cfg.data.root, cfg.data.name + "_all" + cfg.data.filetype)
-    else:
-        data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
+    # if load_all:
+    #     data_path = os.path.join(cfg.data.root, cfg.data.name + "_all" + cfg.data.filetype)
+    # else:
+    #     data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
+    data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
     data = np.load(data_path, allow_pickle=True)
-
     # sanity check the data is not empty
     assert 'data' in data.files and 'phate' in data.files and 'colors' in data.files \
         and 'dist' in data.files, "Some required files are missing in the 'data' variable."
-    
     X = data['data']
     phate_coords = data['phate']
     colors = data['colors']
     dist = data['dist']
+    train_mask = data['is_train']
+    if not load_all:
+        X = X[train_mask,:]
+        phate_coords = phate_coords[train_mask,:]
+        colors = colors[train_mask]
+        dist = dist[train_mask,:][:,train_mask]
     assert X.shape[0] == phate_coords.shape[0] == colors.shape[0] == dist.shape[0], \
         "The number of cells in the data, phate, and colors variables do not match."
 

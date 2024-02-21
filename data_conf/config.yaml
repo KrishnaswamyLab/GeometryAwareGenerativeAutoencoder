@@ -6,3 +6,4 @@ batchCells: 2000
 nBatches: 3
 bcv: 0.2
 dropout: 0.5
+test_size: 0.2

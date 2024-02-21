@@ -1,0 +1,3 @@
+"""
+Train the diffusion model
+"""

@@ -1,0 +1,37 @@
+project: dmae
+program: main.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val_dist_accuracy
+  goal: maximize
+parameters:
+  model.type:
+    values: ['ae']
+  model.lr:
+    values: [0.001]
+  model.weight_decay:
+    values: [0.0001]
+  model.dropout:
+    values: [0.2]
+  model.batch_norm:
+    values: [true]
+  model.layer_widths:
+    values: [[256,128,64]]
+  model.dist_reconstr_weights:
+    values: [[0.9,0.1,0.]]
+  model.use_dist_mse_decay:
+    values: [true]
+  model.dist_mse_decay:
+    values: [0.5]
+  model.cycle_weight:
+    values: [0.]
+  model.cycle_dist_weight:
+    values: [0.]
+  data.name:
+    values: ['noisy_42_groups_17580_2000_3_0.2_0.5_all','noisy_42_paths_17580_2000_3_0.2_0.5_all','noisy_43_groups_17580_2000_3_0.2_0.5_all','noisy_43_paths_17580_2000_3_0.2_0.5_all','noisy_42_groups_17580_2000_3_0.4_0.7_all','noisy_42_paths_17580_2000_3_0.4_0.7_all','noisy_43_groups_17580_2000_3_0.4_0.7_all','noisy_43_paths_17580_2000_3_0.4_0.7_all']
+  training.match_potential:
+    values: [True]
