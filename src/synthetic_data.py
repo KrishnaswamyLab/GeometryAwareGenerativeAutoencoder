@@ -20,8 +20,8 @@ def main(cfg: DictConfig):
     print(OmegaConf.to_yaml(cfg))
     data_true, data_noisy = generate_synthetic_data(nGenes=cfg.nGenes, batchCells=cfg.batchCells, nBatches=cfg.nBatches, method=cfg.method, bcv=cfg.bcv, dropout=cfg.dropout, seed=cfg.seed)
     pathlib.Path(cfg.path).mkdir(parents=True, exist_ok=True)
-    np.save(f'{cfg.path}/true_{cfg.seed}_{cfg.nGenes}_{cfg.batchCells}_{cfg.nBatches}.npy', data_true)
-    np.save(f'{cfg.path}/noisy_{cfg.seed}_{cfg.nGenes}_{cfg.batchCells}_{cfg.nBatches}_{cfg.bcv}_{cfg.dropout}.npy', data_noisy)
+    np.save(f'{cfg.path}/true_{cfg.seed}_{cfg.method}_{cfg.nGenes}_{cfg.batchCells}_{cfg.nBatches}.npy', data_true)
+    np.save(f'{cfg.path}/noisy_{cfg.seed}_{cfg.method}_{cfg.nGenes}_{cfg.batchCells}_{cfg.nBatches}_{cfg.bcv}_{cfg.dropout}.npy', data_noisy)
 
 if __name__ == "__main__":
     main()

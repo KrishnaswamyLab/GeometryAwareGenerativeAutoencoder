@@ -1,0 +1,16 @@
+project: dmae
+program: synthetic_data.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/R/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+parameters:
+  seed: 
+    values: [42, 43, 44, 45, 46]
+  method: 
+    values: ['paths', 'groups']
+  bcv:
+    values: [0.2, 0.4, 0.6]
+  dropout:
+    values: [0.2, 0.5, 0.7]

@@ -149,3 +149,4 @@ dsq-*
 lightning_logs/
 settings.json
 *.parquet
+synthetic_data/

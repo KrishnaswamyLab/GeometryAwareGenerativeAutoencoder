@@ -2,7 +2,7 @@ path: '../synthetic_data/'
 seed: 42
 method: 'paths'
 nGenes: 17580
-batchCells: 1000
+batchCells: 2000
 nBatches: 3
 bcv: 0.2
 dropout: 0.5
