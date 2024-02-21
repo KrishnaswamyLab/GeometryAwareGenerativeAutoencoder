@@ -7,7 +7,7 @@ import torch.nn as nn
 import pytorch_lightning as pl
 from abc import ABC, abstractmethod
 from transformations import NonTransform
-from heat_kernel import HeatKernelCheb
+from heat_kernel import HeatKernelGaussian
 
 class MLP(torch.nn.Module):
     def __init__(self, dim, out_dim=None, layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), dropout=0.0, batch_norm=False):
@@ -206,7 +206,7 @@ class AEProb(torch.nn.Module):
             probs = numerator / row_sum # [N, N]
 
         elif self.prob_method == 'heat_kernel':
-            heat_op = HeatKernelCheb(t=1.0, knn=5) # FIXME: add these as params
+            heat_op = HeatKernelGaussian(sigma=1.0, alpha=20, t=t) # FIXME: add these as params
             probs = heat_op(z)
 
         elif self.prob_method == 'powered_tstudent':
