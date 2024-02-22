@@ -81,9 +81,9 @@ def load_data(cfg):
     # all_data = torch.concat([all_data, color_data.reshape(-1,1)], dim=1)
     mean_val = torch.mean(all_data, axis=0)
     std_val = torch.std(all_data, axis=0)
-    # Standardize data
+    # Standardize data [TODO] need to save the mean and std!
     scaled_data = (all_data - mean_val) / std_val
-
+    
     # Split into training and validation sets
     train_data, test_data = scaled_data[train_mask,:], scaled_data[~train_mask,:]
 
