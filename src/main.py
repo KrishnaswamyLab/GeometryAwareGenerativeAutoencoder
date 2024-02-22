@@ -220,7 +220,8 @@ def load_data(cfg, load_all=False):
         return trainloader, valloader, X, phate_coords, colors, dist, pp
 
 def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoint_path=None):
-
+    if 'emb_dim' in cfg.model:
+        emb_dim = cfg.model.emb_dim
     activation_dict = {
         'relu': torch.nn.ReLU(),
         'leaky_relu': torch.nn.LeakyReLU(),

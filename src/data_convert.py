@@ -14,7 +14,7 @@ def convert_data(X, seed=42, test_size=0.2):
     colors = np.zeros(X.shape[0])
     dists = squareform(pdist(phate_op.diff_potential))
     ids = np.arange(0, X.shape[0])
-    X_train, X_test, color_train, color_test, id_train, id_test = train_test_split(X, colors, ids, test_size=test_size, random_state=seed)
+    id_train, id_test = train_test_split(ids, test_size=test_size, random_state=seed)
     is_train = np.isin(ids, id_train)
     return dict(
         data=X,
