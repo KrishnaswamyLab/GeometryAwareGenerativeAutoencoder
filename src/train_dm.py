@@ -64,7 +64,9 @@ def main(cfg: DictConfig):
             monitor='train_loss',  # Model selection based on validation loss
             mode='min'  # Minimize validation loss
         )
-    trainer = pl.Trainer(max_epochs=cfg.max_epochs, gpus=1)  # Adjust as per your setup
+    trainer = pl.Trainer(logger=logger, max_epochs=cfg.max_epochs, gpus=1, 
+                         callbacks=[early_stopping,checkpoint_callback],
+                         log_every_n_steps=50)  # Adjust as per your setup
     trainer.fit(model, train_loader)
     # gs = model.generate_samples(num_samples=3000)
 

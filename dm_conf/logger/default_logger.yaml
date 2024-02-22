@@ -1,0 +1,4 @@
+use_wandb: True
+entity: xingzhis
+project: "dmae"
+tags: ['default']

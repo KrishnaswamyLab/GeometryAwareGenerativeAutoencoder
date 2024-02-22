@@ -1,0 +1,23 @@
+project: dmae
+program: train_dm.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+
+method: grid  # or 'random', 'bayes'
+metric:
+  name: train_loss
+  goal: minimize
+parameters:
+  time_embedding_size: 
+    values: [8,16,32]
+  lr: 
+    values: [1e-3,1e-4]
+  dropout:
+    values: [0.2,0.5]
+  data:
+    values: ['eb_all.npz','eb_all_10.npz']
+  layer_widths:
+    values: [[64,64,64],[128,128,128]]
+
