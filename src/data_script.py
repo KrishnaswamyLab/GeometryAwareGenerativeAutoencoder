@@ -71,10 +71,10 @@ def myeloid_data(fpath: str = '../raw_data/BMMC_myeloid.csv',
 
 
 def tree_data(
-        n_dim: int = 10,
-        n_points: int = 200,
-        n_branch: int = 10,
-        manifold_noise: float = 4,
+        n_dim: int = 5,
+        n_points: int = 500,
+        n_branch: int = 5,
+        noise: float = 1.0,
         random_state=2024,
         clustered = None,
         train_fold = None):
@@ -94,7 +94,7 @@ def tree_data(
     )
 
     # The noisy manifold
-    noise = np.random.normal(0, manifold_noise, gt_X.shape)
+    noise = np.random.normal(0, noise, gt_X.shape)
     X = gt_X + noise
 
     labels = np.array([i // n_points for i in range(n_branch * n_points)])
@@ -127,7 +127,7 @@ if __name__ == '__main__':
         gt_X, X, label = sklearn_s_curve(n_samples=args.n, noise=1.0, random_state=2024)
     elif args.data == 'tree':
         # Generate tree data
-        gt_X, X, label = tree_data(n_dim=10, n_points=400, n_branch=5, manifold_noise=1.0)
+        gt_X, X, label = tree_data(n_dim=5, n_points=500, n_branch=5, noise=1.0)
     elif args.data == 'myeloid':
         # Load BMMC myeloid data
         gt_X, X, label = myeloid_data()

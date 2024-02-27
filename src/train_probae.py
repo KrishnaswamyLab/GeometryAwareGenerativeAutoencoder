@@ -75,6 +75,7 @@ def train_eval(cfg: DictConfig):
     split_val_idx = int(split_idx*train_valid_split)
     train_data = raw_data[:split_val_idx]
     train_val_data = raw_data[:split_idx]
+    test_data = raw_data[split_idx:]
 
     train_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_data, X_labels=None, dist_type='phate_prob')
     train_val_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_val_data, X_labels=None, dist_type='phate_prob')
@@ -281,6 +282,11 @@ def train_eval(cfg: DictConfig):
         demaps = evaluate_demap(embedding_map, true_data)
         for k, v in demaps.items():
             metrics[f'{k}'] = v
+        # subsample on test data
+        test_idx = np.arange(split_idx, len(raw_data))
+        test_embed = pred_embed[test_idx]
+        demaps_test = DEMaP(true_data, test_embed, subsample_idx=test_idx)
+        metrics['test'] = demaps_test
         log(f'Evaluation DeMAPs: {demaps}')
 
     wandb.log({f'evaluation/{k}': v for k, v in metrics.items()})
