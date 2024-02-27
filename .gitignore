@@ -150,3 +150,7 @@ lightning_logs/
 settings.json
 *.parquet
 synthetic_data/
+*.npz
+*.npy
+*.gif
+*.csv
