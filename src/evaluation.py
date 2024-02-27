@@ -84,11 +84,11 @@ def eval_results(noisy_path, noiseless_path, model):
         result[k] = v
     return result
 
-def compute_gene_corr_mse(X_reconstructed, X_real):
+def compute_gene_corr_mse(X_reconstructed, X_real, **kwargs):
     """
     Given two CELL x GENE matrices, computes MSE between column-wise pearson gene-gene correlations.
     """
-    magic_op = magic.MAGIC()
+    magic_op = magic.MAGIC(**kwargs)
     X_recon_magic = magic_op.fit_transform(X_reconstructed)
     X_real_magic = magic_op.fit_transform(X_real)
     # Compute column wise correlations within each matrix
