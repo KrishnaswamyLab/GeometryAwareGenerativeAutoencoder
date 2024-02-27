@@ -66,10 +66,11 @@ def train_eval(cfg: DictConfig):
     shuffle = cfg.training.shuffle
     train_test_split = cfg.training.train_test_split
     train_valid_split = cfg.training.train_valid_split
-    # if shuffle:
-    #     idxs = np.random.permutation(len(raw_data))
-    #     raw_data = raw_data[idxs]
-    #     labels = labels[idxs]
+    if shuffle:
+        idxs = np.random.permutation(len(raw_data))
+        true_data = true_data[idxs]
+        raw_data = raw_data[idxs]
+        labels = labels[idxs]
 
     split_idx = int(len(raw_data)*train_test_split)
     split_val_idx = int(split_idx*train_valid_split)
@@ -77,9 +78,9 @@ def train_eval(cfg: DictConfig):
     train_val_data = raw_data[:split_idx]
     test_data = raw_data[split_idx:]
 
-    train_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_data, X_labels=None, dist_type='phate_prob')
-    train_val_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_val_data, X_labels=None, dist_type='phate_prob')
-    whole_dataset = RowStochasticDataset(data_name=cfg.data.name, X=raw_data, X_labels=None, dist_type='phate_prob')
+    train_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_data, X_labels=None, dist_type='phate_prob', knn=cfg.data.knn)
+    train_val_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_val_data, X_labels=None, dist_type='phate_prob', knn=cfg.data.knn)
+    whole_dataset = RowStochasticDataset(data_name=cfg.data.name, X=raw_data, X_labels=None, dist_type='phate_prob', knn=cfg.data.knn)
     
     log(f'Train dataset: {len(train_dataset)}; \
           Val dataset: {len(train_val_dataset)}; \
@@ -224,6 +225,7 @@ def train_eval(cfg: DictConfig):
     model.eval()
     with torch.no_grad():
         pred_embed = model.encode(torch.from_numpy(whole_dataset.X).type(torch.float32).to(device))
+        recon_data = model.decode(pred_embed).cpu().detach().numpy()
         if cfg.model.type == 'probae':
             pred_dist = model.compute_prob_matrix(pred_embed, 
                                                   t=whole_dataset.t, 
@@ -233,44 +235,30 @@ def train_eval(cfg: DictConfig):
             pred_dist = torch.cdist(pred_embed, pred_embed)
     tsne_embed = TSNE(n_components=emb_dim, perplexity=5).fit_transform(whole_dataset.X)
 
-    if cfg.model.type == 'probae':
-        # affnity matching, metrics: KL divergence, mAP
-        metrics = {
-            'KL div': np.inf,
-            'mAP': -np.inf,
-            'mAP_PHATE': -np.inf,
-            'mAP_TSNE': -np.inf,
-        }
-        gt_dist = (whole_dataset.row_stochastic_matrix).type(torch.float32).to(device)
-        metrics['KL div'] = torch.nn.functional.kl_div(torch.log(pred_dist+1e-8),
-                                                        gt_dist+1e-8,
-                                                        reduction='batchmean',
-                                                        log_target=False).item()
-        metrics['mAP'] = computeKNNmAP(pred_embed.cpu().detach().numpy(),
-                                       whole_dataset.X,
-                                       k=5,
-                                       distance_op='norm')
-        metrics['mAP_PHATE'] = computeKNNmAP(whole_dataset.phate_embed.cpu().detach().numpy(),
-                                             whole_dataset.X,
-                                             k=5,
-                                             distance_op='norm')
-        metrics['mAP_TSNE'] = computeKNNmAP(tsne_embed,
+    # affnity matching, metrics: KL divergence, mAP
+    metrics = {
+        'KL div': np.inf,
+        'mAP': -np.inf,
+        'mAP_PHATE': -np.inf,
+        'mAP_TSNE': -np.inf,
+    }
+    gt_dist = (whole_dataset.row_stochastic_matrix).type(torch.float32).to(device)
+    metrics['KL div'] = torch.nn.functional.kl_div(torch.log(pred_dist+1e-8),
+                                                    gt_dist+1e-8,
+                                                    reduction='batchmean',
+                                                    log_target=False).item()
+    metrics['mAP'] = computeKNNmAP(pred_embed.cpu().detach().numpy(),
+                                    whole_dataset.X,
+                                    k=5,
+                                    distance_op='norm')
+    metrics['mAP_PHATE'] = computeKNNmAP(whole_dataset.phate_embed.cpu().detach().numpy(),
                                             whole_dataset.X,
                                             k=5,
                                             distance_op='norm')
-    elif cfg.model.type == 'ae':
-        # distance matching
-        metrics = {
-            'distortion': np.inf,
-            'mAP': -np.inf
-        }
-        pred_dist = torch.cdist(pred_embed, pred_embed) # [N, N]
-        metrics['distortion'] = distance_distortion(pred_dist.cpu().detach().numpy(),
-                                                    gt_dist.cpu().detach().numpy())
-        metrics['mAP'] = computeKNNmAP(pred_embed.cpu().detach().numpy(),
-                                       whole_dataset.X,
-                                       k=10,
-                                       distance_op='norm')
+    metrics['mAP_TSNE'] = computeKNNmAP(tsne_embed,
+                                        whole_dataset.X,
+                                        k=5,
+                                        distance_op='norm')
     
     ''' DeMAP '''
     if true_data is not None:
@@ -298,6 +286,7 @@ def train_eval(cfg: DictConfig):
               phate_embed=whole_dataset.phate_embed.cpu().detach().numpy(),
               pred_dist=pred_dist.cpu().detach().numpy(),
               gt_dist=gt_dist.cpu().detach().numpy(),
+              recon_data=recon_data,
               data=whole_dataset.X,
               dataset_name=cfg.data.name,
               data_clusters=labels,
@@ -308,6 +297,7 @@ def train_eval(cfg: DictConfig):
 
     if cfg.logger.use_wandb:
         run.finish()
+
 
 def evaluate_demap(embedding_map: dict[str, np.ndarray],
                    true_data: np.ndarray) -> dict[str, float]:
@@ -344,7 +334,6 @@ def geodesic_distance(data, knn=10, distance="data"):
 #     geodesic_dist = scipy.sparse.csgraph.shortest_path(euc_dist, 
 #                                                        method="auto", 
 #                                                        directed=False)
-
 #     return geodesic_dist
 
 
