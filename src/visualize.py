@@ -12,6 +12,7 @@ def visualize(pred: np.ndarray,
               phate_embed: np.ndarray,
               pred_dist: np.ndarray,
               gt_dist: np.ndarray,
+              recon_data: np.ndarray,
               data: np.ndarray,
               dataset_name: str,
               data_clusters: np.ndarray,
@@ -22,18 +23,22 @@ def visualize(pred: np.ndarray,
 
     n_subplots = 3
     if data.shape[1] <= 3:
-        n_subplots = 4
+        if recon_data is not None:
+            n_subplots = 5
+        else:
+            n_subplots = 4
+            
 
     # Plot Embeddings
     plt.rcParams['font.family'] = 'serif'
-    fig = plt.figure(figsize=(28,6))
+    fig = plt.figure(figsize=(n_subplots * 7, 6))
     size = 5
     fontsize = 6
 
     # Distribution of gt_dist vs. pred_dist.
     ax = fig.add_subplot(1,n_subplots,1)
-    ax.hist(gt_dist.flatten(), bins=100, label='gt_dist', color='blue')
-    ax.hist(pred_dist.flatten(), bins=100, label='pred_dist', color='gray', alpha=0.5)
+    ax.hist(gt_dist.flatten(), bins=100, label='gt', color='blue')
+    ax.hist(pred_dist.flatten(), bins=100, label='pred', color='gray', alpha=0.5)
     ax.legend()
     ax.title.set_text("gt vs. pred")
 
@@ -45,7 +50,7 @@ def visualize(pred: np.ndarray,
                         c=data_clusters,
                         legend=False,
                         ax=ax,
-                        title="%s Phate Embedding" % (dataset_name),
+                        title="%s Phate" % (dataset_name),
                         xticks=True,
                         yticks=True,
                         label_prefix='',
@@ -69,15 +74,25 @@ def visualize(pred: np.ndarray,
                         s=size)
     
     # Visualize < 3D embeddings
-    if data.shape[1] <=3:
+    if data.shape[1] == 2:
+        ax = fig.add_subplot(1,n_subplots,4)
+        scprep.plot.scatter2d(data, c=data_clusters, s=5, ax=ax)
+        ax.title.set_text(dataset_name)
+    elif data.shape[1] == 3:
+        ax = fig.add_subplot(1,n_subplots,4, projection='3d')
+        scprep.plot.scatter3d(data, c=data_clusters, s=5, ax=ax)
+        ax.title.set_text(dataset_name)
+    
+    # Visualize reconstructed data
+    if recon_data is not None:
         if data.shape[1] == 2:
-            ax = fig.add_subplot(1,n_subplots,4)
-            scprep.plot.scatter2d(data, c=data_clusters, s=5, ax=ax)
-            ax.title.set_text(dataset_name)
+            ax = fig.add_subplot(1,n_subplots,5)
+            scprep.plot.scatter2d(recon_data, c=data_clusters, s=5, ax=ax)
+            ax.title.set_text("Reconstructed Data")
         elif data.shape[1] == 3:
-            ax = fig.add_subplot(1,n_subplots,4, projection='3d')
-            scprep.plot.scatter3d(data, c=data_clusters, s=5, ax=ax)
-            ax.title.set_text(dataset_name)
+            ax = fig.add_subplot(1,n_subplots,5, projection='3d')
+            scprep.plot.scatter3d(recon_data, c=data_clusters, s=5, ax=ax)
+            ax.title.set_text("Reconstructed Data")
 
     # Procrustes aligned embeddings
     # procrustes_op = Procrustes()

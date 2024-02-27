@@ -3,6 +3,7 @@ data:
   filetype: '.npz'
   name: 'swiss_roll'
   preprocess: 'none'
+  knn: 5
   kernel:
     type: 'gaussian'
     sigma: 1.0
