@@ -6,7 +6,7 @@ from sklearn.metrics import mean_absolute_percentage_error
 import torch
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
-
+import magic
 
 def compute_metrics(model, x_test, x_noiseless=None, dist_true=None):
     """
@@ -84,9 +84,16 @@ def eval_results(noisy_path, noiseless_path, model):
         result[k] = v
     return result
 
-"""
-Placeholder for @professorwug
-reconstruction in the gene space using gene expression correlation and MSE of it.
-"""
-def compute_gene_corr_mse():
-    return np.nan
+def compute_gene_corr_mse(X_reconstructed, X_real, **kwargs):
+    """
+    Given two CELL x GENE matrices, computes MSE between column-wise pearson gene-gene correlations.
+    """
+    magic_op = magic.MAGIC(**kwargs)
+    X_recon_magic = magic_op.fit_transform(X_reconstructed)
+    X_real_magic = magic_op.fit_transform(X_real)
+    # Compute column wise correlations within each matrix
+    corrs_recon = np.corrcoef(X_recon_magic, rowvar=False) # vars (genes) are in columns
+    corrs_real = np.corrcoef(X_real_magic, rowvar=False)
+    # get mse
+    mse = np.sum(np.square(corrs_recon - corrs_real))
+    return mse
