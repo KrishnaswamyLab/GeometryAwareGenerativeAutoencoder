@@ -6,9 +6,11 @@ from sklearn.metrics import mean_absolute_percentage_error
 import torch
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
+from scipy.stats import spearmanr
 import magic
+from sklearn.decomposition import PCA
 
-def compute_metrics(model, x_test, x_noiseless=None, dist_true=None):
+def compute_encoding_metrics(model, x_test, x_noiseless=None, dist_true=None):
     """
     model: need encode, decode functions
     x_test: test data in ambient space
@@ -30,15 +32,13 @@ def compute_metrics(model, x_test, x_noiseless=None, dist_true=None):
     acc_val = np.nan
     if dist_true is not None:
         acc_val = 1 - mean_absolute_percentage_error(dist_true, dist_pred)
-    gene_corr_mse = compute_gene_corr_mse()
     result = dict(
         demap=demap_val,
         accuracy=acc_val,
-        gene_corr_mse=gene_corr_mse,
     )
     return result
 
-def rename_string(s):
+def get_noiseless_name(s):
     """
     Get filename for true synthetic datasets given file name of noisy dataset.
     """
@@ -48,7 +48,10 @@ def rename_string(s):
     new_s = '_'.join(new_parts)    
     return new_s
 
-def get_dataset_contents(noisy_path, noiseless_path):
+def get_ambient_name(s):
+    return 'nopc_'+ s[:-4]
+
+def get_dataset_contents(noisy_path, noiseless_path, ambient_path=None):
     data_noisy = np.load(noisy_path, allow_pickle=True)
     X = data_noisy['data']
     train_mask = data_noisy['is_train']
@@ -61,7 +64,12 @@ def get_dataset_contents(noisy_path, noiseless_path):
     assert (train_mask == data_noiseless['is_train']).all()
     x_noiseless = data_noiseless['data'][~train_mask]
     x_test=X[~train_mask]
-    return x_test, x_noiseless, dist_true
+    pca = None
+    if ambient_path is not None:
+        data_ambient = np.load(ambient_path, allow_pickle=True)
+        pca = PCA(n_components=x_test.shape[1])
+        x_test_pc = pca.fit_transform(data_ambient)
+    return x_test, x_noiseless, dist_true, pca
 
 def get_data_config(filename):
     filename = filename.split('/')[-1]
@@ -89,11 +97,62 @@ def compute_gene_corr_mse(X_reconstructed, X_real, **kwargs):
     Given two CELL x GENE matrices, computes MSE between column-wise pearson gene-gene correlations.
     """
     magic_op = magic.MAGIC(**kwargs)
-    X_recon_magic = magic_op.fit_transform(X_reconstructed)
+    # we probably wouldn't run MAGIC on reconstructed data because it is already denoised.
+    # X_recon_magic = magic_op.fit_transform(X_reconstructed)
+    X_recon_magic = X_reconstructed
     X_real_magic = magic_op.fit_transform(X_real)
     # Compute column wise correlations within each matrix
     corrs_recon = np.corrcoef(X_recon_magic, rowvar=False) # vars (genes) are in columns
     corrs_real = np.corrcoef(X_real_magic, rowvar=False)
     # get mse
-    mse = np.sum(np.square(corrs_recon - corrs_real))
+    mse = np.mean(np.square(corrs_recon - corrs_real))
     return mse
+
+def spearman_correlation_corresponding(A, B):
+    """
+    Compute the Spearman correlation for each corresponding column of matrices A and B using a loop.
+    """
+    assert A.shape == B.shape, "Matrices A and B must have the same size"
+    correlations = []
+    for i in range(A.shape[1]):
+        corr, _ = spearmanr(A[:, i], B[:, i])
+        correlations.append(corr)
+    return np.array(correlations)
+
+def pearson_correlation_corresponding(A, B):
+    """
+    Compute the Spearman correlation for each corresponding column of matrices A and B using a loop.
+    """
+    assert A.shape == B.shape, "Matrices A and B must have the same size"
+    correlations = []
+    for i in range(A.shape[1]):
+        corr = np.corrcoef(A[:, i], B[:, i])[0,1]
+        correlations.append(corr)
+    return np.array(correlations)
+
+
+def compute_recon_metric(model, x_test, pca):
+    x_tensor = torch.from_numpy(x_test).float().to(model.device)
+    model.eval()
+    z_pred = model.encode(x_tensor)
+    x_pred = model.decode(z_pred)
+    z_pred = z_pred.detach().cpu().numpy()
+    x_pred = x_pred.detach().cpu().numpy()
+    magic_op = magic.MAGIC(verbose=0)
+    x_magic = magic_op.fit_transform(x_test)
+    x_pred_ambient = pca.inverse_transform(x_pred)
+    x_magic_ambient = pca.inverse_transform(x_magic)
+    # corrs = spearman_correlation_corresponding(x_pred_ambient, x_magic_ambient)
+    corrs = pearson_correlation_corresponding(x_pred_ambient, x_magic_ambient)
+    score = corrs.mean()
+    return score
+
+def compute_all_metrics(model, data_path, noiseless_path, ambient_path):
+    x_test, x_noiseless, dist_true, pca = get_dataset_contents(data_path, noiseless_path, ambient_path)
+    score = compute_recon_metric(model, x_test, pca)
+    encoding_metrics = compute_encoding_metrics(model, x_test, x_noiseless, dist_true)
+    res_dict = get_data_config(data_path)
+    for k, v in encoding_metrics.items():
+        res_dict[k] = v
+    res_dict['recon score'] = score
+    return res_dict
