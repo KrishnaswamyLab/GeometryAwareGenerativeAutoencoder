@@ -1,5 +1,12 @@
 '''
     Script for preparing data for the model
+    Data: dict
+    - data (X)
+    - colors (label)
+    - dist 
+    - is_train (train_mask) 1 if train, 0 if test
+    - data_gt (gt_X)
+    - metadata (e.g. parameters for data generation)
 '''
 import os
 import argparse
@@ -102,32 +109,39 @@ def tree_data(
     return gt_X, X, labels
 
 
-# def compute_geodesic_distances(data, knn=10, distance="data"):
-#     G = graphtools.Graph(data, knn=knn, decay=None)
-#     return G.shortest_path(distance=distance)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Data preparation script')
     parser.add_argument('--data', type=str, default='swiss_roll', help='Data to prepare')
     parser.add_argument('--n', type=int, default=3000, help='Number of samples')
+    parser.add_argument('--noise', type=float, default=1.0, help='Noise level')
+    parser.add_argument('--train-ratio', type=float, default=0.8, help='Train-test split')
     args = parser.parse_args()
 
     data = {
-        'gt_X': None, # noiseless data
-        'X': None,
-        'label': None,
+        'data_gt': None, # noiseless data
+        'data': None,
+        'colors': None, # label
+    }
+    metadata = {
+        'n': args.n,
+        'noise': args.noise,
     }
     
     if args.data == 'swiss_roll':
         # Generate Swiss Roll data
-        gt_X, X, label = sklearn_swiss_roll(n_samples=args.n, noise=1.0, random_state=2024)
+        gt_X, X, label = sklearn_swiss_roll(n_samples=args.n, noise=args.noise, random_state=2024)
     elif args.data == 's_curve':
         # Generate S-curve data
-        gt_X, X, label = sklearn_s_curve(n_samples=args.n, noise=1.0, random_state=2024)
+        gt_X, X, label = sklearn_s_curve(n_samples=args.n, noise=args.noise, random_state=2024)
     elif args.data == 'tree':
         # Generate tree data
-        gt_X, X, label = tree_data(n_dim=5, n_points=500, n_branch=5, noise=1.0)
+        gt_X, X, label = tree_data(n_dim=5, n_points=500, n_branch=5, noise=args.noise, random_state=2024)
+        args.n = 5 * 500 # Ugly hardcode, just to compare to HeatGeo
+        metadata['n'] = 5 * 500
+        metadata['n_dim'] = 5
+        metadata['n_points'] = 500
+        metadata['n_branch'] = 5
     elif args.data == 'myeloid':
         # Load BMMC myeloid data
         gt_X, X, label = myeloid_data()
@@ -135,11 +149,22 @@ if __name__ == '__main__':
         raise ValueError(f'Unknown data: {args.data}')
     
     # Save the data
-    data['gt_X'] = gt_X
-    data['X'] = X
-    data['label'] = label
-    np.savez(f'../data/{args.data}.npz', **data)
+    data['data_gt'] = gt_X
+    data['data'] = X
+    data['colors'] = label
+
+    # generate is_train mask
+    idxs = np.random.permutation(X.shape[0])
+    split_idx = int(X.shape[0] * args.train_ratio)
+    is_train = np.zeros(X.shape[0], dtype=int)
+    is_train[idxs[:split_idx]] = 1
+    data['is_train'] = is_train
+
+    np.savez(f'../data/{args.data}_noise{args.noise}.npz', **data)
 
     
-    check_data = np.load(f'../data/{args.data}.npz', allow_pickle=True)
-    print(check_data['gt_X'].shape, check_data['X'].shape, check_data['label'].shape)
+    check_data = np.load(f'../data/{args.data}_noise{args.noise}.npz', allow_pickle=True)
+    print(check_data['data_gt'].shape, 
+          check_data['data'].shape, 
+          check_data['colors'].shape,
+          check_data['is_train'].shape)

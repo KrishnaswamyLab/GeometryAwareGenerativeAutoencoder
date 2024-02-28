@@ -54,34 +54,49 @@ def train_eval(cfg: DictConfig):
         raw_data = noisy_data
         labels = None
     else:
-        data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
+        data_path = os.path.join(cfg.data.root, f'{cfg.data.name}_noise{cfg.data.noise}.npz')
+        #data_path = os.path.join(cfg.data.root, f'{cfg.data.name}.npz')
+        print(f'Loading data from {data_path} ...')
         data = np.load(data_path, allow_pickle=True)
-        true_data = data['gt_X']
-        raw_data = data['X']
-        labels = data['label']
+        true_data = data['data_gt']
+        raw_data = data['data']
+        labels = data['colors']
+        train_mask = data['is_train']
         assert raw_data.shape[0] == labels.shape[0]
 
     log(f'Done loading raw data. Raw data shape: {raw_data.shape}', to_console=True)
 
-    shuffle = cfg.training.shuffle
-    train_test_split = cfg.training.train_test_split
-    train_valid_split = cfg.training.train_valid_split
-    if shuffle:
-        idxs = np.random.permutation(len(raw_data))
-        true_data = true_data[idxs]
-        raw_data = raw_data[idxs]
-        labels = labels[idxs]
+    if train_mask is None:
+        # no mask given, split on fly
+        shuffle = cfg.training.shuffle
+        train_test_split = cfg.training.train_test_split
+        train_valid_split = cfg.training.train_valid_split
+        if shuffle:
+            idxs = np.random.permutation(len(raw_data))
+            true_data = true_data[idxs]
+            raw_data = raw_data[idxs]
+            labels = labels[idxs]
 
-    split_idx = int(len(raw_data)*train_test_split)
-    split_val_idx = int(split_idx*train_valid_split)
-    train_data = raw_data[:split_val_idx]
-    train_val_data = raw_data[:split_idx]
-    test_data = raw_data[split_idx:]
+        split_idx = int(len(raw_data)*train_test_split)
+        split_val_idx = int(split_idx*train_valid_split)
+        train_data = raw_data[:split_val_idx]
+        train_val_data = raw_data[:split_idx]
+        test_data = raw_data[split_idx:]
+    else:
+        # train_mask is already shuffled. Use it to split
+        train_val_data = raw_data[train_mask == 1]
+        split_val_idx = int(len(train_val_data)*cfg.training.train_valid_split)
+        train_data = train_val_data[:split_val_idx]
+        test_data = raw_data[train_mask == 0]
+
+    print(train_mask[:10])
+    print('train_val_data', train_val_data.shape, train_data.shape)
+    print('split_val_idx', split_val_idx)
 
     train_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_data, X_labels=None, dist_type='phate_prob', knn=cfg.data.knn)
     train_val_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_val_data, X_labels=None, dist_type='phate_prob', knn=cfg.data.knn)
     whole_dataset = RowStochasticDataset(data_name=cfg.data.name, X=raw_data, X_labels=None, dist_type='phate_prob', knn=cfg.data.knn)
-    
+
     log(f'Train dataset: {len(train_dataset)}; \
           Val dataset: {len(train_val_dataset)}; \
           Whole dataset: {len(whole_dataset)}')
@@ -271,7 +286,9 @@ def train_eval(cfg: DictConfig):
         for k, v in demaps.items():
             metrics[f'{k}'] = v
         # subsample on test data
-        test_idx = np.arange(split_idx, len(raw_data))
+        #test_idx = np.arange(split_idx, len(raw_data))
+        test_idx = np.nonzero(train_mask == 0)[0]
+        print('test_idx: ', test_idx)
         test_embed = pred_embed[test_idx]
         demaps_test = DEMaP(true_data, test_embed, subsample_idx=test_idx)
         metrics['test'] = demaps_test
@@ -324,17 +341,6 @@ def DEMaP(data, embedding, knn=10, subsample_idx=None):
 def geodesic_distance(data, knn=10, distance="data"):
     G = graphtools.Graph(data, knn=knn, decay=None)
     return G.shortest_path(distance=distance)
-
-# def compute_geodesic_distances(gt_X, knn_geodesic=10):
-#     # Compute the geodesic distances
-#     graph = pygsp.graphs.NNGraph(gt_X, k=knn_geodesic)
-#     euc_dist = squareform(pdist(gt_X)) # [N, N]
-#     A = graph.A.toarray() # [N, N]
-#     euc_dist[A == 0] = 0 # masking out the non-neighbors
-#     geodesic_dist = scipy.sparse.csgraph.shortest_path(euc_dist, 
-#                                                        method="auto", 
-#                                                        directed=False)
-#     return geodesic_dist
 
 
 if __name__ == "__main__":
