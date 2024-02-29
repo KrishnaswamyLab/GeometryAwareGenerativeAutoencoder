@@ -1,0 +1,6 @@
+root: '../data'
+filetype: '.npz'
+name: 'swiss_roll'
+n: 3000
+noise: 1.0
+train_ratio: 0.8

@@ -13,6 +13,8 @@ import argparse
 from typing import Literal, Optional
 from glob import glob
 from typing import List, Tuple
+import hydra
+from omegaconf import DictConfig, OmegaConf
 
 import phate
 import scipy
@@ -108,15 +110,9 @@ def tree_data(
     
     return gt_X, X, labels
 
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Data preparation script')
-    parser.add_argument('--data', type=str, default='swiss_roll', help='Data to prepare')
-    parser.add_argument('--n', type=int, default=3000, help='Number of samples')
-    parser.add_argument('--noise', type=float, default=1.0, help='Noise level')
-    parser.add_argument('--train-ratio', type=float, default=0.8, help='Train-test split')
-    args = parser.parse_args()
+@hydra.main(version_base=None, config_path='../conf/data', config_name='af_data.yaml')
+def gen_data(cfg: DictConfig) -> None:
+    print(cfg)
 
     data = {
         'data_gt': None, # noiseless data
@@ -124,29 +120,29 @@ if __name__ == '__main__':
         'colors': None, # label
     }
     metadata = {
-        'n': args.n,
-        'noise': args.noise,
+        'n': cfg.n,
+        'noise': cfg.noise,
     }
     
-    if args.data == 'swiss_roll':
+    if cfg.name == 'swiss_roll':
         # Generate Swiss Roll data
-        gt_X, X, label = sklearn_swiss_roll(n_samples=args.n, noise=args.noise, random_state=2024)
-    elif args.data == 's_curve':
+        gt_X, X, label = sklearn_swiss_roll(n_samples=cfg.n, noise=cfg.noise, random_state=2024)
+    elif cfg.name == 's_curve':
         # Generate S-curve data
-        gt_X, X, label = sklearn_s_curve(n_samples=args.n, noise=args.noise, random_state=2024)
-    elif args.data == 'tree':
+        gt_X, X, label = sklearn_s_curve(n_samples=cfg.n, noise=cfg.noise, random_state=2024)
+    elif cfg.name == 'tree':
         # Generate tree data
-        gt_X, X, label = tree_data(n_dim=5, n_points=500, n_branch=5, noise=args.noise, random_state=2024)
-        args.n = 5 * 500 # Ugly hardcode, just to compare to HeatGeo
+        gt_X, X, label = tree_data(n_dim=5, n_points=500, n_branch=5, noise=cfg.noise, random_state=2024)
+        cfg.n = 5 * 500 # Ugly hardcode, just to compare to HeatGeo
         metadata['n'] = 5 * 500
         metadata['n_dim'] = 5
         metadata['n_points'] = 500
         metadata['n_branch'] = 5
-    elif args.data == 'myeloid':
+    elif cfg.name == 'myeloid':
         # Load BMMC myeloid data
         gt_X, X, label = myeloid_data()
     else:
-        raise ValueError(f'Unknown data: {args.data}')
+        raise ValueError(f'Unknown data: {cfg.name}')
     
     # Save the data
     data['data_gt'] = gt_X
@@ -155,16 +151,78 @@ if __name__ == '__main__':
 
     # generate is_train mask
     idxs = np.random.permutation(X.shape[0])
-    split_idx = int(X.shape[0] * args.train_ratio)
+    split_idx = int(X.shape[0] * cfg.train_ratio)
     is_train = np.zeros(X.shape[0], dtype=int)
     is_train[idxs[:split_idx]] = 1
     data['is_train'] = is_train
 
-    np.savez(f'../data/{args.data}_noise{args.noise}.npz', **data)
+    np.savez(f'../data/{cfg.name}_noise{cfg.noise}.npz', **data)
 
     
-    check_data = np.load(f'../data/{args.data}_noise{args.noise}.npz', allow_pickle=True)
+    check_data = np.load(f'../data/{cfg.name}_noise{cfg.noise}.npz', allow_pickle=True)
     print(check_data['data_gt'].shape, 
           check_data['data'].shape, 
           check_data['colors'].shape,
           check_data['is_train'].shape)
+
+
+if __name__ == '__main__':
+    gen_data()
+
+    # parser = argparse.ArgumentParser(description='Data preparation script')
+    # parser.add_argument('--data', type=str, default='swiss_roll', help='Data to prepare')
+    # parser.add_argument('--n', type=int, default=3000, help='Number of samples')
+    # parser.add_argument('--noise', type=float, default=1.0, help='Noise level')
+    # parser.add_argument('--train-ratio', type=float, default=0.8, help='Train-test split')
+    # args = parser.parse_args()
+
+    # data = {
+    #     'data_gt': None, # noiseless data
+    #     'data': None,
+    #     'colors': None, # label
+    # }
+    # metadata = {
+    #     'n': cfg.n,
+    #     'noise': cfg.noise,
+    # }
+    
+    # if cfg.name == 'swiss_roll':
+    #     # Generate Swiss Roll data
+    #     gt_X, X, label = sklearn_swiss_roll(n_samples=cfg.n, noise=cfg.noise, random_state=2024)
+    # elif cfg.name == 's_curve':
+    #     # Generate S-curve data
+    #     gt_X, X, label = sklearn_s_curve(n_samples=cfg.n, noise=cfg.noise, random_state=2024)
+    # elif cfg.name == 'tree':
+    #     # Generate tree data
+    #     gt_X, X, label = tree_data(n_dim=5, n_points=500, n_branch=5, noise=cfg.noise, random_state=2024)
+    #     cfg.n = 5 * 500 # Ugly hardcode, just to compare to HeatGeo
+    #     metadata['n'] = 5 * 500
+    #     metadata['n_dim'] = 5
+    #     metadata['n_points'] = 500
+    #     metadata['n_branch'] = 5
+    # elif cfg.name == 'myeloid':
+    #     # Load BMMC myeloid data
+    #     gt_X, X, label = myeloid_data()
+    # else:
+    #     raise ValueError(f'Unknown data: {cfg.name}')
+    
+    # # Save the data
+    # data['data_gt'] = gt_X
+    # data['data'] = X
+    # data['colors'] = label
+
+    # # generate is_train mask
+    # idxs = np.random.permutation(X.shape[0])
+    # split_idx = int(X.shape[0] * cfg.train_ratio)
+    # is_train = np.zeros(X.shape[0], dtype=int)
+    # is_train[idxs[:split_idx]] = 1
+    # data['is_train'] = is_train
+
+    # np.savez(f'../data/{cfg.name}_noise{cfg.noise}.npz', **data)
+
+    
+    # check_data = np.load(f'../data/{cfg.name}_noise{cfg.noise}.npz', allow_pickle=True)
+    # print(check_data['data_gt'].shape, 
+    #       check_data['data'].shape, 
+    #       check_data['colors'].shape,
+    #       check_data['is_train'].shape)

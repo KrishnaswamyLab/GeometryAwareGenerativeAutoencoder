@@ -101,12 +101,21 @@ class BaseAE(pl.LightningModule, ABC):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         return optimizer
 
+class Decoder(torch.nn.Module):
+    def __init__(self, dim, emb_dim, layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU()):
+        super().__init__()
+        self.decoder = MLP(emb_dim, dim, 
+                           layer_widths=layer_widths, 
+                           activation_fn=activation_fn) # reverse the widths for decoder layer_widths[::-1]
+
+    def forward(self, x):
+        return self.decoder(x)
     
 class AEProb(torch.nn.Module):
     def __init__(self, dim, emb_dim, 
                  layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), 
                  prob_method='tstudent', 
-                 dist_reconstr_weights=[0.9, 0.1],
+                 dist_reconstr_weights=[1.0, 0.0],
                  eps=1e-8):
         super().__init__()
         self.dim = dim
@@ -206,7 +215,8 @@ class AEProb(torch.nn.Module):
             probs = numerator / row_sum # [N, N]
 
         elif self.prob_method == 'heat_kernel':
-            heat_op = HeatKernelGaussian(sigma=1.0, alpha=20, t=t) # FIXME: add these as params
+            #heat_op = HeatKernelGaussian(sigma=1.0, alpha=20, t=t) # FIXME: add these as params
+            heat_op = HeatKernelGaussian(sigma=1.0, alpha=1, t=1)
             probs = heat_op(z)
 
         elif self.prob_method == 'powered_tstudent':
