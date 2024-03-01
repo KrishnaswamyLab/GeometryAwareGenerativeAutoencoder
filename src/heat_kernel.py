@@ -104,8 +104,9 @@ class HeatKernelGaussian:
         eigvals = torch.linalg.eigvals(L).real
         max_eigval = eigvals.max()
         cheb_coeff = compute_chebychev_coeff_all(0.5 * max_eigval, self.t, self.order)
+        id = torch.eye(data.shape[0], device=data.device)
         heat_kernel = expm_multiply(
-            L, torch.eye(data.shape[0]), cheb_coeff, 0.5 * max_eigval
+            L, id, cheb_coeff, 0.5 * max_eigval
         )
         # symmetrize the heat kernel, for larger t it may not be symmetric
         heat_kernel = (heat_kernel + heat_kernel.T) / 2
@@ -117,7 +118,8 @@ def laplacian_from_data(data: torch.Tensor, sigma: float, alpha: int = 20):
     degree = affinity.sum(dim=1)
     inv_deg_sqrt = 1.0 / torch.sqrt(degree)
     D = torch.diag(inv_deg_sqrt)
-    L = torch.eye(data.shape[0]) - D @ affinity @ D
+    id = torch.eye(data.shape[0], device=data.device)
+    L = id - D @ affinity @ D
     return L
 
 
@@ -151,4 +153,5 @@ def expm_multiply(
 
 @torch.no_grad()
 def compute_chebychev_coeff_all(eigval, t, K):
-    return 2.0 * ive(torch.arange(0, K + 1), -t * eigval)
+    eigval = eigval.detach().cpu()
+    return 2.0 * ive(torch.arange(0, K + 1, device=eigval.device), -t * eigval)
