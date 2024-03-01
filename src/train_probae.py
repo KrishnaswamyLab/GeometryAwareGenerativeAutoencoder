@@ -334,6 +334,8 @@ def DEMaP(data, embedding, knn=10, subsample_idx=None):
     #geodesic_dist = compute_geodesic_distances(data, knn_geodesic=knn)
     if subsample_idx is not None:
         geodesic_dist = geodesic_dist[subsample_idx, :][:, subsample_idx]
+    if isinstance(embedding, torch.Tensor):
+        embedding = embedding.detach().cpu()
     geodesic_dist = squareform(geodesic_dist)
     embedded_dist = pdist(embedding)
     return spearmanr(geodesic_dist, embedded_dist).correlation
