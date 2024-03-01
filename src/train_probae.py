@@ -123,7 +123,13 @@ def train_eval(cfg: DictConfig):
                      prob_method=cfg.model.prob_method, dist_reconstr_weights=cfg.model.dist_reconstr_weights)
 
     ''' Training '''
-    device = cfg.training.accelerator
+    # check if cuda is available
+    device_av = "cuda" if torch.cuda.is_available() else "cpu"
+    cfg.training.accelerator
+    if cfg.training.accelerator is None or cfg.training.accelerator == 'auto':
+        device = device_av
+    else:
+        device = cfg.training.accelerator
     epoch = cfg.training.max_epochs
 
     lr = cfg.training.lr
@@ -220,6 +226,9 @@ def train_eval(cfg: DictConfig):
             best_metric = val_loss
             best_model = model.state_dict()
             if cfg.path.save:
+                # check that the directory exists if not create it
+                if not os.path.exists(os.path.join(PROJECT_PATH, cfg.path.root)):
+                    os.makedirs(os.path.join(PROJECT_PATH, cfg.path.root))
                 torch.save(best_model, os.path.join(PROJECT_PATH, cfg.path.root, cfg.path.model))
             
         # Early Stopping

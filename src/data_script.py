@@ -156,6 +156,8 @@ def gen_data(cfg: DictConfig) -> None:
     is_train[idxs[:split_idx]] = 1
     data['is_train'] = is_train
 
+    if not os.path.exists('../data'):
+        os.makedirs('../data')
     np.savez(f'../data/{cfg.name}_noise{cfg.noise}.npz', **data)
 
     
