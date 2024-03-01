@@ -1,12 +1,11 @@
 data:
-  root: '../data'
+  root: 'data'
   filetype: '.npz'
-  name: 'tree' #'s_curve' #'swiss_roll'
+  name: 'swiss_roll' #'tree' #'s_curve' #'swiss_roll'
   noise: 1.0
   preprocess: 'none'
   knn: 5
 logger:
-  entity: danqiliao
   project: dmae
   tags:
   - probae
@@ -22,19 +21,15 @@ model:
   - 256
   - 128
   - 64
-  log_dist: true
-  type: probae
   prob_method: 'gaussian'
   alpha: 1.0
   bandwidth: 1.0
 path:
   log: ''
-  model: model
-  out_data: ''
+  model: model.ckpt
   plots: ''
-  procrustes: procrustes
-  root: ../results/
-  save: false
+  root: results/
+  save: true
 training:
   accelerator: cpu
   batch_size: 256

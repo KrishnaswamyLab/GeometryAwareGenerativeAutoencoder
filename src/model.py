@@ -216,7 +216,7 @@ class AEProb(torch.nn.Module):
 
         elif self.prob_method == 'heat_kernel':
             #heat_op = HeatKernelGaussian(sigma=1.0, alpha=20, t=t) # FIXME: add these as params
-            heat_op = HeatKernelGaussian(sigma=1.0, alpha=1, t=1)
+            heat_op = HeatKernelGaussian(sigma=1.0, alpha=1, order=10, t=1)
             probs = heat_op(z)
 
         elif self.prob_method == 'powered_tstudent':

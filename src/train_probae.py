@@ -30,13 +30,15 @@ from scipy.stats import spearmanr
 
 load_dotenv('../.env')
 PROJECT_PATH=os.getenv('PROJECT_PATH')
+WANDB_ENTITY=os.getenv('WANDB_ENTITY')
 
 @hydra.main(version_base=None, config_path='../conf', config_name='probae_config')
 def train_eval(cfg: DictConfig):
+    run = None
     if cfg.logger.use_wandb:
         config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
         run = wandb.init(
-            entity=cfg.logger.entity,
+            entity=WANDB_ENTITY,
             project=cfg.logger.project,
             tags="probae",
             name=f'{cfg.model.prob_method}_{cfg.data.name}',
@@ -59,8 +61,6 @@ def train_eval(cfg: DictConfig):
         labels = None
     else:
         data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}_noise{cfg.data.noise}.npz')
-        #data_path = '/gpfs/gibbs/pi/krishnaswamy_smita/dl2282/dmae/data/swiss_roll_noise1.0.npz'
-        #data_path = os.path.join(cfg.data.root, f'{cfg.data.name}.npz')
         print(f'Loading data from {data_path} ...')
         data = np.load(data_path, allow_pickle=True)
         true_data = data['data_gt']
@@ -157,7 +157,6 @@ def train_eval(cfg: DictConfig):
         
         # row-wise prob divergence loss
         train_Z = torch.cat(train_Z, dim=0) #[N, emb_dim]
-        #print('train_Z shape:', train_Z.shape)
         train_indices = torch.squeeze(torch.cat(train_indices, dim=0)) # [N,]
         pred_prob_matrix = model.compute_prob_matrix(train_Z, 
                                                      t=train_dataset.t, 
@@ -175,9 +174,10 @@ def train_eval(cfg: DictConfig):
         if eid == 0 or eid % cfg.training.log_every_n_steps == 0:
             log(f'[Epoch: {eid}]: Encoder Loss: {encoder_loss.item()}, Decoder Loss: {decoder_loss.item()/len(train_loader)}')
             log('\r[Epoch %d] Loss: %.4f' % (eid, epoch_loss.item()))
-            wandb.log({'train/encoder_loss': encoder_loss.item(),
-                       'train/decoder_loss': decoder_loss.item()/len(train_loader),
-                       'train/epoch_loss': epoch_loss.item()})
+            if run is not None:
+                run.log({'train/encoder_loss': encoder_loss.item(),
+                        'train/decoder_loss': decoder_loss.item()/len(train_loader),
+                        'train/epoch_loss': epoch_loss.item()})
 
         ''' Validation '''
         model.eval()
@@ -208,22 +208,10 @@ def train_eval(cfg: DictConfig):
                 + (val_decoder_loss / len(train_val_loader)) * decoder_loss_w
             log(f'\n[Epoch: {eid}]: Val Encoder Loss: {val_encoder_loss.item()}, Val Decoder Loss: {val_decoder_loss/len(train_val_loader)}')
             log(f'[Epoch: {eid}]: Val Loss: {val_loss}')
-            wandb.log({'val/encoder_loss': val_encoder_loss.item(),
-                          'val/decoder_loss': val_decoder_loss/len(train_val_loader),
-                          'val/loss': val_loss})
-            
-        # tsne_embed = TSNE(n_components=emb_dim, perplexity=5).fit_transform(train_val_dataset.X)
-        # if true_data is not None:
-        #     embedding_map = {
-        #         'probae': val_Z.cpu().detach().numpy(),
-        #         'phate': whole_dataset.phate_embed.cpu().detach().numpy(),
-        #         'tsne': tsne_embed
-        #     }
-        #     demaps = evaluate_demap(embedding_map, true_data)
-        #     for k, v in demaps.items():
-        #         metrics[f'{k}'] = v
-        #     log(f'[Epoch: {eid}]: DeMAPs: {demaps}')
-        #     wandb.log({f'val/DeMAP_{k}': v for k, v in demaps.items()})
+            if run is not None:
+                run.log({'val/encoder_loss': val_encoder_loss.item(),
+                            'val/decoder_loss': val_decoder_loss/len(train_val_loader),
+                            'val/loss': val_loss})
 
         # TODO: maybe want to use a different metric for early stopping
         if val_loss < best_metric:
@@ -246,13 +234,11 @@ def train_eval(cfg: DictConfig):
     with torch.no_grad():
         pred_embed = model.encode(torch.from_numpy(whole_dataset.X).type(torch.float32).to(device))
         recon_data = model.decode(pred_embed).cpu().detach().numpy()
-        if cfg.model.type == 'probae':
-            pred_dist = model.compute_prob_matrix(pred_embed, 
-                                                  t=whole_dataset.t, 
-                                                  alpha=cfg.model.alpha, 
-                                                  bandwidth=cfg.model.bandwidth)
-        else:
-            pred_dist = torch.cdist(pred_embed, pred_embed)
+        pred_dist = model.compute_prob_matrix(pred_embed, 
+                                                t=whole_dataset.t, 
+                                                alpha=cfg.model.alpha, 
+                                                bandwidth=cfg.model.bandwidth)
+
     tsne_embed = TSNE(n_components=emb_dim, perplexity=5).fit_transform(whole_dataset.X)
 
     # affnity matching, metrics: KL divergence, mAP
@@ -290,16 +276,17 @@ def train_eval(cfg: DictConfig):
         demaps = evaluate_demap(embedding_map, true_data)
         for k, v in demaps.items():
             metrics[f'{k}'] = v
-        # subsample on test data
-        #test_idx = np.arange(split_idx, len(raw_data))
+
+        # Subsample on test data
         test_idx = np.nonzero(train_mask == 0)[0]
-        print('test_idx: ', test_idx)
         test_embed = pred_embed[test_idx]
         demaps_test = DEMaP(true_data, test_embed, subsample_idx=test_idx)
         metrics['test'] = demaps_test
+
         log(f'Evaluation DeMAPs: {demaps}')
 
-    wandb.log({f'evaluation/{k}': v for k, v in metrics.items()})
+    if run is not None:
+        run.log({f'evaluation/{k}': v for k, v in metrics.items()})
 
     ''' Visualize '''
     if labels is not None:
@@ -317,7 +304,7 @@ def train_eval(cfg: DictConfig):
                                      f'{cfg.model.prob_method}_{cfg.data.name}_bw{cfg.model.bandwidth}_embeddings.png'),
               wandb_run=run)
 
-    if cfg.logger.use_wandb:
+    if run is not None:
         run.finish()
 
 
