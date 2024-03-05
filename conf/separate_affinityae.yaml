@@ -1,10 +1,11 @@
 data:
   root: 'data'
   filetype: '.npz'
-  name: 'swiss_roll' #'tree' #'s_curve' #'swiss_roll'
+  name: 'splatter' #'tree' #'s_curve' #'swiss_roll'
   noise: 1.0
   preprocess: 'none'
   knn: 5
+  noisy_path: 'noisy_44_paths_17580_2000_3_0.4_0.5_all.npz' # Only relevant to splatter
 logger:
   entity: danqiliao
   project: dmae

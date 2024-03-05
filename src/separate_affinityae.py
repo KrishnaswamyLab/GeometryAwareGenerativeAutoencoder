@@ -117,7 +117,16 @@ def train_decoder(model, train_loader, val_loader, test_loader, cfg, save_dir, w
 
     return model
 
-    
+def true_path_base(s):
+    """
+    Get filename for true synthetic datasets given base file name of noisy dataset.
+    """
+    parts = s.split('_')
+    parts[0] = "true"
+    new_parts = parts[:-3] + parts[-1:]
+    new_s = '_'.join(new_parts)  
+    return new_s
+
 @hydra.main(version_base=None, config_path='../conf', config_name='separate_affinityae.yaml')
 def train_eval(cfg: DictConfig):
     save_dir =  f'sepa_{cfg.model.prob_method}_{cfg.data.name}_bw{cfg.model.bandwidth}_knn{cfg.data.knn}'
@@ -137,6 +146,8 @@ def train_eval(cfg: DictConfig):
             config=config,
             settings=wandb.Settings(start_method="thread"),
         )
+    else:
+        wandb_run = None
     log(cfg)
 
     # Seed everything
@@ -150,6 +161,19 @@ def train_eval(cfg: DictConfig):
         noisy_data = splatter_data['noisy']
         raw_data = noisy_data
         labels = None
+    elif cfg.data.name == 'splatter':
+        splatter_data_root = '/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/synthetic_data/'
+        noisy_data_path = os.path.join(splatter_data_root, cfg.data.noisy_path)
+        true_data_path = os.path.join(splatter_data_root, true_path_base(os.path.basename(noisy_data_path)))
+        noise_data = np.load(noisy_data_path)
+        true_data = np.load(true_data_path)
+        true_data = true_data['data']
+        raw_data = noise_data['data']
+        labels = noise_data['colors']
+        train_mask = noise_data['is_train']
+        if 'bool' in train_mask.dtype.name:
+            train_mask = train_mask.astype(int)
+        print('raw_data shape:', raw_data.shape)
     else:
         data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}_noise{cfg.data.noise}.npz')
         print(f'Loading data from {data_path} ...')
@@ -193,7 +217,7 @@ def train_eval(cfg: DictConfig):
     log(f'Train dataset: {len(train_dataset)}; \
           Val dataset: {len(train_val_dataset)}; \
           Whole dataset: {len(whole_dataset)}')
-
+    
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.training.batch_size, shuffle=False)
     train_val_loader = torch.utils.data.DataLoader(train_val_dataset, batch_size=cfg.training.batch_size, shuffle=False)
     whole_loader = torch.utils.data.DataLoader(whole_dataset, batch_size=cfg.training.batch_size, shuffle=False)
