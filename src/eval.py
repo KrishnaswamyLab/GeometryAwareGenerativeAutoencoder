@@ -81,7 +81,7 @@ def true_path_base(s):
     new_s = '_'.join(new_parts)  
     return new_s
 
-def _load_synthetic_data(synthetic_path: str = '/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/synthetic_data/'):
+def _load_synthetic_data(data_path, synthetic_path='/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/synthetic_data'):
     '''
     Returns:
     - noise_path_2_data: dict
@@ -92,7 +92,7 @@ def _load_synthetic_data(synthetic_path: str = '/gpfs/gibbs/pi/krishnaswamy_smit
             - colors: colors of the data
     '''
 
-    noise_paths = glob(os.path.join(synthetic_path, 'noisy_*_all.npz'))
+    noise_paths = [data_path]
     true_paths = [os.path.join(synthetic_path, \
                                true_path_base(os.path.basename(s))) for s in noise_paths]
     noise_path_2_data = {}
@@ -111,8 +111,7 @@ def _load_toy_data():
 def _load_bio_data():
     pass
 
-def evaluate(model, model_path: str, demap_knn: int = 10, data_name: str = 'synthetic'):
-    print(model)
+def evaluate(model, model_path: str, data_name:str, data_path: str, demap_knn: int = 10):
     # Load model
     model.load_state_dict(torch.load(model_path))
     print(model)
@@ -125,7 +124,7 @@ def evaluate(model, model_path: str, demap_knn: int = 10, data_name: str = 'synt
     # Merge data dictionaries from different sources
     path2data = {}
     if data_name == 'synthetic':
-        path2data.update(_load_synthetic_data())
+        path2data.update(_load_synthetic_data(data_path))
     elif data_name == 'toy':
         path2data.update(_load_toy_data())
     elif data_name == 'bio':
@@ -152,6 +151,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluate model on synthetic, toy, and bio datasets')
     parser.add_argument('--model', type=str, default='AEProb', help='Model type to evaluate')
     parser.add_argument('--model_path', type=str, help='Path to model')
+    parser.add_argument('--data_path', type=str, help='Path to data', default='/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/synthetic_data/noisy_42_groups_17580_2000_3_0.2_0.2_all.npz')
     parser.add_argument('--demap_knn', type=int, default=10, help='Number of nearest neighbors for DEMaP')
     parser.add_argument('--data_name', type=str, default='synthetic', help='data sources to evaluate on')
 
@@ -176,11 +176,11 @@ if __name__ == '__main__':
         model = AEProb(dim=dim, emb_dim=emb_dim, 
                         layer_widths=layer_widths, activation_fn=act_fn,
                         prob_method=prob_method, dist_reconstr_weights=dist_reconstr_weights)
-    print(model)
     evaluate(model=model, 
-             model_path=args.model_path, 
-             demap_knn=args.demap_knn, 
-             data_name=args.data_name)
+             model_path=args.model_path,
+             data_name=args.data_name,
+             data_path=args.data_path,
+             demap_knn=args.demap_knn)
     
 
 
