@@ -6,27 +6,27 @@ data:
   preprocess: 'none'
   knn: 5
 logger:
+  entity: danqiliao
   project: dmae
-  tags:
-  - probae
+  tags: separate_affinity
   use_wandb: true
 model:
   activation: relu
-  dist_recon_topk_coords: 0
-  dist_reconstr_weights:
-  - 1.0
-  - 0.0
-  - 0
   layer_widths:
   - 256
   - 128
   - 64
+  dist_reconstr_weights: [1.0, 0]
   prob_method: 'gaussian'
   alpha: 1.0
   bandwidth: 1.0
+  load_encoder: false
+  load_decoder: false
 path:
-  log: ''
+  log: log.txt
   model: model.ckpt
+  decoder_model: decoder.ckpt
+  out_data: ''
   plots: ''
   root: results/
   save: true
@@ -34,7 +34,6 @@ training:
   accelerator: cpu
   batch_size: 256
   log_every_n_steps: 100
-  match_potential: false
   max_epochs: 5000
   monitor: val_loss
   patience: 100
