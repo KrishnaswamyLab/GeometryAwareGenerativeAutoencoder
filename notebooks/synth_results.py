@@ -58,7 +58,7 @@ for i in tqdm(range(len(sweep.runs))):
 res_df = pd.DataFrame(results)
 res_df.to_csv("synth_results_w_recon.csv", index=False)
 
-res_df = res_df.sort_values(['dataset', 'bcv', 'dropout'])
+res_df = res_df.sort_values(['dataset', 'bcv', 'dropout', 'reconstr_weight'])
 # Round all numeric columns to 3 decimals, excluding strings
 rounded_res_df = res_df.select_dtypes(include=['float64']).round(3)
 # Re-attach the non-numeric columns to the rounded DataFrame

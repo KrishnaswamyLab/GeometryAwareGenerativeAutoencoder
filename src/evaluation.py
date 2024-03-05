@@ -27,7 +27,7 @@ def compute_encoding_metrics(model, x_test, x_noiseless=None, dist_true=None):
     x_pred = x_pred.detach().cpu().numpy()
     demap_val = np.nan
     if x_noiseless is not None:
-        demap_val = demap.DEMaP(x_noiseless, x_pred)
+        demap_val = demap.DEMaP(x_noiseless, z_pred)
     dist_pred = squareform(pdist(z_pred))
     acc_val = np.nan
     if dist_true is not None:
@@ -70,6 +70,26 @@ def get_dataset_contents(noisy_path, noiseless_path, ambient_path=None):
         pca = PCA(n_components=x_test.shape[1])
         x_test_pc = pca.fit_transform(data_ambient)
     return x_test, x_noiseless, dist_true, pca
+
+def get_dataset_all(noisy_path, noiseless_path, ambient_path=None):
+    data_noisy = np.load(noisy_path, allow_pickle=True)
+    X = data_noisy['data']
+    train_mask = data_noisy['is_train']
+    if 'dist' in data_noisy.files:
+        dist = data_noisy['dist']
+        dist_true=dist
+    else:
+        dist_true=None
+    data_noiseless = np.load(noiseless_path, allow_pickle=True)
+    assert (train_mask == data_noiseless['is_train']).all()
+    x_noiseless = data_noiseless['data']
+    x_all=X
+    pca = None
+    if ambient_path is not None:
+        data_ambient = np.load(ambient_path, allow_pickle=True)
+        pca = PCA(n_components=x_all.shape[1])
+        x_all_pc = pca.fit_transform(data_ambient)
+    return x_all, x_noiseless, dist_true, pca, train_mask
 
 def get_data_config(filename):
     filename = filename.split('/')[-1]
@@ -155,4 +175,5 @@ def compute_all_metrics(model, data_path, noiseless_path, ambient_path):
     for k, v in encoding_metrics.items():
         res_dict[k] = v
     res_dict['recon score'] = score
+    # res_dict['reconstr_weight'] = model.reconstr_weight
     return res_dict
