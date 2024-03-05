@@ -129,6 +129,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Pixi python env
+.pixi/
+
 notebooks/lightning_logs/*
 data/*
 wandb/*
@@ -154,3 +157,6 @@ synthetic_data/
 *.npy
 *.gif
 *.csv
+# pixi environments
+.pixi
+
