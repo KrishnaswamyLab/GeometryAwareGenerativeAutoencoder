@@ -1,0 +1,3 @@
+[submodule "src/autometric"]
+	path = src/autometric
+	url = git@github.com:professorwug/autometric.git
