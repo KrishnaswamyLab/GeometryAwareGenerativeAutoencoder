@@ -203,23 +203,27 @@ def load_data(cfg, load_all=False):
     shapes = phate_D.shape
     phate_D = pp.fit_transform(phate_D.reshape(-1,1)).reshape(shapes)
     if load_all:
+        # DEPRECATED
         allloader = dataloader_from_pc(
         X, # <---- Pointcloud
         phate_D, # <---- Distance matrix to match
         batch_size=X.shape[0],
         shuffle=False,)
-        return allloader, None, X, phate_coords, colors, dist, pp
+        valloader = None
     else:
-        trainloader, valloader = train_valid_loader_from_pc(
+        trainloader, valloader, mean, std = train_valid_loader_from_pc(
             X, # <---- Pointcloud
             phate_D, # <---- Distance matrix to match
             batch_size=cfg.training.batch_size,
             train_valid_split=cfg.training.train_valid_split,
             shuffle=cfg.training.shuffle,
-            seed=cfg.training.seed,)
-        return trainloader, valloader, X, phate_coords, colors, dist, pp
+            seed=cfg.training.seed,return_mean_std=True)
+    
+    return trainloader, valloader, X, phate_coords, colors, dist, pp, mean, std
 
-def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoint_path=None):
+def make_model(cfg, dim, emb_dim, pp, dist_std, mean, std, from_checkpoint=False, checkpoint_path=None):
+    if from_checkpoint:
+        return AEDist.load_from_checkpoint(checkpoint_path)
     if 'emb_dim' in cfg.model:
         emb_dim = cfg.model.emb_dim
     activation_dict = {
@@ -244,47 +248,57 @@ def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoin
         cfg.model.cycle_weight = 0.0
     if 'cycle_dist_weight' not in cfg.model:
         cfg.model.cycle_dist_weight = 0.0
+    if 'normalize' not in cfg.model:
+        cfg.model.normalize = False
+    if not cfg.model.normalize:
+        mean = None
+        std = None
     activation_fn = activation_dict[cfg.model.activation]
-
     if cfg.model.type == 'ae':
-        if from_checkpoint:
-            model = AEDist.load_from_checkpoint(
-                checkpoint_path=checkpoint_path,
-                dim=dim,
-                emb_dim=emb_dim,
-                layer_widths=cfg.model.layer_widths,
-                activation_fn=activation_fn,
-                dist_reconstr_weights=cfg.model.dist_reconstr_weights,
-                pp=pp,
-                lr=cfg.model.lr,
-                weight_decay=cfg.model.weight_decay,
-                batch_norm=cfg.model.batch_norm,
-                dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
-                use_dist_mse_decay=use_dist_mse_decay,
-                dist_mse_decay=dist_mse_decay,
-                dropout=cfg.model.dropout,
-                cycle_weight=cfg.model.cycle_weight,
-                cycle_dist_weight=cfg.model.cycle_dist_weight,
-            )
-        else:
-            model = AEDist(
-                dim=dim,
-                emb_dim=emb_dim,
-                layer_widths=cfg.model.layer_widths,
-                activation_fn=activation_fn,
-                dist_reconstr_weights=cfg.model.dist_reconstr_weights,
-                pp=pp,
-                lr=cfg.model.lr,
-                weight_decay=cfg.model.weight_decay,
-                batch_norm=cfg.model.batch_norm,
-                dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
-                use_dist_mse_decay=use_dist_mse_decay,
-                dist_mse_decay=dist_mse_decay,
-                dropout=cfg.model.dropout,
-                cycle_weight=cfg.model.cycle_weight,
-                cycle_dist_weight=cfg.model.cycle_dist_weight,
-            )
+        # if from_checkpoint:
+        #     model = AEDist.load_from_checkpoint(
+        #         checkpoint_path=checkpoint_path,
+        #         dim=dim,
+        #         emb_dim=emb_dim,
+        #         layer_widths=cfg.model.layer_widths,
+        #         activation_fn=activation_fn,
+        #         dist_reconstr_weights=cfg.model.dist_reconstr_weights,
+        #         pp=pp,
+        #         lr=cfg.model.lr,
+        #         weight_decay=cfg.model.weight_decay,
+        #         batch_norm=cfg.model.batch_norm,
+        #         dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
+        #         use_dist_mse_decay=use_dist_mse_decay,
+        #         dist_mse_decay=dist_mse_decay,
+        #         dropout=cfg.model.dropout,
+        #         cycle_weight=cfg.model.cycle_weight,
+        #         cycle_dist_weight=cfg.model.cycle_dist_weight,
+        #         # mean=mean,  # they are saved in the checkpoint.
+        #         # std=std,
+        #     )
+        # else:
+        model = AEDist(
+            dim=dim,
+            emb_dim=emb_dim,
+            layer_widths=cfg.model.layer_widths,
+            activation_fn=activation_fn,
+            dist_reconstr_weights=cfg.model.dist_reconstr_weights,
+            pp=pp,
+            lr=cfg.model.lr,
+            weight_decay=cfg.model.weight_decay,
+            batch_norm=cfg.model.batch_norm,
+            dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
+            use_dist_mse_decay=use_dist_mse_decay,
+            dist_mse_decay=dist_mse_decay,
+            dropout=cfg.model.dropout,
+            cycle_weight=cfg.model.cycle_weight,
+            cycle_dist_weight=cfg.model.cycle_dist_weight,
+            mean=mean,
+            std=std,
+        )
     elif cfg.model.type == 'vae':
+        # DEPRECATED
+        NotImplemented
         # TODO add dist_mse_decay to VAE?
         if from_checkpoint:
             model = VAEDist.load_from_checkpoint(
@@ -317,9 +331,9 @@ def make_model(cfg, dim, emb_dim, pp, dist_std, from_checkpoint=False, checkpoin
     return model
 
 def prep_data_model(cfg):
-    trainloader, valloader, X, phate_coords, colors, dist, pp = load_data(cfg)
+    trainloader, valloader, X, phate_coords, colors, dist, pp, mean, std = load_data(cfg)
     dist_std = np.std(dist.flatten())
-    model = make_model(cfg, X.shape[1], phate_coords.shape[1], pp, dist_std)
+    model = make_model(cfg, X.shape[1], phate_coords.shape[1], pp, dist_std, mean, std)
 
     return model, trainloader, valloader, X, phate_coords, colors, dist
 

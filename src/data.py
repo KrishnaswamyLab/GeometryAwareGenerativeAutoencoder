@@ -50,7 +50,7 @@ def dataloader_from_pc(pointcloud, distances, batch_size = 64, shuffle=True):
 
 def train_valid_loader_from_pc(pointcloud, distances, 
                                batch_size = 64, train_valid_split = 0.8, 
-                               shuffle=True, seed=42):
+                               shuffle=True, seed=42, return_mean_std=False):
     X = pointcloud
     D = distances
 
@@ -69,6 +69,8 @@ def train_valid_loader_from_pc(pointcloud, distances,
     trainloader = dataloader_from_pc(X_train, D_train, batch_size)
     testloader = dataloader_from_pc(X_test, D_test, batch_size)
 
+    if return_mean_std:
+        return trainloader, testloader, X_train.mean(axis=0), X_train.std(axis=0)
     return trainloader, testloader
 
 def train_valid_test_loader_from_pc(

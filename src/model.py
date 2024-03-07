@@ -254,6 +254,8 @@ class AEDist(BaseAE):
         dist_mse_decay=0.1,
         cycle_weight=0.,
         cycle_dist_weight=0.,
+        mean=None,
+        std=None
     ):
         super().__init__(dim, emb_dim, layer_widths=layer_widths, activation_fn=activation_fn, eps=eps, lr=lr, weight_decay=weight_decay, dropout=dropout, batch_norm=batch_norm)
         self.pp = pp
@@ -270,17 +272,46 @@ class AEDist(BaseAE):
             self.use_dist_mse_decay = False
         self.cycle_weight = cycle_weight
         self.cycle_dist_weight = cycle_dist_weight
+        if mean is None:
+            mean = torch.zeros(1, dim)
+        if std is None:
+            std = torch.ones(1, dim)
+        mean = mean.reshape(1, dim)
+        std = std.reshape(1, dim)
+        self.register_buffer('mean', torch.tensor(mean, dtype=torch.float32), persistent=True)
+        self.register_buffer('std', torch.tensor(std, dtype=torch.float32), persistent=True)
+        self.save_hyperparameters() 
+
+    def normalize(self, x):
+        x = (x - self.mean) / self.std
+        return x
+    
+    def unnormalize(self, x):
+        x = x * self.std + self.mean
+        return x
+
+    def encode(self, x):
+        x_normalized = self.normalize(x)
+        z = self.encoder(x_normalized)
+        return z
+
+    def decode(self, z):
+        x_normalized = self.decoder(z)
+        x = self.unnormalize(x_normalized)
+        return x
 
     def forward(self, x):
         z = self.encode(x)
-        return [self.decode(z), z]
+        x_normalized = self.decoder(z)  # used decoder() instead of decode() to match the normalized data.
+        return [x_normalized, z]
 
     def loss_function(self, input, output, stage):
         """output are the outputs of forward method"""
         # x, x_hat: [B, D]; z: [B, emb_dim]; gt_dist: [B, (B-1)/2]
         loss = 0.0
-        x_hat, z = output
+        x_hat_normalized, z = output
         x, dist_gt = input
+        x_normalized = self.normalize(x)
 
         if self.dist_reg_weight > 0.0:
             assert len(input) == 2
@@ -294,18 +325,22 @@ class AEDist(BaseAE):
             self.log(f'{stage}/dist_accuracy', acc, prog_bar=True, on_epoch=True)
 
         if self.dist_reconstr_weight > 0.0:
+            """
+            DEPRECATED.
+            """
+            NotImplemented
             # only use top k dimensions for distance, to save computation. 
             # This makes sense only if the input is PCA loadings.
             # TODO compute and transform the original distance before training, to speed up!
-            dist_orig = torch.nn.functional.pdist(x[:, :self.dist_recon_topk_coords])
-            dist_reconstr = torch.nn.functional.pdist(x_hat[:, :self.dist_recon_topk_coords])
-            dist_orig = self.pp.transform(dist_orig)
-            dist_reconstr = self.pp.transform(dist_reconstr)
-            drl = self.dist_loss(dist_reconstr, dist_orig)
-            self.log(f'{stage}/dist_reconstr_loss', drl, prog_bar=True, on_epoch=True)
-            loss += self.dist_reconstr_weight * drl
+            # dist_orig = torch.nn.functional.pdist(x_normalized[:, :self.dist_recon_topk_coords])
+            # dist_reconstr = torch.nn.functional.pdist(x_hat_normalized[:, :self.dist_recon_topk_coords])
+            # dist_orig = self.pp.transform(dist_orig)
+            # dist_reconstr = self.pp.transform(dist_reconstr)
+            # drl = self.dist_loss(dist_reconstr, dist_orig)
+            # self.log(f'{stage}/dist_reconstr_loss', drl, prog_bar=True, on_epoch=True)
+            # loss += self.dist_reconstr_weight * drl
         if self.reconstr_weight > 0.0:
-            rl = torch.nn.functional.mse_loss(x, x_hat)
+            rl = torch.nn.functional.mse_loss(x_normalized, x_hat_normalized)
             self.log(f'{stage}/reconstr_loss', rl, prog_bar=True, on_epoch=True)
             loss += self.reconstr_weight * rl
 
