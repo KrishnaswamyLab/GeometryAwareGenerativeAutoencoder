@@ -16,13 +16,13 @@ parameters:
     # values: [[0.3, 0.4, 0.3], [0.1, 0.9, 0.]]
     values: [[1.0,0.0,0.]]
   model.prob_method:
-    values:  ['gaussian', 'tstudent']
+    values:  ['heat_kernel'] #['gaussian', 'tstudent']
   model.bandwidth:
     values: [1.0]
   data.name:
     # values: ['eb_pca', 'eb_subset_heatgeo', 'bmmc_myeloid', 'bmmc_myeloid_heatgeo', 'sea_ad_merfish', 'sea_ad_merfish_heatgeo', 'sea_ad_rnaseq', 'sea_ad_rnaseq_heatgeo']
-    values: ['tree', 'swiss_roll', 's_curve']
+    values: ['swiss_roll', 's_curve', 'tree']
   data.noise:
     values: [0.1, 0.5, 1.0, 2.0]
   data.knn:
-    values: [5, 10]
+    values: [5] #[5,10]

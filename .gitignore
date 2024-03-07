@@ -1,3 +1,6 @@
+.vscode
+/outputs
+/raw_data
 /src/multirun
 /scripts
 # Byte-compiled / optimized / DLL files
@@ -129,6 +132,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Pixi python env
+.pixi/
+
 notebooks/lightning_logs/*
 data/*
 wandb/*
@@ -154,3 +160,9 @@ synthetic_data/
 *.npy
 *.gif
 *.csv
+<<<<<<< Updated upstream
+# pixi environments
+.pixi
+
+=======
+>>>>>>> Stashed changes

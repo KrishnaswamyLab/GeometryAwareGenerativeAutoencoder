@@ -1,0 +1,49 @@
+[project]
+name = "dmae"
+version = "0.1.0"
+description = "Next gen PHATE"
+authors = ["NATHANIEL M. PIRIAC <piriac@wherewith.ai>"]
+channels = ["conda-forge", "pytorch", "nvidia"]
+platforms = ["linux-64"]
+
+[tasks]
+# install the library in editable mode; make kernel available to jupyter
+postinstall = "pip install --no-build-isolation --no-deps --disable-pip-version-check --editable src && python -m ipykernel install --user --name repo_name"
+
+# test the installation
+test_import = "python -c 'import repo_name'"
+# NBDev shorthands
+nbsync = "nbdev_export" # export code from notebooks into the library
+nbclean = "nbdev_clean" # remove extraneous notebook metadata to reduce git conflicts
+pysync = "nbdev_update" # sync changes from library to notebooks
+docmaker = "nbdev_docs" # build docs
+zettelmaker = "quarto render nbs/experiments --to gfm --no-execute --output-dir ../zettels --profile zettels" # export experiments to markdown with quarto
+notebooks = "jupyter lab --ip=0.0.0.0"
+
+[dependencies]
+python = "3.11.*"
+scipy = ">=1.12.0,<1.13"
+matplotlib = ">=3.8.3,<3.9"
+notebook = ">=7.1.1,<7.2"
+seaborn = ">=0.13.2,<0.14"
+pandas = ">=2.2.1,<2.3"
+numpy = ">=1.26.4,<1.27"
+ipykernel = ">=6.29.3,<6.30"
+pytorch = {version = ">=2.0.1", channel = "pytorch"}
+
+
+[pypi-dependencies]
+phate = "*"
+umap-learn = "*"
+
+[feature.cuda]
+platforms = ["linux-64"]
+channels = ["nvidia", {channel = "pytorch", priority = -1}]
+system-requirements = {cuda = "12.1"}
+[feature.cuda.dependencies]
+pytorch-cuda = {version = "12.1.*", channel = "pytorch"}
+[feature.cuda.tasks]
+notebooks = "jupyter lab --ip=0.0.0.0"
+
+[environments]
+cuda = ["cuda"]
