@@ -7,8 +7,7 @@ data:
   knn: 5
 logger:
   project: dmae
-  tags:
-  - probae
+  tags: 'probae'
   use_wandb: true
 model:
   activation: relu
@@ -21,7 +20,7 @@ model:
   - 256
   - 128
   - 64
-  prob_method: 'gaussian'
+  prob_method: 'heat_kernel'
   alpha: 1.0
   bandwidth: 1.0
 path:
@@ -31,7 +30,7 @@ path:
   root: results/
   save: true
 training:
-  accelerator: cpu
+  accelerator: auto
   batch_size: 256
   log_every_n_steps: 100
   match_potential: false

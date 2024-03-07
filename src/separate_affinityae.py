@@ -8,8 +8,6 @@ import hydra
 import numpy as np
 import pandas as pd
 import torch
-import pygsp
-import scipy.sparse
 import graphtools
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import spearmanr
@@ -21,7 +19,6 @@ from omegaconf import DictConfig, OmegaConf
 from data import RowStochasticDataset
 from model import AEProb, Decoder
 from metrics import distance_distortion, mAP, computeKNNmAP
-from procrustes import Procrustes
 from utils.early_stop import EarlyStopping
 from utils.log_utils import log
 from utils.seed import seed_everything
@@ -35,7 +32,12 @@ def train_decoder(model, train_loader, val_loader, test_loader, cfg, save_dir, w
     model_save_path = os.path.join(PROJECT_PATH, cfg.path.root, save_dir, cfg.path.decoder_model)
 
     ''' Training '''
-    device = cfg.training.accelerator
+    device_av = "cuda" if torch.cuda.is_available() else "cpu"
+    cfg.training.accelerator
+    if cfg.training.accelerator is None or cfg.training.accelerator == 'auto':
+        device = device_av
+    else:
+        device = cfg.training.accelerator
     epoch = cfg.training.max_epochs
 
     lr = cfg.training.lr
@@ -54,10 +56,14 @@ def train_decoder(model, train_loader, val_loader, test_loader, cfg, save_dir, w
 
         for bidx, (batch_z, batch_x) in enumerate(train_loader):
             batch_z = batch_z.to(device)
+            batch_x = batch_x.to(device)
 
             optimizer.zero_grad()
 
+
             batch_x_hat = model(batch_z)
+            # check device of batch_x, batch_z, batch_x_hat
+            print(f'batch_x: {batch_x.device}, batch_z: {batch_z.device}, batch_x_hat: {batch_x_hat.device}')
             decoder_loss = torch.nn.functional.mse_loss(batch_x, batch_x_hat)
             decoder_epoch_loss += decoder_loss.item()
 
@@ -75,6 +81,7 @@ def train_decoder(model, train_loader, val_loader, test_loader, cfg, save_dir, w
         with torch.no_grad():
             for bidx, (batch_z, batch_x) in enumerate(val_loader):
                 batch_z = batch_z.to(device)
+                batch_x = batch_x.to(device)
 
                 batch_x_hat = model(batch_z)
                 val_decoder_loss += torch.nn.functional.mse_loss(batch_x, batch_x_hat).item()
@@ -104,6 +111,7 @@ def train_decoder(model, train_loader, val_loader, test_loader, cfg, save_dir, w
         test_decoder_loss = 0.0
         for bidx, (batch_z, batch_x) in enumerate(test_loader):
             batch_z = batch_z.to(device)
+            batch_x = batch_x.to(device)
 
             batch_x_hat = model(batch_z)
             test_decoder_loss += torch.nn.functional.mse_loss(batch_x, batch_x_hat).item()
@@ -129,7 +137,11 @@ def true_path_base(s):
 
 @hydra.main(version_base=None, config_path='../conf', config_name='separate_affinityae.yaml')
 def train_eval(cfg: DictConfig):
-    save_dir =  f'sepa_{cfg.model.prob_method}_{cfg.data.name}_bw{cfg.model.bandwidth}_knn{cfg.data.knn}'
+    # format noise with 2 f digits
+    if cfg.model.encoding_method in ['phate', 'tsne', 'umap']:
+        save_dir =  f'sepa_{cfg.model.encoding_method}_{cfg.data.name}{cfg.data.noise:.2f}_bw{cfg.model.bandwidth}_knn{cfg.data.knn}'
+    else:
+        save_dir =  f'sepa_{cfg.model.prob_method}_{cfg.data.name}{cfg.data.noise:.2f}_bw{cfg.model.bandwidth}_knn{cfg.data.knn}'
     os.makedirs(os.path.join(PROJECT_PATH, cfg.path.root, save_dir), exist_ok=True)
     model_save_path = os.path.join(PROJECT_PATH, cfg.path.root, save_dir, cfg.path.model)
     decoder_save_path = os.path.join(PROJECT_PATH, cfg.path.root, save_dir, cfg.path.decoder_model)
@@ -242,9 +254,18 @@ def train_eval(cfg: DictConfig):
     else:
         log('Training encoder from scratch ...')
         train_encoder = True
+    
+    if cfg.model.encoding_method in ['phate', 'tsne', 'umap']:
+        train_encoder = False
+        log(f'Using {cfg.model.encoding_method} embeddings as input to decoder ...')
 
     ''' Training '''
-    device = cfg.training.accelerator
+    device_av = "cuda" if torch.cuda.is_available() else "cpu"
+    if cfg.training.accelerator is None or cfg.training.accelerator == 'auto':
+        device = device_av
+    else:
+        device = cfg.training.accelerator
+
     epoch = cfg.training.max_epochs if train_encoder else 0
 
     lr = cfg.training.lr
@@ -376,20 +397,20 @@ def train_eval(cfg: DictConfig):
                                         distance_op='norm')
     
     ''' DeMAP '''
-    if true_data is not None:
+    if true_data is not None and cfg.model.encoding_method == 'affinity':
         embedding_map = {
             'Ours': pred_embed.cpu().detach().numpy(),
             'phate': whole_dataset.phate_embed.cpu().detach().numpy(),
             'tsne': tsne_embed,
             'umap': umap_embed
         }
-        demaps = evaluate_demap(embedding_map, true_data)
+        demaps = evaluate_demap(embedding_map, true_data) # FIXME
         for k, v in demaps.items():
             metrics[f'{k}'] = v
 
         # DeMAP on test set
         test_idx = np.nonzero(train_mask == 0)[0]
-        test_embed = pred_embed[test_idx]
+        test_embed = pred_embed[test_idx].cpu().detach().numpy()
         demaps_test = DEMaP(true_data, test_embed, subsample_idx=test_idx)
         metrics['test'] = demaps_test
 
@@ -403,12 +424,29 @@ def train_eval(cfg: DictConfig):
     log('Training decoder while keep encoder frozen...')
 
     # Generate frozen embeddings
-    train_val_frozen = pred_embed[train_mask == 1].detach().numpy()
-    train_frozen = train_val_frozen[:split_val_idx]
-    val_frozen = train_val_frozen[split_val_idx:]
-    test_frozen = pred_embed[train_mask == 0].detach().numpy()
-    log(f'Train frozen shape: {train_frozen.shape}, {val_frozen.shape}, {test_frozen.shape}')
-    log(f'data shape: {train_data.shape}, {val_data.shape}, {test_data.shape}')
+    if cfg.model.encoding_method == 'phate':
+        train_val_frozen = whole_dataset.phate_embed.cpu().detach().numpy()[train_mask == 1]
+        train_frozen = train_val_frozen[:split_val_idx]
+        val_frozen = train_val_frozen[split_val_idx:]
+        test_frozen = whole_dataset.phate_embed.cpu().detach().numpy()[train_mask == 0]
+    elif cfg.model.encoding_method == 'tsne':
+        train_val_frozen = tsne_embed[train_mask == 1]
+        train_frozen = train_val_frozen[:split_val_idx]
+        val_frozen = train_val_frozen[split_val_idx:]
+        test_frozen = tsne_embed[train_mask == 0]
+    elif cfg.model.encoding_method == 'umap':
+        train_val_frozen = umap_embed[train_mask == 1]
+        train_frozen = train_val_frozen[:split_val_idx]
+        val_frozen = train_val_frozen[split_val_idx:]
+        test_frozen = umap_embed[train_mask == 0]
+    else:
+        # Use our own affinity matching encoder
+        train_val_frozen = pred_embed[train_mask == 1].cpu().detach().numpy()
+        train_frozen = train_val_frozen[:split_val_idx]
+        val_frozen = train_val_frozen[split_val_idx:]
+        test_frozen = pred_embed[train_mask == 0].cpu().detach().numpy()
+        log(f'Train frozen shape: {train_frozen.shape}, {val_frozen.shape}, {test_frozen.shape}')
+        log(f'data shape: {train_data.shape}, {val_data.shape}, {test_data.shape}')
 
     frozen_train_dataset = torch.utils.data.TensorDataset(torch.from_numpy(train_frozen).float(), torch.from_numpy(train_data).float())
     frozen_val_dataset = torch.utils.data.TensorDataset(torch.from_numpy(val_frozen).float(), torch.from_numpy(val_data).float())
@@ -428,10 +466,13 @@ def train_eval(cfg: DictConfig):
         decoder = train_decoder(decoder, frozen_train_loader, frozen_val_loader, frozen_test_loader, cfg, save_dir, wandb_run)
 
     ''' Reconstruction '''
-    model.eval()
-    with torch.no_grad():
-        pred_embed = model.encode(torch.from_numpy(whole_dataset.X).type(torch.float32).to(device))
-        recon_data = decoder(pred_embed).cpu().detach().numpy()
+    if cfg.model.encoding_method == 'affinity':
+        model.eval()
+        with torch.no_grad():
+            pred_embed = model.encode(torch.from_numpy(whole_dataset.X).type(torch.float32).to(device))
+            recon_data = decoder(pred_embed).cpu().detach().numpy()
+    elif cfg.model.encoding_method == 'tsne':
+        recon_data = decoder(tsne_embed).cpu().detach().numpy()
 
     ''' Visualize '''
     if labels is not None:

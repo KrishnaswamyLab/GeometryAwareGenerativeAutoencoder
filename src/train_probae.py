@@ -125,7 +125,6 @@ def train_eval(cfg: DictConfig):
     ''' Training '''
     # check if cuda is available
     device_av = "cuda" if torch.cuda.is_available() else "cpu"
-    cfg.training.accelerator
     if cfg.training.accelerator is None or cfg.training.accelerator == 'auto':
         device = device_av
     else:
