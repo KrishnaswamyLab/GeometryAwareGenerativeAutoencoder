@@ -382,7 +382,8 @@ def train_eval(cfg: DictConfig):
     if true_data is not None and cfg.model.encoding_method == 'affinity':
         embedding_map = {
             'Affinity': pred_embed.cpu().detach().numpy(),
-            'Phate': whole_dataset.phate_embed.cpu().detach().numpy(),
+            '-log(Aff)': -torch.log(pred_dist+1e-8).cpu().detach().numpy(),
+            'PHATE': whole_dataset.phate_embed.cpu().detach().numpy(),
             'TSNE': tsne_embed,
             'UMAP': umap_embed,
             'DiffMap': dm_embed,
@@ -397,12 +398,14 @@ def train_eval(cfg: DictConfig):
         demaps_test = DEMaP(true_data, test_embed, subsample_idx=test_idx)
         metrics['Test'] = demaps_test
 
-        log(f'Evaluation DeMAPs: {demaps}')
+        # DeMAP(-log(aff)) on test set
+        test_dist = -torch.log(pred_dist[test_idx]+1e-8).cpu().detach().numpy()
+        metrics['-log(Aff) Test'] = DEMaP(true_data, test_dist, subsample_idx=test_idx)
+
+        log(f'Evaluation metrics: {metrics}')
         if wandb_run is not None:
             wandb_run.log({f'evaluation/{k}': v for k, v in metrics.items()})
-    
-    ''' Affinity DeMAP '''
-    # TODO: use -log(prob) as distance matrix
+
 
     log('Done training & evaluating encoder.')
 
@@ -466,6 +469,7 @@ def train_eval(cfg: DictConfig):
         labels = np.squeeze(labels)
     visualize(pred=pred_embed.cpu().detach().numpy(),
               phate_embed=whole_dataset.phate_embed.cpu().detach().numpy(),
+              other_embeds={'TSNE': tsne_embed, 'UMAP': umap_embed, 'DiffMap': dm_embed},
               pred_dist=pred_dist.cpu().detach().numpy(),
               gt_dist=gt_dist.cpu().detach().numpy(),
               recon_data=recon_data,
