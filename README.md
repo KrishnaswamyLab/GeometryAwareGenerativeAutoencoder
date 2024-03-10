@@ -29,14 +29,15 @@ python main.py logger.use_wandb=False data.file_type=h5ad data.require_phate=Fal
 ```
 - check the results: [notebooks/BMMC_myeloid_result.ipynb](notebooks/BMMC_myeloid_result.ipynb)
 
-## Train Probability AE
+## Train Affinity Matching AE
 - generate data
 ```sh
-# example with swiss roll data. The data will be saved in the '../data' folder.
-python data_script.py --data swiss_roll
+# Data Config file: af_data.yaml. The data will be saved in the '../data' folder.
+python data_script.py
+
 ```
-- train the model
+- train Affinity Matching AE. The decoder is trained separately from the encoder.
 ```sh
-# example with overwriting the default parameters
-python train_probae.py training.accelerator={cpu} training.max_epochs=5000
+# example with overwriting the default parameters. Config file: separate_affinityae.yaml
+python separate_affinityae.py logger.use_wandb=true data.name=swiss_roll model.prob_method=heat_kernel
 ```
