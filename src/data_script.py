@@ -30,10 +30,9 @@ from torch.utils.data import Dataset, DataLoader, TensorDataset
 import sklearn.datasets
 from scipy.sparse.csgraph import shortest_path
 
+
 from utils.seed import seed_everything
 
-seed = 2024
-seed_everything(seed)
 
 '''
     All data fuctions should return the following:
@@ -62,14 +61,14 @@ def sklearn_swiss_roll(n_samples, noise=0.0, random_state=2024):
 
     return gt_X, X, t
 
-def myeloid_data(fpath: str = '../raw_data/BMMC_myeloid.csv',
+def myeloid_data(fpath: str = '../raw_data/BMMC_myeloid.csv.gz',
                  save_path: str = '../raw_data/BMMC_myeloid.h5ad'):
     '''BMMC myeloid dataset'''
     if os.path.exists(save_path):
         adata = ad.read_h5ad(save_path)
-        return adata.X
+        return None, adata.X, None
     
-    myeloid_data = pd.read_csv(fpath, index_col=0)
+    myeloid_data = pd.read_csv(fpath, index_col=0, compression='gzip')
     adata = ad.AnnData(myeloid_data, 
                        obs=pd.DataFrame(index=myeloid_data.index), 
                        var=pd.DataFrame(index=myeloid_data.columns))
@@ -110,7 +109,7 @@ def tree_data(
     
     return gt_X, X, labels
 
-@hydra.main(version_base=None, config_path='../conf/data', config_name='af_data.yaml')
+@hydra.main(version_base=None, config_path='../conf/data', config_name='sweep_data.yaml')
 def gen_data(cfg: DictConfig) -> None:
     print(cfg)
 
@@ -123,16 +122,19 @@ def gen_data(cfg: DictConfig) -> None:
         'n': cfg.n,
         'noise': cfg.noise,
     }
+
+    seed = cfg.seed
+    seed_everything(seed)
     
     if cfg.name == 'swiss_roll':
         # Generate Swiss Roll data
-        gt_X, X, label = sklearn_swiss_roll(n_samples=cfg.n, noise=cfg.noise, random_state=2024)
+        gt_X, X, label = sklearn_swiss_roll(n_samples=cfg.n, noise=cfg.noise, random_state=cfg.seed)
     elif cfg.name == 's_curve':
         # Generate S-curve data
-        gt_X, X, label = sklearn_s_curve(n_samples=cfg.n, noise=cfg.noise, random_state=2024)
+        gt_X, X, label = sklearn_s_curve(n_samples=cfg.n, noise=cfg.noise, random_state=cfg.seed)
     elif cfg.name == 'tree':
         # Generate tree data
-        gt_X, X, label = tree_data(n_dim=5, n_points=500, n_branch=5, noise=cfg.noise, random_state=2024)
+        gt_X, X, label = tree_data(n_dim=5, n_points=500, n_branch=5, noise=cfg.noise, random_state=cfg.seed)
         cfg.n = 5 * 500 # Ugly hardcode, just to compare to HeatGeo
         metadata['n'] = 5 * 500
         metadata['n_dim'] = 5
@@ -149,19 +151,20 @@ def gen_data(cfg: DictConfig) -> None:
     data['data'] = X
     data['colors'] = label
 
-    # generate is_train mask
+    # Generate is_train mask
     idxs = np.random.permutation(X.shape[0])
     split_idx = int(X.shape[0] * cfg.train_ratio)
     is_train = np.zeros(X.shape[0], dtype=int)
     is_train[idxs[:split_idx]] = 1
     data['is_train'] = is_train
 
-    if not os.path.exists('../data'):
-        os.makedirs('../data')
-    np.savez(f'../data/{cfg.name}_noise{cfg.noise}.npz', **data)
+    root_dir = '../data'
+    if not os.path.exists(root_dir):
+        os.makedirs(root_dir)
+    saved_name = f'{cfg.name}.npz' if cfg.name in ['myeloid'] else f'{cfg.name}_noise{cfg.noise}_seed{cfg.seed}.npz'
+    np.savez(os.path.join(root_dir, saved_name), **data)
 
-    
-    check_data = np.load(f'../data/{cfg.name}_noise{cfg.noise}.npz', allow_pickle=True)
+    check_data = np.load(os.path.join(root_dir, saved_name), allow_pickle=True)
     print(check_data['data_gt'].shape, 
           check_data['data'].shape, 
           check_data['colors'].shape,

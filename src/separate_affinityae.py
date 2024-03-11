@@ -11,7 +11,6 @@ import torch
 import graphtools
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import spearmanr
-from scipy.spatial.distance import pdist, squareform
 from sklearn.manifold import TSNE
 import umap
 from other_methods import DiffusionMap
@@ -63,8 +62,6 @@ def train_decoder(model, train_loader, val_loader, test_loader, cfg, save_dir, w
 
 
             batch_x_hat = model(batch_z)
-            # check device of batch_x, batch_z, batch_x_hat
-            print(f'batch_x: {batch_x.device}, batch_z: {batch_z.device}, batch_x_hat: {batch_x_hat.device}')
             decoder_loss = torch.nn.functional.mse_loss(batch_x, batch_x_hat)
             decoder_epoch_loss += decoder_loss.item()
 
@@ -124,7 +121,7 @@ def train_decoder(model, train_loader, val_loader, test_loader, cfg, save_dir, w
     
     model.load_state_dict(best_model)
 
-    return model
+    return model, test_decoder_loss
 
 def true_path_base(s):
     """
@@ -138,7 +135,6 @@ def true_path_base(s):
 
 @hydra.main(version_base=None, config_path='../conf', config_name='separate_affinityae.yaml')
 def train_eval(cfg: DictConfig):
-    # format noise with 2 f digits
     if cfg.model.encoding_method in ['phate', 'tsne', 'umap']:
         save_dir =  f'sepa_{cfg.model.encoding_method}_{cfg.data.name}{cfg.data.noise:.2f}_bw{cfg.model.bandwidth}_knn{cfg.data.knn}'
     else:
@@ -147,6 +143,7 @@ def train_eval(cfg: DictConfig):
     model_save_path = os.path.join(PROJECT_PATH, cfg.path.root, save_dir, cfg.path.model)
     decoder_save_path = os.path.join(PROJECT_PATH, cfg.path.root, save_dir, cfg.path.decoder_model)
     visualization_save_path = os.path.join(PROJECT_PATH, cfg.path.root, save_dir, 'embeddings.png')
+    metrics_save_path = os.path.join(PROJECT_PATH, cfg.path.root, save_dir, 'metrics.npz')
 
     if cfg.logger.use_wandb:
         config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
@@ -164,20 +161,16 @@ def train_eval(cfg: DictConfig):
     log(cfg)
 
     # Seed everything
+    print('seed everything.')
     seed_everything(cfg.training.seed)
 
     ''' Data '''
-    true_data = None
-    if cfg.data.name == 'demap':
-        splatter_data = np.load('../data/splatter.npz', allow_pickle=True)
-        true_data = splatter_data['true']
-        noisy_data = splatter_data['noisy']
-        raw_data = noisy_data
-        labels = None
-    elif cfg.data.name == 'splatter':
+    if cfg.data.name == 'splatter':
         splatter_data_root = '/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/synthetic_data/'
         noisy_data_path = os.path.join(splatter_data_root, cfg.data.noisy_path)
+        print('Loading data from', noisy_data_path, '...')
         true_data_path = os.path.join(splatter_data_root, true_path_base(os.path.basename(noisy_data_path)))
+        print('Loading true data from', true_data_path, '...')
         noise_data = np.load(noisy_data_path)
         true_data = np.load(true_data_path)
         true_data = true_data['data']
@@ -186,16 +179,17 @@ def train_eval(cfg: DictConfig):
         train_mask = noise_data['is_train']
         if 'bool' in train_mask.dtype.name:
             train_mask = train_mask.astype(int)
-        print('raw_data shape:', raw_data.shape)
     else:
-        data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}_noise{cfg.data.noise}.npz')
+        if cfg.data.name in ['myeloid']:
+            data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}.npz')
+        else: 
+            data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}_noise{cfg.data.noise}_seed{cfg.training.seed}.npz')
         print(f'Loading data from {data_path} ...')
         data = np.load(data_path, allow_pickle=True)
         true_data = data['data_gt']
         raw_data = data['data']
         labels = data['colors']
         train_mask = data['is_train']
-        assert raw_data.shape[0] == labels.shape[0]
 
     log(f'Done loading raw data. Raw data shape: {raw_data.shape}', to_console=True)
 
@@ -233,8 +227,7 @@ def train_eval(cfg: DictConfig):
     
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.training.batch_size, shuffle=False)
     train_val_loader = torch.utils.data.DataLoader(train_val_dataset, batch_size=cfg.training.batch_size, shuffle=False)
-    whole_loader = torch.utils.data.DataLoader(whole_dataset, batch_size=cfg.training.batch_size, shuffle=False)
-    
+
     ''' Model '''
     emb_dim = 2
     activation_dict = {
@@ -369,16 +362,16 @@ def train_eval(cfg: DictConfig):
     dm_embed = DiffusionMap().fit_transform(whole_dataset.X)
 
     # affnity matching, metrics: KL divergence
-    metrics = {
-        'KL div': np.inf,
-    }
+    metrics = {}
     gt_dist = (whole_dataset.row_stochastic_matrix).type(torch.float32).to(device)
-    metrics['KL div'] = torch.nn.functional.kl_div(torch.log(pred_dist+1e-8),
+    metrics['KL'] = torch.nn.functional.kl_div(torch.log(pred_dist+1e-8),
                                                     gt_dist+1e-8,
                                                     reduction='batchmean',
                                                     log_target=False).item()
     
     ''' DeMAP '''
+    print(true_data is not None)
+    print('true_data: ', true_data)
     if true_data is not None and cfg.model.encoding_method == 'affinity':
         embedding_map = {
             'Affinity': pred_embed.cpu().detach().numpy(),
@@ -405,6 +398,9 @@ def train_eval(cfg: DictConfig):
         log(f'Evaluation metrics: {metrics}')
         if wandb_run is not None:
             wandb_run.log({f'evaluation/{k}': v for k, v in metrics.items()})
+        
+        # Save metrics to npz file
+        np.savez(metrics_save_path, **metrics)
 
 
     log('Done training & evaluating encoder.')
@@ -453,7 +449,9 @@ def train_eval(cfg: DictConfig):
         log(f'Loaded decoder from {decoder_save_path}, skipping decoder training ...')
     else:
         log('Training decoder from scratch ...')
-        decoder = train_decoder(decoder, frozen_train_loader, frozen_val_loader, frozen_test_loader, cfg, save_dir, wandb_run)
+        decoder, test_decoder_loss = train_decoder(decoder, frozen_train_loader, frozen_val_loader, frozen_test_loader, 
+                                                   cfg, save_dir, wandb_run)
+
 
     ''' Reconstruction '''
     if cfg.model.encoding_method == 'affinity':
