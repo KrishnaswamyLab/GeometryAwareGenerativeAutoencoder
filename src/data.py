@@ -10,6 +10,36 @@ import scipy
 from sklearn.model_selection import train_test_split
 from torch.utils.data import TensorDataset
 
+# class PointCloudDataset(torch.utils.data.Dataset):
+#     """
+#     Point Cloud Dataset
+#     """
+#     def __init__(self, pointcloud, distances):
+#         self.pointcloud = torch.tensor(pointcloud, dtype=torch.float32)
+#         self.distances = torch.tensor(distances, dtype=torch.float32)
+
+#     def __len__(self):
+#         return len(self.pointcloud)
+    
+#     def __getitem__(self, idx):
+#         return self.pointcloud[idx], idx  # Return point cloud and its index
+
+# def make_custom_collate_fn(dataset):
+#     def custom_collate_fn(batch):
+#         pointclouds, indices = zip(*batch)
+#         pointclouds = torch.stack(pointclouds)
+        
+#         # Access `distances` from the dataset
+#         dist_mat = dataset.distances[torch.tensor(indices)][:, torch.tensor(indices)]
+#         upper_tri_indices = np.triu_indices(dist_mat.size(0), k=1)
+#         dist_mat_upper_tri = dist_mat[upper_tri_indices]
+        
+#         batch = {'x': pointclouds, 'd': dist_mat_upper_tri}
+#         return batch
+    
+#     return custom_collate_fn
+
+
 # TODO: make this more standard? Can (or should) I do batching in the dataloader instead?
 class PointCloudDataset(torch.utils.data.Dataset):
     """
@@ -47,6 +77,13 @@ def dataloader_from_pc(pointcloud, distances, batch_size = 64, shuffle=True):
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=None, shuffle=shuffle)
 
     return dataloader
+
+
+# def dataloader_from_pc(pointcloud, distances, batch_size = 64, shuffle=True):
+#     dataset = PointCloudDataset(pointcloud, distances)
+#     custom_collate = make_custom_collate_fn(dataset)
+#     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=custom_collate)
+#     return dataloader
 
 def train_valid_loader_from_pc(pointcloud, distances, 
                                batch_size = 64, train_valid_split = 0.8, 

@@ -1,0 +1,33 @@
+project: dmae
+program: separate_affinityae.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val/encoder_loss
+  goal: minimize
+parameters:
+  model.layer_widths:
+    #values: [[256, 128, 64], [64, 64, 64]]
+    values: [[256, 128, 64]]
+  model.dist_reconstr_weights:
+    # values: [[0.3, 0.4, 0.3], [0.1, 0.9, 0.]]
+    values: [[1.0,0.0,0.]]
+  model.prob_method:
+    values:  ['gaussian', 'tstudent']
+  model.bandwidth:
+    values: [1.0]
+  data.name:
+    # values: ['eb_pca', 'eb_subset_heatgeo', 'bmmc_myeloid', 'bmmc_myeloid_heatgeo', 'sea_ad_merfish', 'sea_ad_merfish_heatgeo', 'sea_ad_rnaseq', 'sea_ad_rnaseq_heatgeo']
+    values: ['splatter']
+  data.noise:
+    values: [1.0]
+  data.noisy_path: 
+    values: ['noisy_42_groups_17580_2000_3_0.2_0.2_all','noisy_43_groups_17580_2000_3_0.6_0.5_all','noisy_44_paths_17580_2000_3_0.4_0.7_all','noisy_46_groups_17580_2000_3_0.4_0.2_all','noisy_42_groups_17580_2000_3_0.2_0.5_all','noisy_43_groups_17580_2000_3_0.6_0.7_all','noisy_44_paths_17580_2000_3_0.6_0.2_all','noisy_46_groups_17580_2000_3_0.4_0.5_all','noisy_42_groups_17580_2000_3_0.2_0.7_all','noisy_43_paths_17580_2000_3_0.2_0.2_all','noisy_44_paths_17580_2000_3_0.6_0.5_all','noisy_46_groups_17580_2000_3_0.4_0.7_all','noisy_42_groups_17580_2000_3_0.4_0.2_all','noisy_43_paths_17580_2000_3_0.2_0.5_all','noisy_44_paths_17580_2000_3_0.6_0.7_all','noisy_46_groups_17580_2000_3_0.6_0.2_all','noisy_42_groups_17580_2000_3_0.4_0.5_all','noisy_43_paths_17580_2000_3_0.2_0.7_all','noisy_45_groups_17580_2000_3_0.2_0.2_all','noisy_46_groups_17580_2000_3_0.6_0.5_all','noisy_42_groups_17580_2000_3_0.4_0.7_all','noisy_43_paths_17580_2000_3_0.4_0.2_all','noisy_45_groups_17580_2000_3_0.2_0.5_all','noisy_46_groups_17580_2000_3_0.6_0.7_all','noisy_42_groups_17580_2000_3_0.6_0.2_all','noisy_43_paths_17580_2000_3_0.4_0.5_all','noisy_45_groups_17580_2000_3_0.2_0.7_all','noisy_46_paths_17580_2000_3_0.2_0.2_all','noisy_42_groups_17580_2000_3_0.6_0.5_all','noisy_43_paths_17580_2000_3_0.4_0.7_all','noisy_45_groups_17580_2000_3_0.4_0.2_all','noisy_46_paths_17580_2000_3_0.2_0.5_all','noisy_42_groups_17580_2000_3_0.6_0.7_all','noisy_43_paths_17580_2000_3_0.6_0.2_all','noisy_45_groups_17580_2000_3_0.4_0.5_all','noisy_46_paths_17580_2000_3_0.2_0.7_all','noisy_42_paths_17580_2000_3_0.2_0.2_all','noisy_43_paths_17580_2000_3_0.6_0.5_all','noisy_45_groups_17580_2000_3_0.4_0.7_all','noisy_46_paths_17580_2000_3_0.4_0.2_all','noisy_42_paths_17580_2000_3_0.2_0.5_all','noisy_43_paths_17580_2000_3_0.6_0.7_all','noisy_45_groups_17580_2000_3_0.6_0.2_all','noisy_46_paths_17580_2000_3_0.4_0.5_all','noisy_42_paths_17580_2000_3_0.2_0.7_all','noisy_44_groups_17580_2000_3_0.2_0.2_all','noisy_45_groups_17580_2000_3_0.6_0.5_all','noisy_46_paths_17580_2000_3_0.4_0.7_all','noisy_42_paths_17580_2000_3_0.4_0.2_all','noisy_44_groups_17580_2000_3_0.2_0.5_all','noisy_45_groups_17580_2000_3_0.6_0.7_all','noisy_46_paths_17580_2000_3_0.6_0.2_all','noisy_42_paths_17580_2000_3_0.4_0.5_all','noisy_44_groups_17580_2000_3_0.2_0.7_all','noisy_45_paths_17580_2000_3_0.2_0.2_all','noisy_46_paths_17580_2000_3_0.6_0.5_all','noisy_42_paths_17580_2000_3_0.4_0.7_all','noisy_44_groups_17580_2000_3_0.4_0.2_all','noisy_45_paths_17580_2000_3_0.2_0.5_all','noisy_46_paths_17580_2000_3_0.6_0.7_all','noisy_42_paths_17580_2000_3_0.6_0.2_all','noisy_44_groups_17580_2000_3_0.4_0.5_all','noisy_45_paths_17580_2000_3_0.2_0.7_all','noisy_42_paths_17580_2000_3_0.6_0.5_all','noisy_44_groups_17580_2000_3_0.4_0.7_all','noisy_45_paths_17580_2000_3_0.4_0.2_all','noisy_42_paths_17580_2000_3_0.6_0.7_all','noisy_44_groups_17580_2000_3_0.6_0.2_all','noisy_45_paths_17580_2000_3_0.4_0.5_all','noisy_43_groups_17580_2000_3_0.2_0.2_all','noisy_44_groups_17580_2000_3_0.6_0.5_all','noisy_45_paths_17580_2000_3_0.4_0.7_all','noisy_43_groups_17580_2000_3_0.2_0.5_all','noisy_44_groups_17580_2000_3_0.6_0.7_all','noisy_45_paths_17580_2000_3_0.6_0.2_all','noisy_43_groups_17580_2000_3_0.2_0.7_all','noisy_44_paths_17580_2000_3_0.2_0.2_all','noisy_45_paths_17580_2000_3_0.6_0.5_all','noisy_43_groups_17580_2000_3_0.4_0.2_all','noisy_44_paths_17580_2000_3_0.2_0.5_all','noisy_45_paths_17580_2000_3_0.6_0.7_all','noisy_43_groups_17580_2000_3_0.4_0.5_all','noisy_44_paths_17580_2000_3_0.2_0.7_all','noisy_46_groups_17580_2000_3_0.2_0.2_all','noisy_43_groups_17580_2000_3_0.4_0.7_all','noisy_44_paths_17580_2000_3_0.4_0.2_all','noisy_46_groups_17580_2000_3_0.2_0.5_all','noisy_43_groups_17580_2000_3_0.6_0.2_all','noisy_44_paths_17580_2000_3_0.4_0.5_all','noisy_46_groups_17580_2000_3_0.2_0.7_all']
+    # values: ['noisy_42_groups_17580_2000_3_0.2_0.2_all']
+  data.knn:
+    values: [5]
+  # training.max_epochs:
+    # values: [2]

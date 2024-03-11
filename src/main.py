@@ -154,8 +154,8 @@ def load_data(cfg, load_all=False):
     data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
     data = np.load(data_path, allow_pickle=True)
     # sanity check the data is not empty
-    assert 'data' in data.files and 'phate' in data.files and 'colors' in data.files \
-        and 'dist' in data.files, "Some required files are missing in the 'data' variable."
+    # assert 'data' in data.files and 'phate' in data.files and 'colors' in data.files \
+        # and 'dist' in data.files, "Some required files are missing in the 'data' variable."
     X = data['data']
     phate_coords = data['phate']
     colors = data['colors']
