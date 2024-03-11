@@ -136,10 +136,17 @@ def true_path_base(s):
 @hydra.main(version_base=None, config_path='../conf', config_name='separate_affinityae.yaml')
 def train_eval(cfg: DictConfig):
     if cfg.model.encoding_method in ['phate', 'tsne', 'umap']:
-        save_dir =  f'sepa_{cfg.model.encoding_method}_{cfg.data.name}{cfg.data.noise:.2f}_bw{cfg.model.bandwidth}_knn{cfg.data.knn}'
+        save_dir =  f'sepa_{cfg.model.encoding_method}_bw{cfg.model.bandwidth}_knn{cfg.data.knn}_'
     else:
-        save_dir =  f'sepa_{cfg.model.prob_method}_{cfg.data.name}{cfg.data.noise:.2f}_bw{cfg.model.bandwidth}_knn{cfg.data.knn}'
+        save_dir =  f'sepa_{cfg.model.prob_method}_bw{cfg.model.bandwidth}_knn{cfg.data.knn}_'
+    if  cfg.data.name in ['splatter']:
+        save_dir += f'{cfg.data.noisy_path.split(".")[0]}'
+    elif cfg.data.name in ['myeloid']:
+        save_dir += f'{cfg.data.name}'
+    else:
+        save_dir += f'{cfg.data.name}_noise{cfg.data.noise}_seed{cfg.data.seed}'
     os.makedirs(os.path.join(PROJECT_PATH, cfg.path.root, save_dir), exist_ok=True)
+    
     model_save_path = os.path.join(PROJECT_PATH, cfg.path.root, save_dir, cfg.path.model)
     decoder_save_path = os.path.join(PROJECT_PATH, cfg.path.root, save_dir, cfg.path.decoder_model)
     visualization_save_path = os.path.join(PROJECT_PATH, cfg.path.root, save_dir, 'embeddings.png')
@@ -183,7 +190,7 @@ def train_eval(cfg: DictConfig):
         if cfg.data.name in ['myeloid']:
             data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}.npz')
         else: 
-            data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}_noise{cfg.data.noise}_seed{cfg.training.seed}.npz')
+            data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}_noise{cfg.data.noise}_seed{cfg.data.seed}.npz')
         print(f'Loading data from {data_path} ...')
         data = np.load(data_path, allow_pickle=True)
         true_data = data['data_gt']
