@@ -14,6 +14,7 @@ from scipy.stats import spearmanr
 from scipy.spatial.distance import pdist, squareform
 from sklearn.manifold import TSNE
 import umap
+from other_methods import DiffusionMap
 from omegaconf import DictConfig, OmegaConf
 
 from data import RowStochasticDataset
@@ -365,44 +366,27 @@ def train_eval(cfg: DictConfig):
 
     tsne_embed = TSNE(n_components=emb_dim, perplexity=5).fit_transform(whole_dataset.X)
     umap_embed = umap.UMAP().fit_transform(whole_dataset.X)
+    dm_embed = DiffusionMap().fit_transform(whole_dataset.X)
 
-    # affnity matching, metrics: KL divergence, mAP
+    # affnity matching, metrics: KL divergence
     metrics = {
         'KL div': np.inf,
-        'mAP': -np.inf,
-        'mAP_PHATE': -np.inf,
-        'mAP_TSNE': -np.inf,
-        'mAP_UMAP': -np.inf,
     }
     gt_dist = (whole_dataset.row_stochastic_matrix).type(torch.float32).to(device)
     metrics['KL div'] = torch.nn.functional.kl_div(torch.log(pred_dist+1e-8),
                                                     gt_dist+1e-8,
                                                     reduction='batchmean',
                                                     log_target=False).item()
-    metrics['mAP'] = computeKNNmAP(pred_embed.cpu().detach().numpy(),
-                                    whole_dataset.X,
-                                    k=5,
-                                    distance_op='norm')
-    metrics['mAP_PHATE'] = computeKNNmAP(whole_dataset.phate_embed.cpu().detach().numpy(),
-                                            whole_dataset.X,
-                                            k=5,
-                                            distance_op='norm')
-    metrics['mAP_TSNE'] = computeKNNmAP(tsne_embed,
-                                        whole_dataset.X,
-                                        k=5,
-                                        distance_op='norm')
-    metrics['mAP_UMAP'] = computeKNNmAP(umap_embed,
-                                        whole_dataset.X,
-                                        k=5,
-                                        distance_op='norm')
     
     ''' DeMAP '''
     if true_data is not None and cfg.model.encoding_method == 'affinity':
         embedding_map = {
-            'Ours': pred_embed.cpu().detach().numpy(),
-            'phate': whole_dataset.phate_embed.cpu().detach().numpy(),
-            'tsne': tsne_embed,
-            'umap': umap_embed
+            'Affinity': pred_embed.cpu().detach().numpy(),
+            '-log(Aff)': -torch.log(pred_dist+1e-8).cpu().detach().numpy(),
+            'PHATE': whole_dataset.phate_embed.cpu().detach().numpy(),
+            'TSNE': tsne_embed,
+            'UMAP': umap_embed,
+            'DiffMap': dm_embed,
         }
         demaps = evaluate_demap(embedding_map, true_data) # FIXME
         for k, v in demaps.items():
@@ -412,11 +396,17 @@ def train_eval(cfg: DictConfig):
         test_idx = np.nonzero(train_mask == 0)[0]
         test_embed = pred_embed[test_idx].cpu().detach().numpy()
         demaps_test = DEMaP(true_data, test_embed, subsample_idx=test_idx)
-        metrics['test'] = demaps_test
+        metrics['Test'] = demaps_test
 
-        log(f'Evaluation DeMAPs: {demaps}')
+        # DeMAP(-log(aff)) on test set
+        test_dist = -torch.log(pred_dist[test_idx]+1e-8).cpu().detach().numpy()
+        metrics['-log(Aff) Test'] = DEMaP(true_data, test_dist, subsample_idx=test_idx)
+
+        log(f'Evaluation metrics: {metrics}')
         if wandb_run is not None:
             wandb_run.log({f'evaluation/{k}': v for k, v in metrics.items()})
+
+
     log('Done training & evaluating encoder.')
 
 
@@ -479,6 +469,7 @@ def train_eval(cfg: DictConfig):
         labels = np.squeeze(labels)
     visualize(pred=pred_embed.cpu().detach().numpy(),
               phate_embed=whole_dataset.phate_embed.cpu().detach().numpy(),
+              other_embeds={'TSNE': tsne_embed, 'UMAP': umap_embed, 'DiffMap': dm_embed},
               pred_dist=pred_dist.cpu().detach().numpy(),
               gt_dist=gt_dist.cpu().detach().numpy(),
               recon_data=recon_data,
