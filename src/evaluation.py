@@ -169,7 +169,13 @@ def compute_recon_metric(model, x_test, pca):
 
 def compute_all_metrics(model, data_path, noiseless_path, ambient_path):
     x_test, x_noiseless, dist_true, pca = get_dataset_contents(data_path, noiseless_path, ambient_path)
-    score = compute_recon_metric(model, x_test, pca)
+    
+    # Only run recon score if model has decode function
+    if hasattr(model, 'decode'):
+        score = compute_recon_metric(model, x_test, pca)
+    else:
+        score = np.nan
+
     encoding_metrics = compute_encoding_metrics(model, x_test, x_noiseless, dist_true)
     res_dict = get_data_config(data_path)
     for k, v in encoding_metrics.items():
