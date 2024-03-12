@@ -136,15 +136,15 @@ def true_path_base(s):
 @hydra.main(version_base=None, config_path='../conf', config_name='separate_affinityae.yaml')
 def train_eval(cfg: DictConfig):
     if cfg.model.encoding_method in ['phate', 'tsne', 'umap']:
-        save_dir =  f'sepa_{cfg.model.encoding_method}_bw{cfg.model.bandwidth}_knn{cfg.data.knn}_'
+        save_dir =  f'sepa_{cfg.model.encoding_method}_a{cfg.model.alpha}_knn{cfg.data.knn}_'
     else:
-        save_dir =  f'sepa_{cfg.model.prob_method}_bw{cfg.model.bandwidth}_knn{cfg.data.knn}_'
+        save_dir =  f'sepa_{cfg.model.prob_method}_a{cfg.model.alpha}_knn{cfg.data.knn}_'
     if  cfg.data.name in ['splatter']:
         save_dir += f'{cfg.data.noisy_path.split(".")[0]}'
     elif cfg.data.name in ['myeloid']:
         save_dir += f'{cfg.data.name}'
     else:
-        save_dir += f'{cfg.data.name}_noise{cfg.data.noise}_seed{cfg.data.seed}'
+        save_dir += f'{cfg.data.name}_noise{cfg.data.noise:.1f}_seed{cfg.data.seed}'
     os.makedirs(os.path.join(PROJECT_PATH, cfg.path.root, save_dir), exist_ok=True)
     
     model_save_path = os.path.join(PROJECT_PATH, cfg.path.root, save_dir, cfg.path.model)
@@ -158,7 +158,7 @@ def train_eval(cfg: DictConfig):
             entity=cfg.logger.entity,
             project=cfg.logger.project,
             tags=cfg.logger.tags,
-            name=f'sepa_{cfg.model.prob_method}_{cfg.data.name}',
+            name=save_dir,
             reinit=True,
             config=config,
             settings=wandb.Settings(start_method="thread"),
@@ -186,11 +186,16 @@ def train_eval(cfg: DictConfig):
         train_mask = noise_data['is_train']
         if 'bool' in train_mask.dtype.name:
             train_mask = train_mask.astype(int)
-    else:
-        if cfg.data.name in ['myeloid']:
-            data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}.npz')
-        else: 
-            data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}_noise{cfg.data.noise}_seed{cfg.data.seed}.npz')
+    elif cfg.data.name in ['myeloid']:
+        data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}.npz')
+        print(f'Loading data from {data_path} ...')
+        data = np.load(data_path, allow_pickle=True)
+        true_data = None
+        raw_data = data['data']
+        labels = None
+        train_mask = data['is_train']
+    else: 
+        data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}_noise{cfg.data.noise}_seed{cfg.data.seed}.npz')
         print(f'Loading data from {data_path} ...')
         data = np.load(data_path, allow_pickle=True)
         true_data = data['data_gt']
@@ -377,8 +382,6 @@ def train_eval(cfg: DictConfig):
                                                     log_target=False).item()
     
     ''' DeMAP '''
-    print(true_data is not None)
-    print('true_data: ', true_data)
     if true_data is not None and cfg.model.encoding_method == 'affinity':
         embedding_map = {
             'Affinity': pred_embed.cpu().detach().numpy(),
@@ -400,13 +403,14 @@ def train_eval(cfg: DictConfig):
 
         # DeMAP(-log(aff)) on test set
         test_dist = -torch.log(pred_dist[test_idx]+1e-8).cpu().detach().numpy()
-        metrics['-log(Aff) Test'] = DEMaP(true_data, test_dist, subsample_idx=test_idx)
+        metrics['-log(Aff)_Test'] = DEMaP(true_data, test_dist, subsample_idx=test_idx)
 
         log(f'Evaluation metrics: {metrics}')
         if wandb_run is not None:
             wandb_run.log({f'evaluation/{k}': v for k, v in metrics.items()})
         
         # Save metrics to npz file
+        print('Saving eval metrics to ', metrics_save_path)
         np.savez(metrics_save_path, **metrics)
 
 
