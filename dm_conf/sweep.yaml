@@ -11,13 +11,17 @@ metric:
   goal: minimize
 parameters:
   time_embedding_size: 
-    values: [8,16,32]
+    values: [16,32]
   lr: 
     values: [1e-3,1e-4]
   dropout:
     values: [0.2,0.5]
   data:
-    values: ['eb_all.npz','eb_all_10.npz']
+    values: ['eb_all_new.npz']
+    # values: ['eb_all_new_2.npz']
   layer_widths:
-    values: [[64,64,64],[128,128,128]]
-
+    values: [[64,128,256],[64,64,64]]
+  batch_size: 
+    values: [1024,256]
+num_steps:
+  values: [100,1000,10000]

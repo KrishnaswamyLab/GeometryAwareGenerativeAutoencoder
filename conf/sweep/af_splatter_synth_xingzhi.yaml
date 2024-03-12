@@ -17,6 +17,7 @@ parameters:
     values: [[1.0,0.0,0.]]
   model.prob_method:
     values:  ['gaussian', 'tstudent']
+    # values: ['adjusted_gaussian', 'heat_kernel', 'powered_tstudent']
   model.bandwidth:
     values: [1.0]
   data.name:

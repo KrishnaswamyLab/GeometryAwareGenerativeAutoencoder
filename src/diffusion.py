@@ -27,6 +27,7 @@ class DiffusionModel(pl.LightningModule):
         alphas_cumprod = torch.cumprod(alphas, dim=0)
         self.register_buffer('alphas', alphas)
         self.register_buffer('alphas_cumprod', alphas_cumprod)
+        self.save_hyperparameters() 
 
     def forward(self, x, t):
         t = t.unsqueeze(-1) if t.dim() == 1 else t
