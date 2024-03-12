@@ -4,7 +4,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 import pathlib
 
-def generate_synthetic_data(nGenes=17580, batchCells=3000, nBatches=3, method='paths', bcv=0.2, dropout=0.5, seed=42, n_pca=100):
+def generate_synthetic_data(nGenes=17580, batchCells=3000, nBatches=1, method='paths', bcv=0.2, dropout=0.5, seed=42, n_pca=100):
     if method == 'paths':
         splatter = demap.splatter.paths
     elif method == 'groups':
