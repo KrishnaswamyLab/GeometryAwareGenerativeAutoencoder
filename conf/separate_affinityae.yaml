@@ -1,11 +1,12 @@
 data:
   root: 'data'
   filetype: '.npz'
-  name: 's_curve' #'tree' #'s_curve' #'swiss_roll'
-  noise: 0.1
+  name: 'myeloid' #'tree' #'s_curve' #'swiss_roll' # 'myeloid'
+  noise: 1.0
+  seed: 1
   preprocess: 'none'
   knn: 5
-  noisy_path: 'noisy_44_paths_17580_2000_3_0.4_0.5_all.npz' # Only relevant to splatter
+  noisy_path: 'noisy_44_groups_17580_2000_3_0.4_0.5_all.npz' # Only relevant to splatter
 logger:
   entity: danqiliao
   project: dmae
