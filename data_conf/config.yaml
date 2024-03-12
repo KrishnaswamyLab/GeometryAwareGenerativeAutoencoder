@@ -4,6 +4,23 @@ method: 'paths'
 nGenes: 17580
 batchCells: 3000 # phate paper
 nBatches: 1 # demap default
-bcv: 0.2
-dropout: 0.5
+bcv: 0.18 # phate paper
+dropout: 0.5 # phate paper default
 test_size: 0.2
+
+# ====== BVC Exp (Pls Comment one out, only leave one on) =======
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    params:
+      +bcv: 0.0, 0.25, 0.5
+      +seed: 1, 2, 3, 4, 5
+
+
+# # ====== Dropout Exp (Pls Comment one out, only leave one on) =======
+# hydra:
+#   mode: MULTIRUN
+#   sweeper:
+#     params:
+#       +dropout: 0, 0.5, 0.95
+#       +seed: 1, 2, 3, 4, 5
