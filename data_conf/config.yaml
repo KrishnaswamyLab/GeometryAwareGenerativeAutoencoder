@@ -2,8 +2,8 @@ path: '../synthetic_data/'
 seed: 42
 method: 'paths'
 nGenes: 17580
-batchCells: 2000
-nBatches: 3
+batchCells: 3000 # phate paper
+nBatches: 1 # demap default
 bcv: 0.2
 dropout: 0.5
 test_size: 0.2
