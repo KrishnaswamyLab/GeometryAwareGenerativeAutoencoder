@@ -77,15 +77,29 @@ def myeloid_data(fpath: str = '../raw_data/BMMC_myeloid.csv.gz',
 
     return None, adata.X, None
 
+def eb_data(fpath: str = '/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/data/eb_all.npz'):
+    '''EB data'''
+    data = np.load(fpath)
+    X = data['data']
+    labels = data['colors']
+
+    return None, X, labels
+
+def sea_ad_data(fpath: str = '/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/data/sea_ad.npz'):
+    '''Sea-Ad data'''
+    data = np.load(fpath)
+    X = data['data']
+    labels = data['colors']
+
+    return None, X, labels
+
 
 def tree_data(
         n_dim: int = 5,
         n_points: int = 500,
         n_branch: int = 5,
         noise: float = 1.0,
-        random_state=2024,
-        clustered = None,
-        train_fold = None):
+        random_state=2024):
     '''
     Generate tree data
     The geodeisc distances are computed from a manifold without noise 
@@ -143,6 +157,12 @@ def gen_data(cfg: DictConfig) -> None:
     elif cfg.name == 'myeloid':
         # Load BMMC myeloid data
         gt_X, X, label = myeloid_data()
+    elif cfg.name == 'eb':
+        # Load EB data
+        gt_X, X, label = eb_data()
+    elif cfg.name == 'sea_ad':
+        # Load Sea-Ad data
+        gt_X, X, label = sea_ad_data()
     else:
         raise ValueError(f'Unknown data: {cfg.name}')
     
@@ -161,7 +181,7 @@ def gen_data(cfg: DictConfig) -> None:
     root_dir = '../data'
     if not os.path.exists(root_dir):
         os.makedirs(root_dir)
-    saved_name = f'{cfg.name}.npz' if cfg.name in ['myeloid'] else f'{cfg.name}_noise{cfg.noise}_seed{cfg.seed}.npz'
+    saved_name = f'{cfg.name}.npz' if cfg.name in ['myeloid', 'eb', 'sea_ad'] else f'{cfg.name}_noise{cfg.noise}_seed{cfg.seed}.npz'
     np.savez(os.path.join(root_dir, saved_name), **data)
 
     check_data = np.load(os.path.join(root_dir, saved_name), allow_pickle=True)
