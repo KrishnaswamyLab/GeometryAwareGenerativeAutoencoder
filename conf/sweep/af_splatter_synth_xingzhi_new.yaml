@@ -1,0 +1,36 @@
+project: dmae
+program: separate_affinityae.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val/encoder_loss
+  goal: minimize
+parameters:
+  model.layer_widths:
+    #values: [[256, 128, 64], [64, 64, 64]]
+    values: [[256, 128, 64]]
+  model.dist_reconstr_weights:
+    # values: [[0.3, 0.4, 0.3], [0.1, 0.9, 0.]]
+    values: [[1.0,0.0,0.]]
+  model.prob_method:
+    values:  ['gaussian', 'tstudent']
+    # values: ['adjusted_gaussian', 'heat_kernel', 'powered_tstudent']
+  model.bandwidth:
+    values: [1.0]
+  model.alpha:
+    values: [1.,10.]
+  data.name:
+    # values: ['eb_pca', 'eb_subset_heatgeo', 'bmmc_myeloid', 'bmmc_myeloid_heatgeo', 'sea_ad_merfish', 'sea_ad_merfish_heatgeo', 'sea_ad_rnaseq', 'sea_ad_rnaseq_heatgeo']
+    values: ['splatter']
+  data.noise:
+    values: [1.0]
+  data.noisy_path: 
+    values: ['noisy_1_groups_17580_3000_1_0.18_0.5_all.npz','noisy_1_groups_17580_3000_1_0.25_0.5_all.npz','noisy_1_groups_17580_3000_1_0.5_0.5_all.npz','noisy_1_groups_17580_3000_1_0_0.5_all.npz','noisy_1_paths_17580_3000_1_0.18_0.5_all.npz','noisy_1_paths_17580_3000_1_0.25_0.5_all.npz','noisy_1_paths_17580_3000_1_0.5_0.5_all.npz','noisy_1_paths_17580_3000_1_0_0.5_all.npz','noisy_2_groups_17580_3000_1_0.18_0.5_all.npz','noisy_2_groups_17580_3000_1_0.25_0.5_all.npz','noisy_2_groups_17580_3000_1_0.5_0.5_all.npz','noisy_2_groups_17580_3000_1_0_0.5_all.npz','noisy_2_paths_17580_3000_1_0.18_0.5_all.npz','noisy_2_paths_17580_3000_1_0.25_0.5_all.npz','noisy_2_paths_17580_3000_1_0.5_0.5_all.npz','noisy_2_paths_17580_3000_1_0_0.5_all.npz','noisy_3_groups_17580_3000_1_0.18_0.5_all.npz','noisy_3_groups_17580_3000_1_0.25_0.5_all.npz','noisy_3_groups_17580_3000_1_0.5_0.5_all.npz','noisy_3_groups_17580_3000_1_0_0.5_all.npz','noisy_3_paths_17580_3000_1_0.18_0.5_all.npz','noisy_3_paths_17580_3000_1_0.25_0.5_all.npz','noisy_3_paths_17580_3000_1_0.5_0.5_all.npz','noisy_3_paths_17580_3000_1_0_0.5_all.npz','noisy_4_groups_17580_3000_1_0.18_0.5_all.npz','noisy_4_groups_17580_3000_1_0.25_0.5_all.npz','noisy_4_groups_17580_3000_1_0.5_0.5_all.npz','noisy_4_groups_17580_3000_1_0_0.5_all.npz','noisy_4_paths_17580_3000_1_0.18_0.5_all.npz','noisy_4_paths_17580_3000_1_0.25_0.5_all.npz','noisy_4_paths_17580_3000_1_0.5_0.5_all.npz','noisy_4_paths_17580_3000_1_0_0.5_all.npz','noisy_5_groups_17580_3000_1_0.18_0.5_all.npz','noisy_5_groups_17580_3000_1_0.25_0.5_all.npz','noisy_5_groups_17580_3000_1_0.5_0.5_all.npz','noisy_5_groups_17580_3000_1_0_0.5_all.npz','noisy_5_paths_17580_3000_1_0.18_0.5_all.npz','noisy_5_paths_17580_3000_1_0.25_0.5_all.npz','noisy_5_paths_17580_3000_1_0.5_0.5_all.npz','noisy_5_paths_17580_3000_1_0_0.5_all.npz']
+    # values: ['noisy_42_groups_17580_2000_3_0.2_0.2_all']
+  data.knn:
+    values: [5]
+  # training.max_epochs:
+    # values: [2]

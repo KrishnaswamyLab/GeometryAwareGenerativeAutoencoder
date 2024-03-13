@@ -8,14 +8,14 @@ bcv: 0.18 # phate paper
 dropout: 0.5 # phate paper default
 test_size: 0.2
 
-# ====== BVC Exp (Pls Comment one out, only leave one on) =======
-hydra:
-  mode: MULTIRUN
-  sweeper:
-    params:
-      +method: 'paths', 'groups'
-      +bcv: 0.0, 0.25, 0.5
-      +seed: 1, 2, 3, 4, 5
+# # ====== BVC Exp (Pls Comment one out, only leave one on) =======
+# hydra:
+#   mode: MULTIRUN
+#   sweeper:
+#     params:
+#       +method: 'paths', 'groups'
+#       +bcv: 0.0, 0.25, 0.5
+#       +seed: 1, 2, 3, 4, 5
 
 
 # # ====== Dropout Exp (Pls Comment one out, only leave one on) =======

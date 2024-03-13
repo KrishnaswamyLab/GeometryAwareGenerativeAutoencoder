@@ -173,7 +173,7 @@ def train_eval(cfg: DictConfig):
 
     ''' Data '''
     if cfg.data.name == 'splatter':
-        splatter_data_root = '/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/synthetic_data/'
+        splatter_data_root = '/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/synthetic_data3/'
         noisy_data_path = os.path.join(splatter_data_root, cfg.data.noisy_path)
         print('Loading data from', noisy_data_path, '...')
         true_data_path = os.path.join(splatter_data_root, true_path_base(os.path.basename(noisy_data_path)))
