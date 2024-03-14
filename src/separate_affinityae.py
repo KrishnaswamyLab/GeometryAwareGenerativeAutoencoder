@@ -186,7 +186,7 @@ def train_eval(cfg: DictConfig):
         train_mask = noise_data['is_train']
         if 'bool' in train_mask.dtype.name:
             train_mask = train_mask.astype(int)
-    elif cfg.data.name in ['myeloid']:
+    elif cfg.data.name in ['myeloid', 'eb', 'sea_ad']:
         data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}.npz')
         print(f'Loading data from {data_path} ...')
         data = np.load(data_path, allow_pickle=True)
