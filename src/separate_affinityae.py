@@ -140,7 +140,7 @@ def train_eval(cfg: DictConfig):
     else:
         save_dir =  f'sepa_{cfg.model.prob_method}_a{cfg.model.alpha}_knn{cfg.data.knn}_'
     if  cfg.data.name in ['splatter']:
-        save_dir += f'{cfg.data.noisy_path.split(".")[0]}'
+        save_dir += f'{cfg.data.noisy_path}'
     elif cfg.data.name in ['myeloid']:
         save_dir += f'{cfg.data.name}'
     else:

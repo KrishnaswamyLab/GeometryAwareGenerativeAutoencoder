@@ -5,24 +5,22 @@ command:
   - ${program}
   - ${args_no_hyphens}
 
-method: grid  # or 'random', 'bayes'
+method: grid  # or 'random','bayes'
 metric:
   name: train_loss
   goal: minimize
 parameters:
   time_embedding_size: 
-    values: [16,32]
+    values: [16]
   lr: 
-    values: [1e-3,1e-4]
+    values: [1e-3]
   dropout:
-    values: [0.2,0.5]
+    values: [0.2]
   data:
-    # values: ['eb_all_new.npz']
-    # values: ['eb_all_new_2.npz']
-    values: ['sea_ad_all_new.npz', 'sea_ad_all_new_2.npz']
+    values: ['eb_subset_all_15_dm.npz','eb_subset_all_25_dm.npz','eb_subset_all_5_dm.npz','sea_ad_gaba_all_20_dm.npz','sea_ad_gaba_all_30_dm.npz','eb_subset_all_20_dm.npz','eb_subset_all_30_dm.npz','sea_ad_gaba_all_15_dm.npz','sea_ad_gaba_all_25_dm.npz','sea_ad_gaba_all_5_dm.npz','sea_ad_all_new.npz','sea_ad_all_new_2.npz','eb_all_new_2.npz','eb_all_new.npz']
   layer_widths:
-    values: [[64,128,256],[64,64,64]]
+    values: [[64,128,256]]
   batch_size: 
-    values: [1024,256]
-num_steps:
-  values: [100,1000,10000]
+    values: [1024]
+  num_steps:
+    values: [1000]

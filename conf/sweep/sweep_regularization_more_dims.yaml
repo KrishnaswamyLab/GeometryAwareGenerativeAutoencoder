@@ -10,7 +10,7 @@ metric:
   goal: maximize
 parameters:
   model.emb_dim:
-    values: [10]
+    values: [5,15,20,25,30]
   model.type:
     values: ['ae']
   model.lr:

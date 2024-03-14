@@ -3,6 +3,9 @@ import numpy as np
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import pathlib
+import phate
+from scipy.spatial.distance import pdist, squareform
+from sklearn.model_selection import train_test_split
 
 def generate_synthetic_data(nGenes=17580, batchCells=3000, nBatches=1, method='paths', bcv=0.2, dropout=0.5, seed=42, n_pca=100):
     if method == 'paths':
