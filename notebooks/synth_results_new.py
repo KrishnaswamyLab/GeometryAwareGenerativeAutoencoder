@@ -55,12 +55,13 @@ for i in tqdm(range(len(sweep.runs))):
     # model = make_model(cfg, input_dim, emb_dim, pp, dist_std, from_checkpoint=True, checkpoint_path=ckpt_path)
     model = AEDist.load_from_checkpoint(ckpt_path)
     res_dict = compute_all_metrics(model, data_path, noiseless_path, ambient_path)
+    res_dict['dist_weight'] = cfg.model.dist_reconstr_weights
     results.append(res_dict)
 
 res_df = pd.DataFrame(results)
 res_df.to_csv("synth_results_new.csv", index=False)
 
-res_df = res_df.sort_values(['seedmethod', 'bcv', 'dropout', 'reconstr_weight'])
+res_df = res_df.sort_values(['seedmethod', 'bcv', 'dropout', 'dist_weight'])
 # Round all numeric columns to 3 decimals, excluding strings
 rounded_res_df = res_df.select_dtypes(include=['float64']).round(3)
 # Re-attach the non-numeric columns to the rounded DataFrame

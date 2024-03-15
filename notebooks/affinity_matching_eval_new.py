@@ -44,7 +44,7 @@ for data_path1 in tqdm(data_paths):
         pattern = r"sepa_(?P<prob_method>\w+)_a(?P<alpha>[\d.]+)_knn(?P<knn>\d+)_(?P<noisy_path>.+)"
 
         # Perform regex search
-        match = re.search(pattern, string)
+        match = re.search(pattern, data_path1)
 
         if match:
             # Extracting the values
@@ -52,13 +52,6 @@ for data_path1 in tqdm(data_paths):
             alpha = match.group("alpha")
             knn = match.group("knn")
             noisy_path = match.group("noisy_path")
-            
-            print(f"prob_method: {prob_method}")
-            print(f"alpha: {alpha}")
-            print(f"knn: {knn}")
-            print(f"noisy_path: {noisy_path}")
-        else:
-            print("No match found. Please check the string format.")
 
         data_name = noisy_path[:-4]
         probmtd = prob_method
@@ -74,6 +67,8 @@ for data_path1 in tqdm(data_paths):
         model = Model(encoder, decoder)
         res_dict = compute_all_metrics(model, data_path, noiseless_path, ambient_path)
         res_dict['probmethod'] = probmtd
+        res_dict['alpha'] = alpha
+        res_dict['knn'] = knn
         
         results.append(res_dict)
 
