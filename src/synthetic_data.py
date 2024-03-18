@@ -39,12 +39,15 @@ def main(cfg: DictConfig):
     print(OmegaConf.to_yaml(cfg))
     data_true_pc, data_true, data_noisy_pc, data_noisy = generate_synthetic_data(nGenes=cfg.nGenes, batchCells=cfg.batchCells, nBatches=cfg.nBatches, method=cfg.method, bcv=cfg.bcv, dropout=cfg.dropout, seed=cfg.seed)
     pathlib.Path(cfg.path).mkdir(parents=True, exist_ok=True)
+    
     np.save(f'{cfg.path}/true_{cfg.seed}_{cfg.method}_{cfg.nGenes}_{cfg.batchCells}_{cfg.nBatches}.npy', data_true_pc)
     np.save(f'{cfg.path}/noisy_{cfg.seed}_{cfg.method}_{cfg.nGenes}_{cfg.batchCells}_{cfg.nBatches}_{cfg.bcv}_{cfg.dropout}.npy', data_noisy_pc)
     np.save(f'{cfg.path}/nopc_true_{cfg.seed}_{cfg.method}_{cfg.nGenes}_{cfg.batchCells}_{cfg.nBatches}.npy', data_true)
     np.save(f'{cfg.path}/nopc_noisy_{cfg.seed}_{cfg.method}_{cfg.nGenes}_{cfg.batchCells}_{cfg.nBatches}_{cfg.bcv}_{cfg.dropout}.npy', data_noisy)
+    
     data_dict = convert_data(data_noisy_pc, seed=cfg.seed, test_size=cfg.test_size)
     np.savez(f'{cfg.path}/noisy_{cfg.seed}_{cfg.method}_{cfg.nGenes}_{cfg.batchCells}_{cfg.nBatches}_{cfg.bcv}_{cfg.dropout}_all.npz', **data_dict)
+    
     data_dict = convert_data(data_true_pc, seed=cfg.seed, test_size=cfg.test_size)
     np.savez(f'{cfg.path}/true_{cfg.seed}_{cfg.method}_{cfg.nGenes}_{cfg.batchCells}_{cfg.nBatches}_all.npz', **data_dict)
 
