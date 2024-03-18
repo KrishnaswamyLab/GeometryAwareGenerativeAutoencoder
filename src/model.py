@@ -255,7 +255,8 @@ class AEDist(BaseAE):
         cycle_weight=0.,
         cycle_dist_weight=0.,
         mean=None,
-        std=None
+        std=None,
+        dist_std=None,
     ):
         super().__init__(dim, emb_dim, layer_widths=layer_widths, activation_fn=activation_fn, eps=eps, lr=lr, weight_decay=weight_decay, dropout=dropout, batch_norm=batch_norm)
         self.pp = pp
@@ -273,13 +274,16 @@ class AEDist(BaseAE):
         self.cycle_weight = cycle_weight
         self.cycle_dist_weight = cycle_dist_weight
         if mean is None:
-            mean = torch.zeros(1, dim)
+            mean = 0
         if std is None:
-            std = torch.ones(1, dim)
-        mean = mean.reshape(1, dim)
-        std = std.reshape(1, dim)
+            std = 1.
+        if dist_std is None:
+            dist_std = 1.
+        # mean = mean.reshape(1, dim)
+        # std = std.reshape(1, dim)
         self.register_buffer('mean', torch.tensor(mean, dtype=torch.float32), persistent=True)
         self.register_buffer('std', torch.tensor(std, dtype=torch.float32), persistent=True)
+        self.register_buffer('dist_std', torch.tensor(dist_std, dtype=torch.float32), persistent=True)
         self.save_hyperparameters() 
 
     def normalize(self, x):
@@ -316,11 +320,14 @@ class AEDist(BaseAE):
         if self.dist_reg_weight > 0.0:
             assert len(input) == 2
             dist_emb = torch.nn.functional.pdist(z) # [B, (B-1)/2] 
+            ## pp deprecated! should use 'none'!
             dist_emb = self.pp.transform(dist_emb) # assume the ground truth dist is transformed.
+            dist_gt = dist_gt / self.dist_std
             dl = self.dist_loss(dist_emb, dist_gt)
             self.log(f'{stage}/dist_loss', dl, prog_bar=True, on_epoch=True)
             loss += self.dist_reg_weight * dl
-            eps = 1e-10
+            # eps = 1e-10
+            eps = 0.
             acc = (1-(torch.abs(dist_gt - dist_emb + eps) / (dist_gt + eps)).mean())
             self.log(f'{stage}/dist_accuracy', acc, prog_bar=True, on_epoch=True)
 

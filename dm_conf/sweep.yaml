@@ -13,14 +13,19 @@ parameters:
   time_embedding_size: 
     values: [16]
   lr: 
-    values: [1e-3]
+    values: [1e-3,1e-4]
   dropout:
-    values: [0.2]
+    values: [0.]
+  weight_decay: 
+    values: [1e-5,1e-6]
+  batch_norm: 
+    values: [false]
   data:
     values: ['eb_subset_all_15_dm.npz','eb_subset_all_25_dm.npz','eb_subset_all_5_dm.npz','sea_ad_gaba_all_20_dm.npz','sea_ad_gaba_all_30_dm.npz','eb_subset_all_20_dm.npz','eb_subset_all_30_dm.npz','sea_ad_gaba_all_15_dm.npz','sea_ad_gaba_all_25_dm.npz','sea_ad_gaba_all_5_dm.npz','sea_ad_all_new.npz','sea_ad_all_new_2.npz','eb_all_new_2.npz','eb_all_new.npz']
+    # values: ['eb_subset_all_15_dm.npz']
   layer_widths:
-    values: [[64,128,256]]
+    values: [[64,128,256],[256,256,256]]
   batch_size: 
     values: [1024]
   num_steps:
-    values: [1000]
+    values: [1000,10000,50000]

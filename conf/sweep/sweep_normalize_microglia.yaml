@@ -12,37 +12,42 @@ parameters:
   model.type:
     values: ['ae']
   model.lr:
-    values: [0.001]
+    values: [1e-3]
   model.weight_decay:
-    values: [1e-5]
+    values: [1e-4]
   model.dropout:
-    values: [0.2]
+    values: [0.,0.2,0.5]
   model.batch_norm:
-    values: [true]
+    values: [true,false]
   model.layer_widths:
-    values: [[32,32,32],[16,16],[32,32]]
+    values: [[256,128,64]]
   model.dist_reconstr_weights:
-    values: [[0.9,0.1,0.],[0.5,0.5,0],[0.1,0.9,0]]
+    # values: [[0.,1.,0.]]
+    values: [[0.5,0.5,0.]]
   model.use_dist_mse_decay:
     values: [true]
   model.dist_mse_decay:
     values: [0,0.2,0.5]
   model.cycle_weight:
-    values: [0.]
+    values: [0.,1.]
   model.cycle_dist_weight:
-    values: [0.]
+    values: [0.,1.]
   data.name:
-    # values: ['swissroll0.1_heatgeo', 'swissroll0.1_phate', 'swissroll1.0_heatgeo', 'swissroll1.0_phate']
-    values: ['swissroll0.1_heatgeo']
+    values: ['microglia_subset.npz']
+    # values: ['swissroll0.1_heatgeo']
   training.match_potential:
     values: [True]
-  data.preprocess:
-    values: ['none','standard']
-  model.normalize:
-    values: [True,False]
   # training.batch_size: 
   #   values: [256]
   # training.max_epochs: 
   #   values: [100000]
   # training.patience: 
   #   values: [10000]
+  model.normalize:
+    values: [true]
+  model.normalize_dist:
+    values: [true]
+  model.componentwise_std:
+    values: [false]
+  data.preprocess:
+    values: ['none']

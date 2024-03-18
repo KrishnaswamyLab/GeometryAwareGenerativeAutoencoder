@@ -10,9 +10,11 @@ dist_recon_topk_coords: 0
 type: 'ae'
 kl_weight: 0.1
 use_dist_mse_decay: false
-dist_mse_decay: 0.1
+dist_mse_decay: 0.
 cycle_weight: 0.
 cycle_dist_weight: 0.
 prob_method: 'tstudent'
 emb_dim: 2
 normalize: false
+normalize_dist: false
+componentwise_std: false

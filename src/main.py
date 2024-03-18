@@ -160,7 +160,7 @@ def load_data(cfg, load_all=False):
     phate_coords = data['phate']
     colors = data['colors']
     dist = data['dist']
-    train_mask = data['is_train']
+    train_mask = data['is_train'].astype(bool) # !!! Fixed bug: when mask is not boolean it is problematic!
     if not load_all:
         X = X[train_mask,:]
         phate_coords = phate_coords[train_mask,:]
@@ -203,13 +203,14 @@ def load_data(cfg, load_all=False):
     shapes = phate_D.shape
     phate_D = pp.fit_transform(phate_D.reshape(-1,1)).reshape(shapes)
     if load_all:
+        NotImplemented
         # DEPRECATED
-        allloader = dataloader_from_pc(
-        X, # <---- Pointcloud
-        phate_D, # <---- Distance matrix to match
-        batch_size=X.shape[0],
-        shuffle=False,)
-        valloader = None
+        # allloader = dataloader_from_pc(
+        # X, # <---- Pointcloud
+        # phate_D, # <---- Distance matrix to match
+        # batch_size=X.shape[0],
+        # shuffle=False,)
+        # valloader = None
     else:
         trainloader, valloader, mean, std = train_valid_loader_from_pc(
             X, # <---- Pointcloud
@@ -217,7 +218,7 @@ def load_data(cfg, load_all=False):
             batch_size=cfg.training.batch_size,
             train_valid_split=cfg.training.train_valid_split,
             shuffle=cfg.training.shuffle,
-            seed=cfg.training.seed,return_mean_std=True)
+            seed=cfg.training.seed, return_mean_std=True, componentwise_std=cfg.model.componentwise_std)
     
     return trainloader, valloader, X, phate_coords, colors, dist, pp, mean, std
 
@@ -253,30 +254,12 @@ def make_model(cfg, dim, emb_dim, pp, dist_std, mean, std, from_checkpoint=False
     if not cfg.model.normalize:
         mean = None
         std = None
+    if 'normalize_dist' not in cfg.model:
+        cfg.model.normalize_dist = False
+    if not cfg.model.normalize_dist:
+        dist_std = None
     activation_fn = activation_dict[cfg.model.activation]
     if cfg.model.type == 'ae':
-        # if from_checkpoint:
-        #     model = AEDist.load_from_checkpoint(
-        #         checkpoint_path=checkpoint_path,
-        #         dim=dim,
-        #         emb_dim=emb_dim,
-        #         layer_widths=cfg.model.layer_widths,
-        #         activation_fn=activation_fn,
-        #         dist_reconstr_weights=cfg.model.dist_reconstr_weights,
-        #         pp=pp,
-        #         lr=cfg.model.lr,
-        #         weight_decay=cfg.model.weight_decay,
-        #         batch_norm=cfg.model.batch_norm,
-        #         dist_recon_topk_coords=cfg.model.dist_recon_topk_coords,
-        #         use_dist_mse_decay=use_dist_mse_decay,
-        #         dist_mse_decay=dist_mse_decay,
-        #         dropout=cfg.model.dropout,
-        #         cycle_weight=cfg.model.cycle_weight,
-        #         cycle_dist_weight=cfg.model.cycle_dist_weight,
-        #         # mean=mean,  # they are saved in the checkpoint.
-        #         # std=std,
-        #     )
-        # else:
         model = AEDist(
             dim=dim,
             emb_dim=emb_dim,
@@ -295,6 +278,7 @@ def make_model(cfg, dim, emb_dim, pp, dist_std, mean, std, from_checkpoint=False
             cycle_dist_weight=cfg.model.cycle_dist_weight,
             mean=mean,
             std=std,
+            dist_std=dist_std,
         )
     elif cfg.model.type == 'vae':
         # DEPRECATED
