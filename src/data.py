@@ -167,6 +167,7 @@ class RowStochasticDataset(torch.utils.data.Dataset):
                  dist_normalization: str = "zscore",
                  emb_dim: int = 2,
                  knn: int = 5,
+                 n_landmark: int = 5000,
                  t: int = 0, # 0 means auto;
                  shuffle: bool = True) -> None:
         super().__init__()
@@ -177,7 +178,7 @@ class RowStochasticDataset(torch.utils.data.Dataset):
         self.dist_normalization = dist_normalization
         self.emb_dim = emb_dim
         self.knn = knn
-        self.n_landmark = 5000
+        self.n_landmark = n_landmark
         self.shuffle = shuffle
 
         if row_stochastic_matrix is not None:

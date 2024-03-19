@@ -229,9 +229,12 @@ def train_eval(cfg: DictConfig):
         val_data = train_val_data[split_val_idx:]
         test_data = raw_data[train_mask == 0]
 
-    train_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_data, X_labels=None, dist_type='phate_prob', knn=cfg.data.knn)
-    train_val_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_val_data, X_labels=None, dist_type='phate_prob', knn=cfg.data.knn)
-    whole_dataset = RowStochasticDataset(data_name=cfg.data.name, X=raw_data, X_labels=None, dist_type='phate_prob', knn=cfg.data.knn)
+    train_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_data, X_labels=None, 
+                                         dist_type='phate_prob', knn=cfg.data.knn, t=cfg.data.t, n_landmark=cfg.data.n_landmark)
+    train_val_dataset = RowStochasticDataset(data_name=cfg.data.name, X=train_val_data, X_labels=None, 
+                                             dist_type='phate_prob', knn=cfg.data.knn, t=cfg.data.t, n_landmark=cfg.data.n_landmark)
+    whole_dataset = RowStochasticDataset(data_name=cfg.data.name, X=raw_data, X_labels=None, 
+                                         dist_type='phate_prob', knn=cfg.data.knn, t=cfg.data.t, n_landmark=cfg.data.n_landmark)
 
     log(f'Train dataset: {len(train_dataset)}; \
           Val dataset: {len(train_val_dataset)}; \
