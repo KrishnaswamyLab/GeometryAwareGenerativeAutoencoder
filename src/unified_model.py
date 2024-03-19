@@ -4,11 +4,16 @@ class GeometricAE:
         ambient_dimension,
         latent_dimension,
         model_type, # "distance" or "affinity"
-        # extra hyperparameters
+        # extra hyperparameters, with sane defaults
     ):
-        self.model = None # Get model
-        # do stuff
-        pass
+        self.model_type = model_type
+        match self.model_type:
+            case "distance":
+                self.model = 'get distance model here' # initialize with hyperparameters
+            case 'affinity':
+                self.model = 'get affinity model here'
+            case _:
+                raise NotImplementedError("Invalid Model Type")
 
     def fit(
         self,
