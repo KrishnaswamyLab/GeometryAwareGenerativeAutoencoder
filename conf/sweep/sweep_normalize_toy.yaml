@@ -18,7 +18,7 @@ parameters:
   model.dropout:
     values: [0.,0.2]
   model.batch_norm:
-    values: [true]
+    values: [false]
   model.layer_widths:
     values: [[256,128,64]]
   model.dist_reconstr_weights:
@@ -33,7 +33,8 @@ parameters:
   model.cycle_dist_weight:
     values: [0.]
   data.name:
-    values: ['swissroll0.1_phate','swissroll0.1_heatgeo','swissroll1.0_phate','swissroll1.0_heatgeo']
+    # values: ['swissroll0.1_phate','swissroll0.1_heatgeo','swissroll1.0_phate','swissroll1.0_heatgeo']
+    values: ['swissroll0.1_phate_flat', 'scurve0.1_phate_flat']
     # values: ['swissroll0.1_heatgeo']
   training.match_potential:
     values: [True]
