@@ -164,25 +164,36 @@ class RowStochasticDataset(torch.utils.data.Dataset):
                  row_stochastic_matrix: Optional[np.ndarray] = None,
                  phate_embed: Optional[np.ndarray] = None,
                  dist_type: str = "phate_prob",
+                 dist_normalization: str = "zscore",
                  emb_dim: int = 2,
                  knn: int = 5,
+                 n_landmark: int = 5000,
+                 t: int = 0, # 0 means auto;
                  shuffle: bool = True) -> None:
         super().__init__()
         self.data_name = data_name
         self.X = X.astype(np.float32)
         self.X_labels = X_labels
         self.dist_type = dist_type
+        self.dist_normalization = dist_normalization
         self.emb_dim = emb_dim
         self.knn = knn
+        self.n_landmark = n_landmark
         self.shuffle = shuffle
 
         if row_stochastic_matrix is not None:
             self.row_stochastic_matrix = row_stochastic_matrix
             self.phate_embed = phate_embed
         else:
-            self.row_stochastic_matrix, self.phate_embed, self.phate_op = self._set_row_stochastic_matrix()
+            self.row_stochastic_matrix, self.phate_embed, self.phate_op, self.diff_pot = self._set_row_stochastic_matrix(t)
         
-        self.t = self.phate_op._find_optimal_t(t_max=100)
+        if dist_type == 'phate_dist': # distance matching
+            self.gt_dist = self._set_gt_dist()
+        
+        if t == 0:
+            self.t = self.phate_op._find_optimal_t(t_max=100)
+        else:
+            self.t = t
     
     def __len__(self) -> int:
         return len(self.X)
@@ -196,18 +207,19 @@ class RowStochasticDataset(torch.utils.data.Dataset):
     def __repr__(self) -> str:
         return f"RowStochasticDataset({self.data_name}, {self.X.shape}, {self.dist_type})"
     
-    def _set_row_stochastic_matrix(self) -> Tuple[np.ndarray, np.ndarray]:
+    def _set_row_stochastic_matrix(self, t) -> Tuple[np.ndarray, np.ndarray]:
         '''
             Returns row_stochastic_matrix and phate_embed
             diff_potential = -1 * np.log(diff_op_t)
             diff_op_t = np.exp(-1 * diff_potential)
         '''
-        if self.dist_type == "phate_prob":
-            phate_op = phate.PHATE(random_state=1, 
+        if self.dist_type in ["phate_prob", "phate_dist"]:
+            phate_op = phate.PHATE( 
                         verbose=True,
                         n_components=self.emb_dim,
                         knn=self.knn,
-                        n_landmark=self.X.shape[0]).fit(self.X)
+                        t=t if t > 0 else 'auto',
+                        n_landmark=self.n_landmark).fit(self.X)
             phate_embed = torch.Tensor(phate_op.transform(self.X))
             diff_potential = phate_op.diff_potential
             diff_op_t = np.exp(-1 * diff_potential)
@@ -217,7 +229,44 @@ class RowStochasticDataset(torch.utils.data.Dataset):
             print('checking row sum:', np.allclose(row_stochastic_matrix.sum(axis=1), 1))
             print('row sum: ', row_stochastic_matrix.sum(axis=1)[:20])
 
-            return row_stochastic_matrix, phate_embed, phate_op
+            return row_stochastic_matrix, phate_embed, phate_op, diff_potential
         else:
             raise ValueError(f"dist_type {self.dist_type} not supported")
+    
+    def _set_gt_dist(self) -> np.ndarray:
+        diff_pot = self.diff_pot
+
+        # if self.dist_type == "phate":
+        #     gt_dist = scipy.spatial.distance.cdist(diff_pot, diff_pot)
+        #     if self.dist_normalization == "minmax":
+        #         gt_dist = (gt_dist - gt_dist.min()) / (gt_dist.max() - gt_dist.min())
+        #     elif self.dist_normalization == "zscore":
+        #         gt_dist = (gt_dist - gt_dist.mean()) / gt_dist.std()
+        #         # move to >= 0
+        #         if gt_dist.min() < 0:
+        #             gt_dist = gt_dist - gt_dist.min()
+
+        # elif self.dist_type == "diffusion_potential":
+
+        if self.dist_normalization == "minmax":
+            diff_pot = (diff_pot - diff_pot.min()) / (diff_pot.max() - diff_pot.min())
+        elif self.dist_normalization == "zscore":
+            diff_pot = (diff_pot - diff_pot.mean()) / diff_pot.std()
+            # move to >= 0
+            if diff_pot.min() < 0:
+                diff_pot = diff_pot - diff_pot.min()
+                
+        gt_dist = scipy.spatial.distance.cdist(diff_pot, diff_pot)
+
+        return gt_dist
+
+    def get_gt_dist(self, batch_idx) -> np.ndarray:
+        '''
+            Returns ground truth distance matrix
+        '''
+        if self.dist_type == "phate_prob":
+            raise ValueError("for phate_prob, use row stochastic matrix instead of gt_dist!")
+        
+        return self.gt_dist[batch_idx][:, batch_idx] # [B, B]
+    
         

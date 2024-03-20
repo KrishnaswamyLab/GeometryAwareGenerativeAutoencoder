@@ -1,16 +1,17 @@
 data:
   root: 'data'
   filetype: '.npz'
-  name: 'swiss_roll' #'tree' #'s_curve' #'swiss_roll' # 'myeloid'
+  name: 'splatter' #'tree' #'s_curve' #'swiss_roll' # 'myeloid'
   noise: 0.1
   seed: 1
   preprocess: 'none'
   knn: 5
+  t: 0
   noisy_path: 'noisy_44_groups_17580_2000_3_0.4_0.5_all.npz' # Only relevant to splatter
 logger:
   entity: danqiliao
   project: dmae
-  tags: separate_affinity
+  tags: 'dist'
   use_wandb: true
 model:
   activation: relu
@@ -18,9 +19,9 @@ model:
   - 256
   - 128
   - 64
-  dist_reconstr_weights: [1.0, 0]
-  prob_method: 'gaussian' # 'heat_kernel' #'gaussian'
-  encoding_method: 'affinity' # 'tsne'
+  dist_reconstr_weights: [0.9, 0.1]
+  encoding_method: 'distance' # 'tsne'
+  dist_normalization: 'zscore'
   alpha: 1.0
   bandwidth: 1.0
   load_encoder: false
@@ -28,15 +29,14 @@ model:
 path:
   log: log.txt
   model: model.ckpt
-  decoder_model: decoder.ckpt
   out_data: ''
   plots: ''
-  root: results/
+  root: dist_results/
   save: true
 training:
   accelerator: auto
   batch_size: 256
-  log_every_n_steps: 100
+  log_every_n_epochs: 5
   max_epochs: 5000
   monitor: val_loss
   patience: 100
@@ -52,5 +52,8 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      ++data.name : eb
-      ++logger.use_wandb: false
+      ++data.name : swiss_roll
+      ++logger.use_wandb: true
+      ++data.knn: 40
+      ++data.noise: 0.1
+      ++data.t: 26

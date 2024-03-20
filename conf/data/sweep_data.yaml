@@ -3,10 +3,18 @@ filetype: '.npz'
 n: 3000
 train_ratio: 0.8
 
+# hydra:
+#   mode: MULTIRUN
+#   sweeper:
+#     params:
+#       +name : swiss_roll, s_curve, tree
+#       +noise: 0.1, 0.5, 1.0, 2.0
+#       +seed: 1,2,3,4,5
+
 hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      +name : swiss_roll, s_curve, tree
-      +noise: 0.1, 0.5, 1.0, 2.0
-      +seed: 1,2,3,4,5
+      +name : eb, sea_ad, myeloid
+      +noise: 1.0
+      +seed: 1

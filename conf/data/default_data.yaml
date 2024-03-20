@@ -2,6 +2,8 @@ root: '../data'
 filetype: '.npz'
 name: 'swiss_roll'
 preprocess: 'none'
+noise: 0.1
+seed: 1
 kernel:
   type: 'gaussian'
   sigma: 1.0
