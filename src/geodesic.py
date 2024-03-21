@@ -13,7 +13,7 @@ import torch.optim as optim
 from torch.autograd.functional import jacobian
 import pytorch_lightning as pl
 
-def compute_jacobian_function(f, x, create_graph=True, retain_graph=True):
+def compute_jacobian_function(f, x, create_graph=False, retain_graph=True):
     """
     Compute the Jacobian of the decoder wrt a batch of points in the latent space using an efficient broadcasting approach.
     :param model: The VAE model.
