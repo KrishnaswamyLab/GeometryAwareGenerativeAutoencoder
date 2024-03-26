@@ -138,7 +138,7 @@ def train_eval(cfg: DictConfig):
     if cfg.model.encoding_method in ['phate', 'tsne', 'umap']:
         save_dir =  f'sepa_{cfg.model.encoding_method}_a{cfg.model.alpha}_knn{cfg.data.knn}_'
     else:
-        save_dir =  f'sepa_{cfg.model.prob_method}_a{cfg.model.alpha}_knn{cfg.data.knn}_'
+        save_dir =  f'sepa_{cfg.model.prob_method}_{cfg.model.loss_type}_a{cfg.model.alpha}_knn{cfg.data.knn}_'
     if  cfg.data.name in ['splatter']:
         save_dir += f'{cfg.data.noisy_path}'
     elif cfg.data.name in ['myeloid']:
@@ -257,7 +257,8 @@ def train_eval(cfg: DictConfig):
     decoder = Decoder(dim=raw_data.shape[1], emb_dim=emb_dim, layer_widths=cfg.model.layer_widths[::-1], activation_fn=act_fn)
 
     if cfg.model.load_encoder and os.path.exists(model_save_path):
-        model.load_state_dict(torch.load(model_save_path))
+        #model.load_state_dict(torch.load(model_save_path))
+        model.load_from_checkpoint(model_save_path)
         log(f'Loaded encoder from {model_save_path}, skipping encoder training ...')
         train_encoder = False
     else:
@@ -310,7 +311,7 @@ def train_eval(cfg: DictConfig):
                                                      alpha=cfg.model.alpha, 
                                                      bandwidth=cfg.model.bandwidth)
         gt_prob_matrix = (train_dataset.row_stochastic_matrix).type(torch.float32).to(device)
-        encoder_loss = model.encoder_loss(gt_prob_matrix, pred_prob_matrix)
+        encoder_loss = model.encoder_loss(gt_prob_matrix, pred_prob_matrix, type=cfg.model.loss_type)
     
         encoder_loss.backward()
         optimizer.step()
@@ -341,7 +342,8 @@ def train_eval(cfg: DictConfig):
                                                                    bandwidth=cfg.model.bandwidth)
             gt_train_val_prob_matrix = (train_val_dataset.row_stochastic_matrix).type(torch.float32).to(device)
             val_encoder_loss = model.encoder_loss(gt_train_val_prob_matrix, 
-                                                  train_val_pred_prob_matrix)
+                                                  train_val_pred_prob_matrix,
+                                                  type=cfg.model.loss_type)
             
             log(f'\n[Epoch: {eid}]: Val Encoder Loss: {val_encoder_loss.item()}')
             if wandb_run is not None:
@@ -379,10 +381,10 @@ def train_eval(cfg: DictConfig):
     # affnity matching, metrics: KL divergence
     metrics = {}
     gt_dist = (whole_dataset.row_stochastic_matrix).type(torch.float32).to(device)
-    metrics['KL'] = torch.nn.functional.kl_div(torch.log(pred_dist+1e-8),
-                                                    gt_dist+1e-8,
-                                                    reduction='batchmean',
-                                                    log_target=False).item()
+    if cfg.model.loss_type == 'kl':
+        metrics['KL'] = model.encoder_loss(gt_dist, pred_dist, type='kl').item()
+    elif cfg.model.loss_type == 'jsd':
+        metrics['JSD'] = model.encoder_loss(gt_dist, pred_dist, type='jsd').item()
     
     ''' DeMAP '''
     if true_data is not None and cfg.model.encoding_method == 'affinity':
@@ -507,7 +509,7 @@ def evaluate_demap(embedding_map: dict[str, np.ndarray],
 
     return demaps
 
-def DEMaP(data, embedding, knn=10, subsample_idx=None):
+def DEMaP(data, embedding, knn=30, subsample_idx=None):
     geodesic_dist = geodesic_distance(data, knn=knn)
     #geodesic_dist = compute_geodesic_distances(data, knn_geodesic=knn)
     if subsample_idx is not None:
@@ -516,7 +518,7 @@ def DEMaP(data, embedding, knn=10, subsample_idx=None):
     embedded_dist = pdist(embedding)
     return spearmanr(geodesic_dist, embedded_dist).correlation
 
-def geodesic_distance(data, knn=10, distance="data"):
+def geodesic_distance(data, knn=30, distance="data"):
     G = graphtools.Graph(data, knn=knn, decay=None)
     return G.shortest_path(distance=distance)
 

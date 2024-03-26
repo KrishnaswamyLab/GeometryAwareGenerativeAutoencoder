@@ -173,7 +173,14 @@ class AEProb(torch.nn.Module):
                                               log_target=False)
         elif type == 'mse':
             loss = torch.nn.functional.mse_loss(gt_matrix, pred_matrix)
-
+        elif type == 'jsd':
+            # Jensen-Shannon Divergence 
+            log_pred_mat = torch.log(pred_matrix + self.eps)
+            log_gt_mat = torch.log(gt_matrix + self.eps)
+            M = 0.5 * (pred_matrix + gt_matrix)
+            loss = 0.5 * (torch.nn.functional.kl_div(log_pred_mat, M, reduction='batchmean', log_target=False) + 
+                          torch.nn.functional.kl_div(log_gt_mat, M, reduction='batchmean', log_target=False))
+            
         return loss
     
     def compute_prob_matrix(self, z, t: int=1, alpha: float = 1.0, bandwidth: float =1.0, knn: int=5):
@@ -233,6 +240,30 @@ class AEProb(torch.nn.Module):
                              heat_kernel, powered_tstudent')
 
         return probs
+    
+    def save_weights(self, model_save_path: str) -> None:
+        torch.save(self.state_dict(), model_save_path)
+        return
+
+    def load_from_checkpoint(self, checkpoint_path: str):
+        return self.load_state_dict(torch.load(checkpoint_path))
+    
+    def pullback_metric(self, x):
+        '''
+        Pullback the metric from the latent space to the input space.
+        J = df/dx
+        metric = J^T J
+        Inputs:
+            x: [B, D]
+        Returns:
+            metric: [B, D, D] metric tensor
+        '''
+        x.requires_grad = True
+        J = torch.autograd.functional.jacobian(self.encode, x, create_graph=True)
+
+        pullback_metric = torch.matmul(J.permute(0, 2, 1), J)
+        
+        return pullback_metric
     
 
 class AEDist(BaseAE):
