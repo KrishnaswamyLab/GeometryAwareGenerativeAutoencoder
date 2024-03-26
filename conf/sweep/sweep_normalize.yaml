@@ -18,22 +18,24 @@ parameters:
   model.dropout:
     values: [0.,0.2,0.5]
   model.batch_norm:
-    values: [true,false]
+    values: [true]
   model.layer_widths:
     values: [[256,128,64]]
   model.dist_reconstr_weights:
     # values: [[0.,1.,0.]]
-    values: [[0.5,0.5,0.]]
+    # values: [[0.9,0.1,0]]
+    values: [[77.4,0.32,0]]
   model.use_dist_mse_decay:
     values: [true]
   model.dist_mse_decay:
-    values: [0,0.2,0.5]
+    values: [0.,0.2,0.5]
   model.cycle_weight:
     values: [0.,1.]
   model.cycle_dist_weight:
-    values: [0.,1.]
+    values: [0.]
   data.name:
-    values: ['swissroll0.1_phate']
+    # values: ['swissroll0.1_phate']
+    values: ['eb_subset_all', 'sea_ad_gaba_all']
     # values: ['swissroll0.1_heatgeo']
   training.match_potential:
     values: [True]

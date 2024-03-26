@@ -15,4 +15,4 @@ parameters:
   dropout:
     values: [0.5]
   path: 
-    values: ['../synthetic_data3/']
+    values: ['../synthetic_data4/']

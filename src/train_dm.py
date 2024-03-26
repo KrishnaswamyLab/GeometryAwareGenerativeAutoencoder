@@ -78,26 +78,27 @@ def main(cfg: DictConfig):
     trainer.fit(model, train_loader)
     # gs = model.generate_samples(num_samples=3000)
     
-    # Load best model and generate samples
-    model = DiffusionModel.load_from_checkpoint(checkpoint_callback.best_model_path)
-    samples = model.generate_samples(num_samples=3000)
+    # Visualize samples with original data 
+    # Disabled by default. The inference is too slow for large step size.
+    if cfg.visualize:
+        # Load best model and generate samples
+        model = DiffusionModel.load_from_checkpoint(checkpoint_callback.best_model_path)
+        samples = model.generate_samples(num_samples=3000)
+        train_data = []
+        for batch in train_loader:
+            train_data.append(batch[0])
+        train_data = torch.cat(train_data, dim=0).cpu().numpy()
+        test_data = []
+        for batch in test_loader:
+            test_data.append(batch[0])
+        test_data = torch.cat(test_data, dim=0).cpu().numpy()
+        samples = samples.cpu().numpy()
+        
+        print('train_data', train_data.shape)
+        print('test_data', test_data.shape)
+        print('samples', samples.shape)
 
-    # Visualize samples with original data
-    train_data = []
-    for batch in train_loader:
-        train_data.append(batch[0])
-    train_data = torch.cat(train_data, dim=0).cpu().numpy()
-    test_data = []
-    for batch in test_loader:
-        test_data.append(batch[0])
-    test_data = torch.cat(test_data, dim=0).cpu().numpy()
-    samples = samples.cpu().numpy()
-    
-    print('train_data', train_data.shape)
-    print('test_data', test_data.shape)
-    print('samples', samples.shape)
-
-    visualize(samples, train_data, test_data, cfg)
+        visualize(samples, train_data, test_data, cfg)
 
 
 def visualize(samples, train_data, test_data, cfg):

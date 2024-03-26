@@ -22,7 +22,7 @@ parameters:
   model.layer_widths:
     values: [[256,128,64]]
   model.dist_reconstr_weights:
-    values: [[0.9,0.1,0.],[1,0,0]]
+    values: [[0.9,0.1,0.],[77.4,0.32,0]]
   model.use_dist_mse_decay:
     values: [true]
   model.dist_mse_decay:
@@ -32,8 +32,16 @@ parameters:
   model.cycle_dist_weight:
     values: [0.]
   data.root: 
-    values: [ '../synthetic_data3']
+    values: [ '../synthetic_data4']
   data.name: # 90 datasets
     values: ['noisy_1_groups_17580_3000_1_0.18_0.5_all','noisy_1_groups_17580_3000_1_0.25_0.5_all','noisy_1_groups_17580_3000_1_0.5_0.5_all','noisy_1_groups_17580_3000_1_0_0.5_all','noisy_1_paths_17580_3000_1_0.18_0.5_all','noisy_1_paths_17580_3000_1_0.25_0.5_all','noisy_1_paths_17580_3000_1_0.5_0.5_all','noisy_1_paths_17580_3000_1_0_0.5_all','noisy_2_groups_17580_3000_1_0.18_0.5_all','noisy_2_groups_17580_3000_1_0.25_0.5_all','noisy_2_groups_17580_3000_1_0.5_0.5_all','noisy_2_groups_17580_3000_1_0_0.5_all','noisy_2_paths_17580_3000_1_0.18_0.5_all','noisy_2_paths_17580_3000_1_0.25_0.5_all','noisy_2_paths_17580_3000_1_0.5_0.5_all','noisy_2_paths_17580_3000_1_0_0.5_all','noisy_3_groups_17580_3000_1_0.18_0.5_all','noisy_3_groups_17580_3000_1_0.25_0.5_all','noisy_3_groups_17580_3000_1_0.5_0.5_all','noisy_3_groups_17580_3000_1_0_0.5_all','noisy_3_paths_17580_3000_1_0.18_0.5_all','noisy_3_paths_17580_3000_1_0.25_0.5_all','noisy_3_paths_17580_3000_1_0.5_0.5_all','noisy_3_paths_17580_3000_1_0_0.5_all','noisy_4_groups_17580_3000_1_0.18_0.5_all','noisy_4_groups_17580_3000_1_0.25_0.5_all','noisy_4_groups_17580_3000_1_0.5_0.5_all','noisy_4_groups_17580_3000_1_0_0.5_all','noisy_4_paths_17580_3000_1_0.18_0.5_all','noisy_4_paths_17580_3000_1_0.25_0.5_all','noisy_4_paths_17580_3000_1_0.5_0.5_all','noisy_4_paths_17580_3000_1_0_0.5_all','noisy_5_groups_17580_3000_1_0.18_0.5_all','noisy_5_groups_17580_3000_1_0.25_0.5_all','noisy_5_groups_17580_3000_1_0.5_0.5_all','noisy_5_groups_17580_3000_1_0_0.5_all','noisy_5_paths_17580_3000_1_0.18_0.5_all','noisy_5_paths_17580_3000_1_0.25_0.5_all','noisy_5_paths_17580_3000_1_0.5_0.5_all','noisy_5_paths_17580_3000_1_0_0.5_all']
   training.match_potential:
     values: [True]
+  model.normalize:
+    values: [true]
+  model.normalize_dist:
+    values: [true]
+  model.componentwise_std:
+    values: [false]
+  data.preprocess:
+    values: ['none']

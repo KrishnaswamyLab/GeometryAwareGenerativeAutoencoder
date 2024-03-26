@@ -101,7 +101,6 @@ class GeodesicODE(pl.LightningModule):
         weight_decay=0.0, 
         # dropout=0.0, 
         # batch_norm=False,
-        alpha=0.01,
         beta=0.,
         n_pow=4,
     ):
@@ -135,7 +134,7 @@ class GeodesicODE(pl.LightningModule):
             return mse_loss
         mpowerede_loss = 0.
         if self.hparams.beta > 0.:
-            mpowerede_loss = (torch.pow(x_t[-1] - x1, self.hparams.n_pow) * self.hparams.alpha).mean() * self.hparams.beta
+            mpowerede_loss = (torch.pow(x_t[-1] - x1, self.hparams.n_pow)).mean() * self.hparams.beta
         len_loss = self.length_loss(t, x_t)
         loss = len_loss + self.hparams.lam * mse_loss + mpowerede_loss
         return loss
