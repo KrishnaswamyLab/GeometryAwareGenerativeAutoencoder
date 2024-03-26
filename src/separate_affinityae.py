@@ -257,7 +257,8 @@ def train_eval(cfg: DictConfig):
     decoder = Decoder(dim=raw_data.shape[1], emb_dim=emb_dim, layer_widths=cfg.model.layer_widths[::-1], activation_fn=act_fn)
 
     if cfg.model.load_encoder and os.path.exists(model_save_path):
-        model.load_state_dict(torch.load(model_save_path))
+        #model.load_state_dict(torch.load(model_save_path))
+        model.load_from_checkpoint(model_save_path)
         log(f'Loaded encoder from {model_save_path}, skipping encoder training ...')
         train_encoder = False
     else:
@@ -310,7 +311,7 @@ def train_eval(cfg: DictConfig):
                                                      alpha=cfg.model.alpha, 
                                                      bandwidth=cfg.model.bandwidth)
         gt_prob_matrix = (train_dataset.row_stochastic_matrix).type(torch.float32).to(device)
-        encoder_loss = model.encoder_loss(gt_prob_matrix, pred_prob_matrix)
+        encoder_loss = model.encoder_loss(gt_prob_matrix, pred_prob_matrix, type=cfg.model.loss_type)
     
         encoder_loss.backward()
         optimizer.step()
@@ -341,7 +342,8 @@ def train_eval(cfg: DictConfig):
                                                                    bandwidth=cfg.model.bandwidth)
             gt_train_val_prob_matrix = (train_val_dataset.row_stochastic_matrix).type(torch.float32).to(device)
             val_encoder_loss = model.encoder_loss(gt_train_val_prob_matrix, 
-                                                  train_val_pred_prob_matrix)
+                                                  train_val_pred_prob_matrix,
+                                                  type=cfg.model.loss_type)
             
             log(f'\n[Epoch: {eid}]: Val Encoder Loss: {val_encoder_loss.item()}')
             if wandb_run is not None:
@@ -507,7 +509,7 @@ def evaluate_demap(embedding_map: dict[str, np.ndarray],
 
     return demaps
 
-def DEMaP(data, embedding, knn=10, subsample_idx=None):
+def DEMaP(data, embedding, knn=30, subsample_idx=None):
     geodesic_dist = geodesic_distance(data, knn=knn)
     #geodesic_dist = compute_geodesic_distances(data, knn_geodesic=knn)
     if subsample_idx is not None:
@@ -516,7 +518,7 @@ def DEMaP(data, embedding, knn=10, subsample_idx=None):
     embedded_dist = pdist(embedding)
     return spearmanr(geodesic_dist, embedded_dist).correlation
 
-def geodesic_distance(data, knn=10, distance="data"):
+def geodesic_distance(data, knn=30, distance="data"):
     G = graphtools.Graph(data, knn=knn, decay=None)
     return G.shortest_path(distance=distance)
 
