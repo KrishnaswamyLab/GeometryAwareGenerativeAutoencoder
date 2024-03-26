@@ -138,7 +138,7 @@ def train_eval(cfg: DictConfig):
     if cfg.model.encoding_method in ['phate', 'tsne', 'umap']:
         save_dir =  f'sepa_{cfg.model.encoding_method}_a{cfg.model.alpha}_knn{cfg.data.knn}_'
     else:
-        save_dir =  f'sepa_{cfg.model.prob_method}_a{cfg.model.alpha}_knn{cfg.data.knn}_'
+        save_dir =  f'sepa_{cfg.model.prob_method}_{cfg.model.loss_type}_a{cfg.model.alpha}_knn{cfg.data.knn}_'
     if  cfg.data.name in ['splatter']:
         save_dir += f'{cfg.data.noisy_path}'
     elif cfg.data.name in ['myeloid']:
@@ -381,10 +381,10 @@ def train_eval(cfg: DictConfig):
     # affnity matching, metrics: KL divergence
     metrics = {}
     gt_dist = (whole_dataset.row_stochastic_matrix).type(torch.float32).to(device)
-    metrics['KL'] = torch.nn.functional.kl_div(torch.log(pred_dist+1e-8),
-                                                    gt_dist+1e-8,
-                                                    reduction='batchmean',
-                                                    log_target=False).item()
+    if cfg.model.loss_type == 'kl':
+        metrics['KL'] = model.encoder_loss(gt_dist, pred_dist, type='kl').item()
+    elif cfg.model.loss_type == 'jsd':
+        metrics['JSD'] = model.encoder_loss(gt_dist, pred_dist, type='jsd').item()
     
     ''' DeMAP '''
     if true_data is not None and cfg.model.encoding_method == 'affinity':
