@@ -111,6 +111,13 @@ class Decoder(torch.nn.Module):
     def forward(self, x):
         return self.decoder(x)
     
+    def save_weights(self, model_save_path: str) -> None:
+        torch.save(self.state_dict(), model_save_path)
+        return
+
+    def load_from_checkpoint(self, checkpoint_path: str):
+        return self.load_state_dict(torch.load(checkpoint_path))
+    
 class AEProb(torch.nn.Module):
     def __init__(self, dim, emb_dim, 
                  layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), 

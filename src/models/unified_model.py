@@ -6,21 +6,29 @@ class GeometricAE:
         model_type, # "distance" or "affinity"
         # extra hyperparameters, with sane defaults
     ):
+        self.ambient_dimension = ambient_dimension
+        self.latent_dimension = latent_dimension
         self.model_type = model_type
-        match self.model_type:
-            case "distance":
-                self.model = 'get distance model here' # initialize with hyperparameters
-            case 'affinity':
-                self.model = 'get affinity model here'
-            case _:
-                raise NotImplementedError("Invalid Model Type")
+        # match self.model_type:
+        #     case "distance":
+        #         self.model = 'get distance model here' # initialize with hyperparameters
+        #     case 'affinity':
+        #         self.model = 'get affinity model here'
+        #     case _:
+        #         raise NotImplementedError("Invalid Model Type")
+        if self.model_type == "distance":
+            self.model = 'get distance model here'
+        elif self.model_type == "affinity":
+            self.model = 'get affinity model here'
+        else:
+            raise NotImplementedError("Invalid Model Type")
 
     def fit(
         self,
         X, # pointcloud with assumed local euclidean distances
         train_mask = None, # bool, mask for training points
         percent_test = 0.3, # train/test split, if train_mask is not provided
-        max_epochs = 100, # other hyperparams of graph creation, including default phate
+        **kwargs, # other hyperparams of graph creation, including default phate
     ):
         # Compute PHATE distances/affinities
         # Create pytorch PointCloud dataset, tailored to the model, with given train test split. 
@@ -39,11 +47,11 @@ class GeometricAE:
                  X_test_idx):
         pass
         
-    def encode(self):
+    def encode(self, X):
         # Call the encoder function of the model
         pass
 
-    def decode(self):
+    def decode(self, Z):
         pass 
         
     

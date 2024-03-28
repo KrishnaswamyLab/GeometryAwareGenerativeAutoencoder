@@ -1,16 +1,17 @@
 import sys
+import os
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from unified_model import GeometricAE
-sys.path.append('../')
-from src.data import RowStochasticDataset
-from src.models import AEProb, Decoder
+sys.path.append('../../src/')
+from data import RowStochasticDataset
+from model import AEProb, Decoder
 
 from utils.log_utils import log
 from utils.seed import seed_everything
-from utils.early_stopping import EarlyStopping
+from utils.early_stop import EarlyStopping
 
 activation_dict = {
     'relu': torch.nn.ReLU(),
@@ -49,12 +50,15 @@ class AffinityMatching(GeometricAE):
         self.n_landmark = n_landmark
         
         self.verbose = verbose
+
+        self.encoder = None
+        self.decoder = None
     
     def fit(self, 
             X, 
             train_mask,
-            data_name,
             percent_test,
+            data_name,
             max_epochs,
             batch_size,
             lr,
@@ -65,7 +69,8 @@ class AffinityMatching(GeometricAE):
             seed=2024,
             log_every_n_steps=100,
             accelerator='auto',
-            model_save_path=None, # if None, train from scratch; else load from model_save_path
+            train_from_scratch=True,
+            model_save_path='./affinity_matching', # if None, train from scratch; else load from model_save_path
             ):
         
         seed_everything(seed)
@@ -105,27 +110,35 @@ class AffinityMatching(GeometricAE):
         decoder = Decoder(dim=self.ambient_dimension, emb_dim=self.latent_dimension,
                           layer_widths=self.layer_widths[::-1], activation_fn=act_fn)
         
-        if self.model_save_path is not None:
-            encoder.load_from_checkpoint(model_save_path.joinpath('encoder.ckpt'))
+        if train_from_scratch is False:
+            encoder.load_from_checkpoint(os.path.join(model_save_path, 'encoder.ckpt'))
             log(f'Loaded encoder from {model_save_path}, skipping encoder training ...')
 
-            decoder.load_from_checkpoint(model_save_path.joinpath('decoder.ckpt'))
+            decoder.load_from_checkpoint(os.path.join(model_save_path, 'decoder.ckpt'))
             log(f'Loaded decoder from {model_save_path}, skipping decoder training ...')
         else:
-            self._train_encoder(encoder, train_dataset, train_loader, train_val_dataset, train_val_loader,
+            os.makedirs(model_save_path, exist_ok=True)
+
+            self._train_encoder(encoder, 
+                                train_dataset, train_loader, train_val_dataset, train_val_loader,
                                 max_epochs, lr, weight_decay, patience, log_every_n_steps, accelerator,
-                                model_save_path.joinpath('encoder.ckpt'), wandb_run=None)
+                                os.path.join(model_save_path, 'encoder.ckpt'), wandb_run=None)
             
             # Use embeddings from encoder to train decoder. Keep encoder frozen.
             self._train_decoder(encoder, decoder, 
                                 train_data, val_data, test_data,
-                                max_epochs, lr, weight_decay, patience, log_every_n_steps, accelerator,
-                                model_save_path.joinpath('decoder.ckpt'), wandb_run=None)
+                                max_epochs, batch_size, lr, weight_decay, patience, log_every_n_steps, accelerator,
+                                os.path.join(model_save_path, 'decoder.ckpt'), wandb_run=None)
+            
+
+            encoder.load_from_checkpoint(os.path.join(model_save_path, 'encoder.ckpt'))
+            decoder.load_from_checkpoint(os.path.join(model_save_path, 'decoder.ckpt'))
         
+        self.encoder = encoder
+        self.decoder = decoder
 
-
-    
-
+        print('Done fitting model.')
+        
 
     def _train_encoder(self, encoder, 
                        train_dataset, train_loader, train_val_dataset, train_val_loader, 
@@ -166,7 +179,7 @@ class AffinityMatching(GeometricAE):
             pred_prob_matrix = encoder.compute_prob_matrix(train_Z, 
                                                         t=train_dataset.t, 
                                                         alpha=self.kernel_alpha, 
-                                                        bandwidth=self.kernel.bandwidth)
+                                                        bandwidth=self.kernel_bandwidth)
             gt_prob_matrix = (train_dataset.row_stochastic_matrix).type(torch.float32).to(device)
             encoder_loss = encoder.encoder_loss(gt_prob_matrix, pred_prob_matrix, type=self.loss_type)
         
@@ -192,8 +205,8 @@ class AffinityMatching(GeometricAE):
                 val_Z = torch.cat(val_Z, dim=0)
 
                 train_val_pred_prob_matrix = encoder.compute_prob_matrix(val_Z, t=train_val_dataset.t, 
-                                                                    alpha=self.alpha, 
-                                                                    bandwidth=self.bandwidth)
+                                                                    alpha=self.kernel_alpha, 
+                                                                    bandwidth=self.kernel_bandwidth)
                 gt_train_val_prob_matrix = (train_val_dataset.row_stochastic_matrix).type(torch.float32).to(device)
                 val_encoder_loss = encoder.encoder_loss(gt_train_val_prob_matrix, 
                                                     train_val_pred_prob_matrix,
@@ -218,11 +231,16 @@ class AffinityMatching(GeometricAE):
 
     def _train_decoder(self, encoder, decoder, 
                        train_data, val_data, test_data,
-                       max_epochs, lr, weight_decay, patience, log_every_n_steps, accelerator,
+                       max_epochs, batch_size, lr, weight_decay, patience, log_every_n_steps, accelerator,
                        model_save_path, wandb_run=None):
         
         # Use embeddings from encoder to train decoder. Keep encoder frozen.
         encoder.eval()
+
+        train_data = torch.tensor(train_data, dtype=torch.float32)
+        val_data = torch.tensor(val_data, dtype=torch.float32)
+        test_data = torch.tensor(test_data, dtype=torch.float32)
+
         with torch.no_grad():
             train_Z = encoder.encode(train_data)
             val_Z = encoder.encode(val_data)
@@ -233,9 +251,9 @@ class AffinityMatching(GeometricAE):
         val_decoder_dataset = TensorDataset(val_Z, val_data)
         test_decoder_dataset = TensorDataset(test_Z, test_data)
 
-        train_loader = DataLoader(train_decoder_dataset, batch_size=self.batch_size, shuffle=False)
-        val_loader = DataLoader(val_decoder_dataset, batch_size=self.batch_size, shuffle=False)
-        test_loader = DataLoader(test_decoder_dataset, batch_size=self.batch_size, shuffle=False)
+        train_loader = DataLoader(train_decoder_dataset, batch_size=batch_size, shuffle=False)
+        val_loader = DataLoader(val_decoder_dataset, batch_size=batch_size, shuffle=False)
+        test_loader = DataLoader(test_decoder_dataset, batch_size=batch_size, shuffle=False)
 
 
         device_av = "cuda" if torch.cuda.is_available() else "cpu"
@@ -303,8 +321,67 @@ class AffinityMatching(GeometricAE):
                 break
 
             log('Done training decoder.')
-
-
+    
+    def encode(self, X):
+        ''' Encode input data X to latent space. '''
+        if self.encoder is None:
+            raise ValueError('Encoder not trained yet. Please train the model first.')
         
+        with torch.no_grad():
+            X = torch.tensor(X, dtype=torch.float32)
+            Z = self.encoder.encode(X)
+        
+        return Z
+    
+    def decode(self, Z):
+        ''' Decode latent space Z to ambient space. '''
+        if self.decoder is None:
+            raise ValueError('Decoder not trained yet. Please train the model first.')
+        
+        with torch.no_grad():
+            X_hat = self.decoder(Z)
+        
+        return X_hat
+    
 
 
+if __name__ == "__main__":
+    model_hypers = {
+        'ambient_dimension': 10,
+        'latent_dimension': 2,
+        'model_type': 'affinity',
+        'loss_type': 'kl',
+        'activation': 'relu',
+        'layer_widths': [256, 128, 64],
+        'kernel_method': 'gaussian',
+        'kernel_alpha': 1,
+        'kernel_bandwidth': 1,
+        'knn': 5,
+        't': 0,
+        'n_landmark': 5000,
+        'verbose': False
+    }
+    training_hypers = {
+        'data_name': 'randomtest',
+        'max_epochs': 100,
+        'batch_size': 64,
+        'lr': 1e-3,
+        'shuffle': True,
+        'weight_decay': 1e-5,
+        'monitor': 'val_loss',
+        'patience': 100,
+        'seed': 2024,
+        'log_every_n_steps': 100,
+        'accelerator': 'auto',
+        'train_from_scratch': False,
+        'model_save_path': './affinity_matching'
+    }
+    # Test AffinityMatching model
+    X = np.random.randn(1000, 10) # 3000 samples, 10 features
+    model = AffinityMatching(**model_hypers)
+    model.fit(X, train_mask=None, percent_test=0.3, **training_hypers)
+
+    Z = model.encode(X)
+    print('Encoded Z:', Z.shape)
+    X_hat = model.decode(Z)
+    print('Decoded X:', X_hat.shape)
