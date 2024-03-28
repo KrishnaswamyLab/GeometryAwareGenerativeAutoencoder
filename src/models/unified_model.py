@@ -1,3 +1,10 @@
+import numpy as np
+
+import phate
+from sklearn.manifold import TSNE
+import umap
+from other_methods import DiffusionMap
+
 class GeometricAE:
     def __init__(
         self,
@@ -43,9 +50,43 @@ class GeometricAE:
         return self.encode(X)
     
     def evaluate(self,
-                 X,
-                 X_test_idx):
-        pass
+                 data_path,
+                 **kwargs):
+        '''
+        Fit the model on the data path & Evaluate both encoder and decoder.
+        **kwargs: extra hyperparameters for fitting the model.
+        '''
+
+        data = np.load(data_path, allow_pickle=True)
+        true_data = data['data_gt']
+        raw_data = data['data']
+        labels = data['colors']
+        train_mask = data['is_train']
+        if 'int' in train_mask.dtype.name:
+            train_mask = train_mask.astype(bool)
+        
+        # Fit the model
+        self.fit(raw_data, train_mask, **kwargs)
+
+        assert self.encoder is not None, "Encoder not fit"
+        assert self.decoder is not None, "Decoder not fit"
+
+        # Encode the data
+        pred_embed = self.encode(raw_data).cpu().detach().numpy()
+        # Other embeddings for comparison
+        phate_embed = phate.PHATE(
+            n_components=self.ambient_dimension, 
+            k=self.knn,
+            t=self.t if self.t != 0 else 'auto',
+            n_landmark=self.n_landmark,
+        ).fit_transform(raw_data)
+        tsne_embed = TSNE(n_components=self.ambient_dimension, perplexity=5).fit_transform(raw_data)
+        umap_embed = umap.UMAP().fit_transform(raw_data)
+        dm_embed = DiffusionMap().fit_transform(raw_data)
+
+        # TODO: Evaluate the embeddings
+        ''' DeMAP '''
+
         
     def encode(self, X):
         # Call the encoder function of the model

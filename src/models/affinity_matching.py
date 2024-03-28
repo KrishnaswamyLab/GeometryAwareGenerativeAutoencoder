@@ -327,6 +327,7 @@ class AffinityMatching(GeometricAE):
         if self.encoder is None:
             raise ValueError('Encoder not trained yet. Please train the model first.')
         
+        self.encoder.eval()
         with torch.no_grad():
             X = torch.tensor(X, dtype=torch.float32)
             Z = self.encoder.encode(X)
@@ -338,6 +339,7 @@ class AffinityMatching(GeometricAE):
         if self.decoder is None:
             raise ValueError('Decoder not trained yet. Please train the model first.')
         
+        self.encoder.eval()
         with torch.no_grad():
             X_hat = self.decoder(Z)
         
