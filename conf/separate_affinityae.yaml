@@ -1,16 +1,18 @@
 data:
   root: 'data'
   filetype: '.npz'
-  name: 'swiss_roll' #'tree' #'s_curve' #'swiss_roll' # 'myeloid'
+  name: 'splatter' #'tree' #'s_curve' #'swiss_roll' # 'myeloid'
   noise: 0.1
-  seed: 1
+  seed: 2
   preprocess: 'none'
   knn: 5
-  noisy_path: 'noisy_44_groups_17580_2000_3_0.4_0.5_all.npz' # Only relevant to splatter
+  t: 0 #auto
+  n_landmark: 5000
+  noisy_path: 'noisy_1_paths_17580_3000_1_0.18_0.5_all.npz' # Only relevant to splatter
 logger:
   entity: danqiliao
   project: dmae
-  tags: separate_affinity
+  tags: ['aff_synthetic']
   use_wandb: true
 model:
   activation: relu
@@ -20,6 +22,7 @@ model:
   - 64
   dist_reconstr_weights: [1.0, 0]
   prob_method: 'gaussian' # 'heat_kernel' #'gaussian'
+  loss_type: 'kl' #'jsd'
   encoding_method: 'affinity' # 'tsne'
   alpha: 1.0
   bandwidth: 1.0
@@ -44,7 +47,7 @@ training:
   shuffle: true
   train_test_split: 0.8
   train_valid_split: 0.8
-  lr: 1e-3
+  lr: 1e-2
   weight_decay: 1e-4
 
 
@@ -52,5 +55,14 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      ++data.name : eb
-      ++logger.use_wandb: false
+      ++model.prob_method: gaussian
+      ++data.knn: 5
+      ++model.loss_type: kl, jsd
+      ++data.t: 0
+      #++data.name: tree, swiss_roll, s_curve
+      ++data.noisy_path: noisy_1_groups_17580_3000_1_0_0.5_all.npz
+      #++data.noisy_path: noisy_1_groups_17580_3000_1_0.18_0.5_all.npz,noisy_1_groups_17580_3000_1_0.25_0.5_all.npz,noisy_1_groups_17580_3000_1_0.5_0.5_all.npz,noisy_1_groups_17580_3000_1_0_0.5_all.npz,noisy_1_paths_17580_3000_1_0.18_0.5_all.npz,noisy_1_paths_17580_3000_1_0.25_0.5_all.npz,noisy_1_paths_17580_3000_1_0.5_0.5_all.npz,noisy_1_paths_17580_3000_1_0_0.5_all.npz,noisy_2_groups_17580_3000_1_0.18_0.5_all.npz,noisy_2_groups_17580_3000_1_0.25_0.5_all.npz,noisy_2_groups_17580_3000_1_0.5_0.5_all.npz,noisy_2_groups_17580_3000_1_0_0.5_all.npz,noisy_2_paths_17580_3000_1_0.18_0.5_all.npz,noisy_2_paths_17580_3000_1_0.25_0.5_all.npz,noisy_2_paths_17580_3000_1_0.5_0.5_all.npz,noisy_2_paths_17580_3000_1_0_0.5_all.npz,noisy_3_groups_17580_3000_1_0.18_0.5_all.npz,noisy_3_groups_17580_3000_1_0.25_0.5_all.npz,noisy_3_groups_17580_3000_1_0.5_0.5_all.npz,noisy_3_groups_17580_3000_1_0_0.5_all.npz,noisy_3_paths_17580_3000_1_0.18_0.5_all.npz,noisy_3_paths_17580_3000_1_0.25_0.5_all.npz,noisy_3_paths_17580_3000_1_0.5_0.5_all.npz,noisy_3_paths_17580_3000_1_0_0.5_all.npz,noisy_4_groups_17580_3000_1_0.18_0.5_all.npz,noisy_4_groups_17580_3000_1_0.25_0.5_all.npz,noisy_4_groups_17580_3000_1_0.5_0.5_all.npz,noisy_4_groups_17580_3000_1_0_0.5_all.npz,noisy_4_paths_17580_3000_1_0.18_0.5_all.npz,noisy_4_paths_17580_3000_1_0.25_0.5_all.npz,noisy_4_paths_17580_3000_1_0.5_0.5_all.npz,noisy_4_paths_17580_3000_1_0_0.5_all.npz,noisy_5_groups_17580_3000_1_0.18_0.5_all.npz,noisy_5_groups_17580_3000_1_0.25_0.5_all.npz,noisy_5_groups_17580_3000_1_0.5_0.5_all.npz,noisy_5_groups_17580_3000_1_0_0.5_all.npz,noisy_5_paths_17580_3000_1_0.18_0.5_all.npz,noisy_5_paths_17580_3000_1_0.25_0.5_all.npz,noisy_5_paths_17580_3000_1_0.5_0.5_all.npz,noisy_5_paths_17580_3000_1_0_0.5_all.npz
+      #++logger.noisy_path: noisy_1_paths_17580_3000_1_0.5_0.5_all.npz, noisy_2_paths_17580_3000_1_0.5_0.5_all.npz, noisy_3_paths_17580_3000_1_0.5_0.5_all.npz, noisy_4_paths_17580_3000_1_0.5_0.5_all.npz, noisy_5_paths_17580_3000_1_0.5_0.5_all.npz
+      ++logger.use_wandb: true
+      ++data.noise: 0.1
+      ++data.seed: 1

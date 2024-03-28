@@ -18,8 +18,9 @@ class GeometricAE:
     def fit(
         self,
         X, # pointcloud with assumed local euclidean distances
-        percent_test = 0.3, # train/test split
-        n_epochs = 100, # other hyperparams of graph creation, including default phate
+        train_mask = None, # bool, mask for training points
+        percent_test = 0.3, # train/test split, if train_mask is not provided
+        max_epochs = 100, # other hyperparams of graph creation, including default phate
     ):
         # Compute PHATE distances/affinities
         # Create pytorch PointCloud dataset, tailored to the model, with given train test split. 
@@ -32,6 +33,11 @@ class GeometricAE:
                       n_epochs):
         self.fit()
         return self.encode(X)
+    
+    def evaluate(self,
+                 X,
+                 X_test_idx):
+        pass
         
     def encode(self):
         # Call the encoder function of the model
