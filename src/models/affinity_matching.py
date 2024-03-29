@@ -4,10 +4,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from unified_model import GeometricAE
 sys.path.append('../../src/')
 from data import RowStochasticDataset
 from model import AEProb, Decoder
+from models.unified_model import GeometricAE
 
 from utils.log_utils import log
 from utils.seed import seed_everything
@@ -150,6 +150,7 @@ class AffinityMatching(GeometricAE):
             device = device_av
         else:
             device = accelerator
+        self.device = device
 
         optimizer = torch.optim.Adam(encoder.parameters(), lr=lr, weight_decay=weight_decay)
         early_stopper = EarlyStopping(mode='min',
@@ -236,10 +237,17 @@ class AffinityMatching(GeometricAE):
         
         # Use embeddings from encoder to train decoder. Keep encoder frozen.
         encoder.eval()
+        
+        device_av = "cuda" if torch.cuda.is_available() else "cpu"
+        if accelerator is None or accelerator == 'auto':
+            device = device_av
+        else:
+            device = accelerator
+        self.device = device
 
-        train_data = torch.tensor(train_data, dtype=torch.float32)
-        val_data = torch.tensor(val_data, dtype=torch.float32)
-        test_data = torch.tensor(test_data, dtype=torch.float32)
+        train_data = torch.tensor(train_data, dtype=torch.float32).to(device) # TODO: Cuda fix; more efficient memory means possible
+        val_data = torch.tensor(val_data, dtype=torch.float32).to(device)
+        test_data = torch.tensor(test_data, dtype=torch.float32).to(device)
 
         with torch.no_grad():
             train_Z = encoder.encode(train_data)
@@ -256,11 +264,7 @@ class AffinityMatching(GeometricAE):
         test_loader = DataLoader(test_decoder_dataset, batch_size=batch_size, shuffle=False)
 
 
-        device_av = "cuda" if torch.cuda.is_available() else "cpu"
-        if accelerator is None or accelerator == 'auto':
-            device = device_av
-        else:
-            device = accelerator
+        
 
         optimizer = torch.optim.Adam(decoder.parameters(), lr=lr, weight_decay=weight_decay)
         early_stopper = EarlyStopping(mode='min',
@@ -329,10 +333,10 @@ class AffinityMatching(GeometricAE):
         
         self.encoder.eval()
         with torch.no_grad():
-            X = torch.tensor(X, dtype=torch.float32)
+            X = torch.tensor(X, dtype=torch.float32).to(self.device)
             Z = self.encoder.encode(X)
         
-        return Z
+        return Z.detach().cpu().numpy()
     
     def decode(self, Z):
         ''' Decode latent space Z to ambient space. '''
@@ -341,9 +345,10 @@ class AffinityMatching(GeometricAE):
         
         self.encoder.eval()
         with torch.no_grad():
+            Z = torch.tensor(Z, dtype=torch.float32).to(self.device)
             X_hat = self.decoder(Z)
         
-        return X_hat
+        return X_hat.detach().cpu().numpy()
     
 
 
