@@ -160,8 +160,11 @@ synthetic_data/
 *.npy
 *.gif
 *.csv
+<<<<<<< Updated upstream
 *.pkl
 *.pt
 # pixi environments
 .pixi
 
+=======
+>>>>>>> Stashed changes

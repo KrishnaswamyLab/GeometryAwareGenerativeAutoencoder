@@ -10,7 +10,7 @@ import pandas as pd
 import torch
 import graphtools
 from scipy.spatial.distance import pdist, squareform
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, pearsonr
 from sklearn.manifold import TSNE
 import umap
 from other_methods import DiffusionMap
@@ -405,10 +405,12 @@ def train_eval(cfg: DictConfig):
         test_embed = pred_embed[test_idx].cpu().detach().numpy()
         demaps_test = DEMaP(true_data, test_embed, subsample_idx=test_idx)
         metrics['Test'] = demaps_test
+        #metrics['Test_pearsonr'] = pearsonr_DEMaP(true_data, test_embed, subsample_idx=test_idx)
 
         # DeMAP(-log(aff)) on test set
         test_dist = -torch.log(pred_dist[test_idx]+1e-8).cpu().detach().numpy()
         metrics['-log(Aff)_Test'] = DEMaP(true_data, test_dist, subsample_idx=test_idx)
+        #metrics['-log(Aff)_Test_pearsonr'] = pearsonr_DEMaP(true_data, test_dist, subsample_idx=test_idx)
 
         log(f'Evaluation metrics: {metrics}')
         if wandb_run is not None:
@@ -506,6 +508,7 @@ def evaluate_demap(embedding_map: dict[str, np.ndarray],
               f'embedding shape: {v.shape}, true data shape: {true_data.shape}')
         assert v.shape[0] == true_data.shape[0]
         demaps[k] = DEMaP(true_data, v)
+        #demaps[f'{k}_pearsonr'] = pearsonr_DEMaP(true_data, v)
 
     return demaps
 
@@ -517,6 +520,14 @@ def DEMaP(data, embedding, knn=30, subsample_idx=None):
     geodesic_dist = squareform(geodesic_dist)
     embedded_dist = pdist(embedding)
     return spearmanr(geodesic_dist, embedded_dist).correlation
+
+def pearsonr_DEMaP(data, embedding, knn=30, subsample_idx=None):
+    geodesic_dist = geodesic_distance(data, knn=knn)
+    if subsample_idx is not None:
+        geodesic_dist = geodesic_dist[subsample_idx, :][:, subsample_idx]
+    geodesic_dist = squareform(geodesic_dist)
+    embedded_dist = pdist(embedding)
+    return pearsonr(geodesic_dist, embedded_dist).correlation
 
 def geodesic_distance(data, knn=30, distance="data"):
     G = graphtools.Graph(data, knn=knn, decay=None)

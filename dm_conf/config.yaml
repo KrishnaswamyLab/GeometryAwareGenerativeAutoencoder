@@ -16,5 +16,3 @@ max_epochs: 100000
 batch_size: 1024
 monitor: 'train_loss'
 patience: 100000
-accelerator: 'auto'
-visualize: false

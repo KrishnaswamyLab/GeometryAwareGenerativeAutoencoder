@@ -44,9 +44,9 @@ def summarize_metrics(prob_methods, loss_types, alphas, knns, data_names, data_n
     return pd.concat(result, ignore_index=True)
 
 def main():
-    prob_methods = ['gaussian', 'tstudent', 'adjusted_gaussian', 'heat_kernel', 'distance']
+    prob_methods = ['gaussian', 'tstudent', 'adjusted_gaussian', 'heat_kernel']
     loss_types = ['kl', 'jsd']
-    alphas = [1, 10]
+    alphas = [1.0, 10]
     knns = [5]
     data_names = ['swiss_roll', 's_curve', 'tree']
     data_noises = [0.1, 0.5, 1.0, 2.0]

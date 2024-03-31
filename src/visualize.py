@@ -44,8 +44,14 @@ def visualize(pred: np.ndarray,
     # Predicted Embeddings
     ax = fig.add_subplot(n_rows, n_plots_per_row, 2)
     title_str = ''
+    counter = 0
     for metric, value in metrics.items():
+        counter += 1
+        # new line every 8 metrics
+        if counter % 8 == 0:
+            title_str += '\n'
         title_str += f"{metric}: {value:.2f}, "
+        
     scprep.plot.scatter2d(pred,
                         c=data_clusters,
                         legend=False,
