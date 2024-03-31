@@ -187,6 +187,11 @@ class AEProb(torch.nn.Module):
             M = 0.5 * (pred_matrix + gt_matrix)
             loss = 0.5 * (torch.nn.functional.kl_div(log_pred_mat, M, reduction='batchmean', log_target=False) + 
                           torch.nn.functional.kl_div(log_gt_mat, M, reduction='batchmean', log_target=False))
+        elif type == 'mdiv':
+            # M-Divergence with g = log
+            log_pred_mat = torch.log(pred_matrix + self.eps)
+            log_gt_mat = torch.log(gt_matrix + self.eps)
+            loss = torch.nn.functional.mse_loss(log_gt_mat, log_pred_mat) ** 2
             
         return loss
     
@@ -198,7 +203,7 @@ class AEProb(torch.nn.Module):
         '''
         probs = None
         if self.prob_method == 'gaussian':
-            # symmetric Gaussian kernel
+            # Gaussian kernel
             alpha = alpha
             bandwidth = bandwidth
             dist = torch.cdist(z, z, p=2)
@@ -208,6 +213,16 @@ class AEProb(torch.nn.Module):
             # print('Check symmetry: ', torch.allclose(K, K.T))
             # print('Check probs:', probs.sum(dim=1)[:5], 
             #       torch.allclose(probs.sum(dim=1), torch.ones_like(probs.sum(dim=1))))
+        elif self.prob_method == 'sym_gaussian':
+            # Gaussian kernel
+            alpha = alpha
+            bandwidth = bandwidth
+            dist = torch.cdist(z, z, p=2)
+            K = torch.exp(-(dist / bandwidth) ** alpha)
+            K = (K + K.T) / 2.0 # symmetrize
+            row_sum = torch.sum(K, dim=1, keepdim=True)
+            probs = K / row_sum
+
         elif self.prob_method == 'adjusted_gaussian':
             # KNN adjutable bandwidth Gaussian kernel
             alpha = alpha
