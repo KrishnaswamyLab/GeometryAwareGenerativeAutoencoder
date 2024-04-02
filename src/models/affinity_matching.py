@@ -53,6 +53,9 @@ class AffinityMatching(GeometricAE):
 
         self.encoder = None
         self.decoder = None
+        
+        self.input_dim = ambient_dimension
+        self.latent_dim = latent_dimension
     
     def fit(self, 
             X, 
@@ -101,6 +104,7 @@ class AffinityMatching(GeometricAE):
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
         train_val_loader = torch.utils.data.DataLoader(train_val_dataset, batch_size=batch_size, shuffle=False)
         
+        self.whole_dataloader = torch.utils.data.DataLoader(whole_dataset, batch_size=batch_size, shuffle=False)
 
         ''' Fit the model to the data X. '''
         act_fn = activation_dict[self.activation]
@@ -330,25 +334,25 @@ class AffinityMatching(GeometricAE):
         ''' Encode input data X to latent space. '''
         if self.encoder is None:
             raise ValueError('Encoder not trained yet. Please train the model first.')
-        
+        X = X.to(self.device)
         self.encoder.eval()
-        with torch.no_grad():
-            X = torch.tensor(X, dtype=torch.float32).to(self.device)
-            Z = self.encoder.encode(X)
+        # with torch.no_grad(): # Need gradients for pullback metrics
+            # X = torch.tensor(X, dtype=torch.float32).to(self.device)
+        Z = self.encoder.encode(X)
         
-        return Z.detach().cpu().numpy()
+        return Z #.detach().cpu().numpy()
     
     def decode(self, Z):
         ''' Decode latent space Z to ambient space. '''
         if self.decoder is None:
             raise ValueError('Decoder not trained yet. Please train the model first.')
+        Z = Z.to(self.device)
+        self.decoder.eval()
+        # with torch.no_grad():
+        #     Z = torch.tensor(Z, dtype=torch.float32).to(self.device)
+        X_hat = self.decoder(Z)
         
-        self.encoder.eval()
-        with torch.no_grad():
-            Z = torch.tensor(Z, dtype=torch.float32).to(self.device)
-            X_hat = self.decoder(Z)
-        
-        return X_hat.detach().cpu().numpy()
+        return X_hat #.detach().cpu().numpy()
     
 
 
