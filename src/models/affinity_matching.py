@@ -4,10 +4,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from unified_model import GeometricAE
 sys.path.append('../../src/')
 from data import RowStochasticDataset
 from model import AEProb, Decoder
+from models.unified_model import GeometricAE
 
 from utils.log_utils import log
 from utils.seed import seed_everything
@@ -53,6 +53,9 @@ class AffinityMatching(GeometricAE):
 
         self.encoder = None
         self.decoder = None
+        
+        self.input_dim = ambient_dimension
+        self.latent_dim = latent_dimension
     
     def fit(self, 
             X, 
@@ -101,6 +104,7 @@ class AffinityMatching(GeometricAE):
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
         train_val_loader = torch.utils.data.DataLoader(train_val_dataset, batch_size=batch_size, shuffle=False)
         
+        self.whole_dataloader = torch.utils.data.DataLoader(whole_dataset, batch_size=batch_size, shuffle=False)
 
         ''' Fit the model to the data X. '''
         act_fn = activation_dict[self.activation]
@@ -150,6 +154,7 @@ class AffinityMatching(GeometricAE):
             device = device_av
         else:
             device = accelerator
+        self.device = device
 
         optimizer = torch.optim.Adam(encoder.parameters(), lr=lr, weight_decay=weight_decay)
         early_stopper = EarlyStopping(mode='min',
@@ -236,10 +241,17 @@ class AffinityMatching(GeometricAE):
         
         # Use embeddings from encoder to train decoder. Keep encoder frozen.
         encoder.eval()
+        
+        device_av = "cuda" if torch.cuda.is_available() else "cpu"
+        if accelerator is None or accelerator == 'auto':
+            device = device_av
+        else:
+            device = accelerator
+        self.device = device
 
-        train_data = torch.tensor(train_data, dtype=torch.float32)
-        val_data = torch.tensor(val_data, dtype=torch.float32)
-        test_data = torch.tensor(test_data, dtype=torch.float32)
+        train_data = torch.tensor(train_data, dtype=torch.float32).to(device) # TODO: Cuda fix; more efficient memory means possible
+        val_data = torch.tensor(val_data, dtype=torch.float32).to(device)
+        test_data = torch.tensor(test_data, dtype=torch.float32).to(device)
 
         with torch.no_grad():
             train_Z = encoder.encode(train_data)
@@ -256,11 +268,7 @@ class AffinityMatching(GeometricAE):
         test_loader = DataLoader(test_decoder_dataset, batch_size=batch_size, shuffle=False)
 
 
-        device_av = "cuda" if torch.cuda.is_available() else "cpu"
-        if accelerator is None or accelerator == 'auto':
-            device = device_av
-        else:
-            device = accelerator
+        
 
         optimizer = torch.optim.Adam(decoder.parameters(), lr=lr, weight_decay=weight_decay)
         early_stopper = EarlyStopping(mode='min',
@@ -326,24 +334,25 @@ class AffinityMatching(GeometricAE):
         ''' Encode input data X to latent space. '''
         if self.encoder is None:
             raise ValueError('Encoder not trained yet. Please train the model first.')
-        
+        X = X.to(self.device)
         self.encoder.eval()
-        with torch.no_grad():
-            X = torch.tensor(X, dtype=torch.float32)
-            Z = self.encoder.encode(X)
+        # with torch.no_grad(): # Need gradients for pullback metrics
+            # X = torch.tensor(X, dtype=torch.float32).to(self.device)
+        Z = self.encoder.encode(X)
         
-        return Z
+        return Z #.detach().cpu().numpy()
     
     def decode(self, Z):
         ''' Decode latent space Z to ambient space. '''
         if self.decoder is None:
             raise ValueError('Decoder not trained yet. Please train the model first.')
+        Z = Z.to(self.device)
+        self.decoder.eval()
+        # with torch.no_grad():
+        #     Z = torch.tensor(Z, dtype=torch.float32).to(self.device)
+        X_hat = self.decoder(Z)
         
-        self.encoder.eval()
-        with torch.no_grad():
-            X_hat = self.decoder(Z)
-        
-        return X_hat
+        return X_hat #.detach().cpu().numpy()
     
 
 

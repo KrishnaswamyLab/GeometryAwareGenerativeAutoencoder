@@ -164,4 +164,6 @@ synthetic_data/
 *.pt
 # pixi environments
 .pixi
+notebooks/affinity_matching/
+
 job/*

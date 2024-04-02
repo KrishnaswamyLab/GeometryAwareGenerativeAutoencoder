@@ -174,6 +174,7 @@ class RowStochasticDataset(torch.utils.data.Dataset):
         self.data_name = data_name
         self.X = X.astype(np.float32)
         self.X_labels = X_labels
+        self.pointcloud = torch.tensor(self.X) # for autometric interop
         self.dist_type = dist_type
         self.dist_normalization = dist_normalization
         self.emb_dim = emb_dim
