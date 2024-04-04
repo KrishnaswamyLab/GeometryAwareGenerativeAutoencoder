@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 
 import phate
@@ -94,7 +95,23 @@ class GeometricAE:
 
     def decode(self, Z):
         pass 
+
+    def encoder_pullback(self, x):
+        '''
+        Pullback the metric from the latent space to the input space.
+        J = df/dx
+        metric = J^T J
+        Inputs:
+            x: [B, D]
+        Returns:
+            metric: [B, D, D] metric tensor
+        '''
+        x.requires_grad = True
+        J = torch.autograd.functional.jacobian(self.encode, x, create_graph=True)
+
+        pullback_metric = torch.matmul(J.permute(0, 2, 1), J)
         
+        return pullback_metric
     
         
     
