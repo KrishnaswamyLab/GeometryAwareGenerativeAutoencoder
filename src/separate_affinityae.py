@@ -186,6 +186,14 @@ def train_eval(cfg: DictConfig):
         train_mask = noise_data['is_train']
         if 'bool' in train_mask.dtype.name:
             train_mask = train_mask.astype(int)
+    elif cfg.data.root == 'toy_data':
+        data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'make_{cfg.data.name}.npz')
+        print(f'Loading data from {data_path} ...')
+        data = np.load(data_path, allow_pickle=True)
+        true_data = data['data_gt']
+        raw_data = data['data']
+        labels = data['colors']
+        train_mask = data['is_train']
     elif cfg.data.name in ['myeloid', 'eb', 'sea_ad']:
         data_path = os.path.join(PROJECT_PATH, cfg.data.root, f'{cfg.data.name}.npz')
         print(f'Loading data from {data_path} ...')
@@ -292,6 +300,7 @@ def train_eval(cfg: DictConfig):
         model.train()
         encoder_loss = 0.0
         train_Z = []
+        train_bandwidth = []
         train_indices = []
         optimizer.zero_grad()
 
@@ -299,17 +308,31 @@ def train_eval(cfg: DictConfig):
             batch_x = batch_x.to(device)
 
             batch_z = model.encode(batch_x)
-            train_Z.append(batch_z)
+            if cfg.model.learnable_bandwidth is False:
+                train_Z.append(batch_z)
+            else:
+                batch_bandwidth = batch_z[:, -1]
+                batch_z = batch_z[:, :-1]
+                train_Z.append(batch_z)
+                train_bandwidth.append(batch_bandwidth)
+
             train_indices.append(batch_inds.reshape(-1,1))
         
         # row-wise prob divergence loss
         train_Z = torch.cat(train_Z, dim=0) #[N, emb_dim]
         train_indices = torch.squeeze(torch.cat(train_indices, dim=0)) # [N,]
 
-        pred_prob_matrix = model.compute_prob_matrix(train_Z, 
-                                                     t=train_dataset.t, 
-                                                     alpha=cfg.model.alpha, 
-                                                     bandwidth=cfg.model.bandwidth)
+        if cfg.model.learnable_bandwidth is False:
+            pred_prob_matrix = model.compute_prob_matrix(train_Z, 
+                                                        t=train_dataset.t, 
+                                                        alpha=cfg.model.alpha, 
+                                                        bandwidth=cfg.model.bandwidth)
+        else:
+            train_bandwidth = torch.cat(train_bandwidth, dim=0) # [N,]
+            pred_prob_matrix = model.compute_prob_matrix(train_Z, 
+                                                        t=train_dataset.t, 
+                                                        alpha=cfg.model.alpha, 
+                                                        bandwidth=train_bandwidth)
         gt_prob_matrix = (train_dataset.row_stochastic_matrix).type(torch.float32).to(device)
         encoder_loss = model.encoder_loss(gt_prob_matrix, pred_prob_matrix, type=cfg.model.loss_type)
     
@@ -325,21 +348,34 @@ def train_eval(cfg: DictConfig):
         model.eval()
         val_encoder_loss = 0.0
         val_Z = []
+        val_bandwidth = []
         val_indices = []
         with torch.no_grad():
             for (batch_inds, batch_x) in train_val_loader:
                 batch_x = batch_x.to(device)
 
                 batch_z = model.encode(batch_x)
-                val_Z.append(batch_z)
+                if cfg.model.learnable_bandwidth is False:
+                    val_Z.append(batch_z)
+                else:
+                    batch_bandwidth = batch_z[:, -1]
+                    batch_z = batch_z[:, :-1]
+                    val_Z.append(batch_z)
+                    val_bandwidth.append(batch_bandwidth)
                 val_indices.append(batch_inds.reshape(-1,1)) # [B,1]
             
             val_Z = torch.cat(val_Z, dim=0)
             val_indices = torch.squeeze(torch.cat(val_indices, dim=0)) # [N,]
 
-            train_val_pred_prob_matrix = model.compute_prob_matrix(val_Z, t=train_val_dataset.t, 
-                                                                   alpha=cfg.model.alpha, 
-                                                                   bandwidth=cfg.model.bandwidth)
+            if cfg.model.learnable_bandwidth is False:
+                train_val_pred_prob_matrix = model.compute_prob_matrix(val_Z, t=train_val_dataset.t, 
+                                                                    alpha=cfg.model.alpha, 
+                                                                    bandwidth=cfg.model.bandwidth)
+            else:
+                val_bandwidth = torch.cat(val_bandwidth, dim=0)
+                train_val_pred_prob_matrix = model.compute_prob_matrix(val_Z, t=train_val_dataset.t, 
+                                                                    alpha=cfg.model.alpha, 
+                                                                    bandwidth=val_bandwidth)
             gt_train_val_prob_matrix = (train_val_dataset.row_stochastic_matrix).type(torch.float32).to(device)
             val_encoder_loss = model.encoder_loss(gt_train_val_prob_matrix, 
                                                   train_val_pred_prob_matrix,
@@ -368,11 +404,20 @@ def train_eval(cfg: DictConfig):
     
     model.eval()
     with torch.no_grad():
-        pred_embed = model.encode(torch.from_numpy(whole_dataset.X).type(torch.float32).to(device))
-        pred_dist = model.compute_prob_matrix(pred_embed, 
+        if cfg.model.learnable_bandwidth is False:
+            pred_embed = model.encode(torch.from_numpy(whole_dataset.X).type(torch.float32).to(device))
+            pred_dist = model.compute_prob_matrix(pred_embed, 
                                                 t=whole_dataset.t, 
                                                 alpha=cfg.model.alpha, 
                                                 bandwidth=cfg.model.bandwidth)
+        else:
+            pred_embed = model.encode(torch.from_numpy(whole_dataset.X).type(torch.float32).to(device))
+            pred_bandwidth = pred_embed[:, -1]
+            pred_embed = pred_embed[:, :-1]
+            pred_dist = model.compute_prob_matrix(pred_embed, 
+                                                t=whole_dataset.t, 
+                                                alpha=cfg.model.alpha, 
+                                                bandwidth=pred_bandwidth)
 
     tsne_embed = TSNE(n_components=emb_dim, perplexity=5).fit_transform(whole_dataset.X)
     umap_embed = umap.UMAP().fit_transform(whole_dataset.X)
@@ -475,8 +520,12 @@ def train_eval(cfg: DictConfig):
     if cfg.model.encoding_method == 'affinity':
         model.eval()
         with torch.no_grad():
-            pred_embed = model.encode(torch.from_numpy(whole_dataset.X).type(torch.float32).to(device))
-            recon_data = decoder(pred_embed).cpu().detach().numpy()
+            # pred_embed = model.encode(torch.from_numpy(whole_dataset.X).type(torch.float32).to(device))
+            # recon_data = decoder(pred_embed).cpu().detach().numpy()
+            if cfg.model.learnable_bandwidth is False:
+                recon_data, pred_embed = model(torch.from_numpy(whole_dataset.X).type(torch.float32).to(device))
+            else:
+                recon_data, pred_embed, _ = model(torch.from_numpy(whole_dataset.X).type(torch.float32).to(device))
     elif cfg.model.encoding_method == 'tsne':
         recon_data = decoder(tsne_embed).cpu().detach().numpy()
 
@@ -495,6 +544,14 @@ def train_eval(cfg: DictConfig):
               metrics=metrics,
               save_path=visualization_save_path,
               wandb_run=wandb_run)
+
+    '''Save pred, gt dist'''
+    print('Saving pred and gt dists ...', pred_dist.cpu().detach().numpy().shape, gt_dist.cpu().detach().numpy().shape)
+    saved_dists = {
+        'pred_dist': pred_dist.cpu().detach().numpy(),
+        'gt_dist': gt_dist.cpu().detach().numpy()
+    }
+    np.savez(os.path.join(PROJECT_PATH, cfg.path.root, save_dir, 'dists.npz'), **saved_dists)
 
     if cfg.logger.use_wandb:
         wandb_run.finish()

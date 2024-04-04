@@ -58,7 +58,7 @@ def summarize_metrics(prob_methods, loss_types, alphas, knns, data_names):
     return pd.concat(result, ignore_index=True)
 
 def main():
-    prob_methods = ['gaussian', 'sym_gaussian', 'tstudent', 'adjusted_gaussian', 'heat_kernel', 'distance']
+    prob_methods = ['gaussian', 'sym_gaussian', 'tstudent', 'heat_kernel', 'distance']
     loss_types = ['kl', 'jsd', 'mdiv']
     alphas = [1.0, 10]
     knns = [5]
@@ -72,13 +72,13 @@ def main():
     metrics.to_csv('../results/splatter_metrics.csv')
 
     # group by prob_method, alpha, knn, data_name
-    metrics1 = metrics.groupby(['prob_method', 'alpha', 'knn', 'data_name']).agg(['mean', 'std'])
-    metrics1 = metrics1.applymap(lambda x: f'{x:.3f}')
+    # metrics1 = metrics.groupby(['prob_method', 'alpha', 'knn', 'data_name']).agg(['mean', 'std'])
+    # metrics1 = metrics1.applymap(lambda x: f'{x:.3f}')
 
-    metrics1.to_csv('../results/splatter_metrics_groupedbyname.csv')
-    # check 'Test', 'PHATE', 'TSNE' columns 
-    print('test')
-    print(metrics1[['Test', 'PHATE', 'TSNE', 'UMAP', 'DiffMap']])
+    # metrics1.to_csv('../results/splatter_metrics_groupedbyname.csv')
+    # # check 'Test', 'PHATE', 'TSNE' columns 
+    # print('test')
+    # print(metrics1[['Test', 'PHATE', 'TSNE', 'UMAP', 'DiffMap']])
 
     # group by prob_method, alpha, knn, data_method, bvc, dropout
     metrics2 = metrics.groupby(['prob_method', 'loss_type', 'alpha', 'knn', 'data_method', 'bvc', 'dropout']).agg(['mean', 'std'])

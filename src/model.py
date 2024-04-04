@@ -123,16 +123,23 @@ class AEProb(torch.nn.Module):
                  layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), 
                  prob_method='tstudent', 
                  dist_reconstr_weights=[1.0, 0.0],
+                 learnable_bandwidth=False,
                  eps=1e-8):
         super().__init__()
         self.dim = dim
         self.emb_dim = emb_dim
         self.prob_method = prob_method
         self.dist_reconstr_weights = dist_reconstr_weights
+        self.learnable_bandwidth = learnable_bandwidth
 
-        self.encoder = MLP(dim, emb_dim, 
-                           layer_widths=layer_widths, 
-                           activation_fn=activation_fn)
+        if learnable_bandwidth is False:
+            self.encoder = MLP(dim, emb_dim, 
+                            layer_widths=layer_widths, 
+                            activation_fn=activation_fn)
+        else:
+            self.encoder = MLP(dim, emb_dim+1, # add one more dimension for bandwidth
+                            layer_widths=layer_widths, 
+                            activation_fn=activation_fn)
         self.decoder = MLP(emb_dim, dim, 
                            layer_widths=layer_widths[::-1], 
                            activation_fn=activation_fn) # reverse the widths for decoder
@@ -151,9 +158,16 @@ class AEProb(torch.nn.Module):
             Returns:
                 x_hat: [B, D]
                 z: [B, emb_dim]
+                bandwidth: [B, 1]
         '''
-        z = self.encode(x)
-        return [self.decode(z), z]
+        if self.learnable_bandwidth is False:
+            z = self.encode(x)
+            return [self.decode(z), z]
+        else:
+            z = self.encode(x)
+            bandwidth = z[:, -1].unsqueeze(1)
+            z = z[:, :-1]
+            return [self.decode(z), z, bandwidth]
     
     def decoder_loss(self, x, x_hat):
         '''
