@@ -41,6 +41,26 @@ from utils.seed import seed_everything
     label: np.ndarray
 '''
 
+def hemisphere_data(n_samples, radius: int = 1, noise: float = 0.0, random_state=2024):
+    # Uniformly distributed points over the hemisphere
+    phi = np.random.uniform(0, 2*np.pi, n_samples)
+    theta = np.random.uniform(0, np.pi/2, n_samples)
+
+    # Convert spherical coordinates to Cartesian coordinates
+    x = radius * np.sin(theta) * np.cos(phi)
+    y = radius * np.sin(theta) * np.sin(phi)
+    z = radius * np.cos(theta)
+
+    # Combine into a single array
+    hemisphere_points = np.vstack((x, y, z)).T
+
+    # Add noise to the data
+    noise = np.random.normal(0, noise, hemisphere_points.shape)
+    X = hemisphere_points + noise
+
+    return hemisphere_points, X, None
+
+
 def sklearn_s_curve(n_samples, noise=0.0, random_state=2024):
     # Generate S-curve data without noise
     gt_X, t = sklearn.datasets.make_s_curve(n_samples, noise=0.0, random_state=random_state)
