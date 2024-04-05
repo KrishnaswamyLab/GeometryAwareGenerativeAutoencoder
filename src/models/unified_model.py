@@ -98,8 +98,8 @@ class GeometricAE:
 
     def encoder_pullback(self, x):
         '''
-        Pullback the metric from the latent space to the input space.
-        J = df/dx
+        Pullback the metric from the latent space (n) to the input space (D).
+        J = df/dx (B, n, D)
         metric = J^T J
         Inputs:
             x: [B, D]
@@ -107,9 +107,11 @@ class GeometricAE:
             metric: [B, D, D] metric tensor
         '''
         x.requires_grad = True
-        J = torch.autograd.functional.jacobian(self.encode, x, create_graph=True)
+        J = torch.autograd.functional.jacobian(self.encode, x, create_graph=True) # [B, n, B, D]
 
-        pullback_metric = torch.matmul(J.permute(0, 2, 1), J)
+        J = torch.stack([J[i, :, i, :] for i in range(J.shape[0])]) # [B, n, D]
+
+        pullback_metric = torch.matmul(J.transpose(1, 2), J) # [B, D, D]
         
         return pullback_metric
     
