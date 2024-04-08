@@ -114,7 +114,32 @@ class GeometricAE:
         pullback_metric = torch.matmul(J.transpose(1, 2), J) # [B, D, D]
         
         return pullback_metric
-    
+
+    def geodesic_encoder_pullback(self, x):
+        '''
+        For batched, multi-timepoints input x: [T, B, D]
+        Pullback the metric from the latent space (n) to the input space (D).
+        J = df/dx (T, B, n, D)
+        metric = J^T J 
+        Inputs:
+            x: [T, B, D]
+        Returns:
+            metric: [T, B, D, D] metric tensor
+        '''
+        T, B, D = x.shape[0], x.shape[1], x.shape[2]
+        x = x.view(T*B, D)
+
+        x.requires_grad = True
+        J = torch.autograd.functional.jacobian(self.encode, x, create_graph=True) # [T*B, n, T*B, D]
+        print('T, B, J.shape: ', T, B, ' ', J.shape)
+
+        J = torch.stack([J[i, :, i, :] for i in range(J.shape[0])]) # [T*B, n, D]
+
+        pullback_metric = torch.matmul(J.transpose(1, 2), J) # [T*B, D, D]
+
+        pullback_metric = pullback_metric.view(T, B, D, D)
+
+        return pullback_metric
         
     
         
