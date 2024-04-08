@@ -157,3 +157,44 @@ class GeodesicODE(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay)
 
+
+class CondCurve(nn.Module):
+    def __init__(self, input_dim, hidden_dim, scale_factor=5, symmetric=False):
+        super().__init__()
+        self.mod_x0x1 = nn.Sequential(
+            nn.Linear((2 * hidden_dim) + 1, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, input_dim),
+        )
+        self.scale_factor = scale_factor
+        self.symmetric = symmetric
+
+        if symmetric:
+            self.x0_x1_preemb = nn.Linear(2 * input_dim, 2 * hidden_dim)
+            self.x0_emb = nn.Linear(2 * hidden_dim, hidden_dim)
+            self.x1_emb = nn.Linear(2 * hidden_dim, hidden_dim)
+        else:
+            self.x0_emb = nn.Linear(input_dim, hidden_dim)
+            self.x1_emb = nn.Linear(input_dim, hidden_dim)
+
+    def forward(self, x0, x1, t):
+        if self.symmetric:
+            x0x1_emb = (
+                self.x0_x1_preemb(torch.cat([x0, x1], dim=-1))
+                + self.x0_x1_preemb(torch.cat([x1, x0], dim=-1))
+            ) * 0.5
+            emb_x0 = self.x0_emb(x0x1_emb)
+            emb_x1 = self.x1_emb(x0x1_emb)
+        else:
+            emb_x0 = self.x0_emb(x0)
+            emb_x1 = self.x1_emb(x1)
+        avg = t * x1 + (1 - t) * x0
+        enveloppe = self.scale_factor * (1 - (t * 2 - 1) ** 2)
+        aug_state = torch.cat([emb_x0, emb_x1, t], dim=-1)
+        outs = self.mod_x0x1(aug_state) * enveloppe + avg
+
+        return outs

@@ -78,6 +78,13 @@ class AffinityMatching(GeometricAE):
         
         seed_everything(seed)
 
+        device_av = "cuda" if torch.cuda.is_available() else "cpu"
+        if accelerator is None or accelerator == 'auto':
+            device = device_av
+        else:
+            device = accelerator
+        self.device = device
+
         if train_mask is None:
             # Generate train_mask
             idxs = np.random.permutation(X.shape[0])
@@ -149,13 +156,6 @@ class AffinityMatching(GeometricAE):
                        max_epochs, lr, weight_decay, patience, log_every_n_steps, accelerator,
                        model_save_path, wandb_run=None):
         
-        device_av = "cuda" if torch.cuda.is_available() else "cpu"
-        if accelerator is None or accelerator == 'auto':
-            device = device_av
-        else:
-            device = accelerator
-        self.device = device
-
         optimizer = torch.optim.Adam(encoder.parameters(), lr=lr, weight_decay=weight_decay)
         early_stopper = EarlyStopping(mode='min',
                                     patience=patience,
@@ -242,13 +242,6 @@ class AffinityMatching(GeometricAE):
         # Use embeddings from encoder to train decoder. Keep encoder frozen.
         encoder.eval()
         
-        device_av = "cuda" if torch.cuda.is_available() else "cpu"
-        if accelerator is None or accelerator == 'auto':
-            device = device_av
-        else:
-            device = accelerator
-        self.device = device
-
         train_data = torch.tensor(train_data, dtype=torch.float32).to(device) # TODO: Cuda fix; more efficient memory means possible
         val_data = torch.tensor(val_data, dtype=torch.float32).to(device)
         test_data = torch.tensor(test_data, dtype=torch.float32).to(device)
@@ -388,11 +381,23 @@ if __name__ == "__main__":
         'model_save_path': './affinity_matching'
     }
     # Test AffinityMatching model
-    X = np.random.randn(1000, 10) # 3000 samples, 10 features
+    X = np.random.randn(100, 10) # 3000 samples, 10 features
     model = AffinityMatching(**model_hypers)
     model.fit(X, train_mask=None, percent_test=0.3, **training_hypers)
 
-    Z = model.encode(X)
-    print('Encoded Z:', Z.shape)
-    X_hat = model.decode(Z)
-    print('Decoded X:', X_hat.shape)
+    # X = torch.tensor(X, dtype=torch.float32)
+    # Z = model.encode(X)
+    # print('Encoded Z:', Z.shape)
+    # X_hat = model.decode(Z)
+    # print('Decoded X:', X_hat.shape)
+
+    # # Pullback metrics
+    # metric = model.encoder_pullback(X)
+    # print('X: ', X.shape, 'metric: ', metric.shape)
+
+    # geodesic pullback
+    T = 5
+    X_tb = np.random.randn(100, T, 10)
+    X_tb = torch.tensor(X_tb, dtype=torch.float32)
+    metric_tb = model.geodesic_encoder_pullback(X_tb)
+    print('X_tb: ', X_tb.shape, 'metric_tb: ', metric_tb.shape)
