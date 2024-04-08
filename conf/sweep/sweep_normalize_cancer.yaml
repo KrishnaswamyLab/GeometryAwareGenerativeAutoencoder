@@ -1,0 +1,59 @@
+project: dmae
+program: main.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val_dist_accuracy
+  goal: maximize
+parameters:
+  model.emb_dim:
+    values: [3]
+  model.type:
+    values: ['ae']
+  model.lr:
+    values: [1e-3]
+  model.weight_decay:
+    values: [1e-4]
+  model.dropout:
+    values: [0.,0.2,0.5]
+  model.batch_norm:
+    values: [true]
+  model.layer_widths:
+    values: [[256,128,64]]
+  model.dist_reconstr_weights:
+    # values: [[0.,1.,0.]]
+    # values: [[0.9,0.1,0]]
+    values: [[77.4,0.32,0]]
+  model.use_dist_mse_decay:
+    values: [true]
+  model.dist_mse_decay:
+    values: [0.,0.2,0.5]
+  model.cycle_weight:
+    values: [0.,1.]
+  model.cycle_dist_weight:
+    values: [0.]
+  data.root:
+    values: ['../../cancer_plasticity/dmae_data/']
+  data.name:
+    # values: ['swissroll0.1_phate']
+    values: ['human_data', 'mouse_data']
+    # values: ['swissroll0.1_heatgeo']
+  training.match_potential:
+    values: [True]
+  # training.batch_size: 
+  #   values: [256]
+  # training.max_epochs: 
+  #   values: [100000]
+  # training.patience: 
+  #   values: [10000]
+  model.normalize:
+    values: [true]
+  model.normalize_dist:
+    values: [true]
+  model.componentwise_std:
+    values: [false]
+  data.preprocess:
+    values: ['none']

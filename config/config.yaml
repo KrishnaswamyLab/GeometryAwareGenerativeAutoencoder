@@ -1,0 +1,61 @@
+encoder:
+  layer_widths: [64,64,64]
+  in_dim: 100
+  out_dim: 2
+  activation: relu
+  batch_norm: False
+  dropout: 0.0
+
+decoder:
+  layer_widths: [64,64,64]
+  in_dim: 2
+  out_dim: 100
+  activation: relu
+  batch_norm: False
+  dropout: 0.0
+
+
+training:
+  lr: 1e-3
+  weight_decay: 1e-4
+  batch_size: 256
+  monitor: 'val_loss'
+  patience: 50
+  accelerator: 'cuda'
+  log_every_n_steps: 100
+  # optimizer: adam
+  # # loss: mse
+  # # metrics: ['accuracy']
+  # early_stopping: True
+  # patience: 10
+  # # min_delta: 0.0001
+
+loss:
+  dist_mse_decay: 0.
+
+preprocessing:
+  mean: 0.
+  std: 1.
+  dist_std: 1.
+
+constants:
+  eps: 1e-8
+
+path:
+  save: False
+  root: '../results/'
+  model: 'model'
+  procrustes: 'procrustes'
+  plots: ''
+  log: ''
+  out_data: ''
+
+data:
+  root: '../data'
+  filetype: '.npz'
+  name: 'swiss_roll'
+
+use_wandb: True
+entity: xingzhis
+project: "dmae"
+tags: ['default']

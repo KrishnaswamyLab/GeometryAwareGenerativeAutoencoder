@@ -71,6 +71,33 @@ def get_dataset_contents(noisy_path, noiseless_path, ambient_path=None):
         x_test_pc = pca.fit_transform(data_ambient)
     return x_test, x_noiseless, dist_true, pca
 
+def get_dataset_contents_w_gt(data_path):
+    data_all = np.load(data_path, allow_pickle=True)
+    X = data_all['data']
+    train_mask = data_all['is_train']
+    if 'dist' in data_all.files:
+        dist = data_all['dist']
+        dist_true=dist[~train_mask][:,~train_mask]
+    else:
+        dist_true=None
+    # data_noiseless = np.load(noiseless_path, allow_pickle=True)
+    # assert (train_mask == data_noiseless['is_train']).all()
+    # x_noiseless = data_noiseless['data'][~train_mask]
+    x_noiseless = data_all['data_gt'][~train_mask]
+    x_test=X[~train_mask]
+    class dummyPCA:
+        def transform(self, x):
+            return x
+        def inverse_transform(self, x):
+            return x
+    pca = dummyPCA()
+    # pca = None
+    # if ambient_path is not None:
+    #     data_ambient = np.load(ambient_path, allow_pickle=True)
+    #     pca = PCA(n_components=x_test.shape[1])
+    #     x_test_pc = pca.fit_transform(data_ambient)
+    return x_test, x_noiseless, dist_true, pca
+
 def get_dataset_all(noisy_path, noiseless_path, ambient_path=None):
     data_noisy = np.load(noisy_path, allow_pickle=True)
     X = data_noisy['data']
@@ -95,11 +122,15 @@ def get_data_config(filename):
     filename = filename.split('/')[-1]
     assert filename.startswith('noisy'), 'only works for noisy data!'
     parts = filename.split('_')    
-    seedmethod = parts[2]+','+parts[1]
+    seed = parts[2]
+    method = parts[1]
+    # seedmethod = parts[2]+','+parts[1]
     bcv=parts[-3]
     dropout=parts[-2]
     return dict(
-        seedmethod=seedmethod,
+        seed=seed,
+        method=method,
+        # seedmethod=seedmethod,
         bcv=bcv,
         dropout=dropout,
     )
@@ -167,8 +198,11 @@ def compute_recon_metric(model, x_test, pca):
     score = corrs.mean()
     return score
 
-def compute_all_metrics(model, data_path, noiseless_path, ambient_path):
-    x_test, x_noiseless, dist_true, pca = get_dataset_contents(data_path, noiseless_path, ambient_path)
+def compute_all_metrics(model, data_path, noiseless_path, ambient_path, w_gt=False):
+    if w_gt:
+        x_test, x_noiseless, dist_true, pca = get_dataset_contents_w_gt(data_path) # ignore the noiseless path
+    else:
+        x_test, x_noiseless, dist_true, pca = get_dataset_contents(data_path, noiseless_path, ambient_path)
     
     # Only run recon score if model has decode function
     if hasattr(model, 'decode'):
@@ -177,7 +211,13 @@ def compute_all_metrics(model, data_path, noiseless_path, ambient_path):
         score = np.nan
 
     encoding_metrics = compute_encoding_metrics(model, x_test, x_noiseless, dist_true)
-    res_dict = get_data_config(data_path)
+    if w_gt:
+        res_dict = dict(
+            data=data_path
+        )
+    else:
+        res_dict = get_data_config(data_path)
+
     for k, v in encoding_metrics.items():
         res_dict[k] = v
     res_dict['recon score'] = score
