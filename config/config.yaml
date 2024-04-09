@@ -1,61 +1,53 @@
+dimensions:
+  latent: 2
+  data: 100
+
 encoder:
   layer_widths: [64,64,64]
-  in_dim: 100
-  out_dim: 2
   activation: relu
   batch_norm: False
   dropout: 0.0
 
 decoder:
   layer_widths: [64,64,64]
-  in_dim: 2
-  out_dim: 100
   activation: relu
   batch_norm: False
   dropout: 0.0
-
 
 training:
   lr: 1e-3
   weight_decay: 1e-4
   batch_size: 256
-  monitor: 'val_loss'
+  monitor: 'validation/loss'
   patience: 50
   accelerator: 'cuda'
   log_every_n_steps: 100
-  # optimizer: adam
-  # # loss: mse
-  # # metrics: ['accuracy']
-  # early_stopping: True
-  # patience: 10
-  # # min_delta: 0.0001
+  max_epochs: 50
+  train_valid_split: 0.8
+  seed: 42
+  shuffle: true
+  # mode: 'end2end' # separate
+  mode: 'separate'
 
 loss:
   dist_mse_decay: 0.
-
-preprocessing:
-  mean: 0.
-  std: 1.
-  dist_std: 1.
-
-constants:
-  eps: 1e-8
+  weights:
+    dist: 1
+    reconstr: 1
+    cycle: 0.
+    cycle_dist: 0.
 
 path:
-  save: False
   root: '../results/'
   model: 'model'
-  procrustes: 'procrustes'
-  plots: ''
-  log: ''
-  out_data: ''
 
 data:
-  root: '../data'
+  root: '../toy_data/converted'
   filetype: '.npz'
-  name: 'swiss_roll'
+  name: 'make_mix_surface'
 
-use_wandb: True
-entity: xingzhis
-project: "dmae"
-tags: ['default']
+logger:
+  use_wandb: True
+  entity: xingzhis
+  project: "dmae"
+  tags: ['default']

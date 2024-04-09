@@ -166,4 +166,4 @@ synthetic_data/
 .pixi
 notebooks/affinity_matching/
 
-job/*
+jobs/*

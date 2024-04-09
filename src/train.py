@@ -1,26 +1,14 @@
 import os
-import pickle
-import matplotlib.pyplot as plt
 import wandb
 import hydra
-import yaml
 import numpy as np
-import pandas as pd
-import torch
-import scipy.sparse
-from scipy.spatial.distance import pdist, squareform
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
 from omegaconf import DictConfig, OmegaConf
 
-from data import train_valid_loader_from_pc, dataloader_from_pc
-from transformations import LogTransform, NonTransform, StandardScaler, \
-    MinMaxScaler, PowerTransformer, KernelTransform
-# from model import AEDist, VAEDist
-from model2 import Encoder, Decoder
-from metrics import distance_distortion, mAP
-from procrustes import Procrustes
+from data import train_valid_loader_from_pc
+from model2 import Autoencoder, Preprocessor
 
 @hydra.main(version_base=None, config_path='../config', config_name='config')
 def main(cfg: DictConfig):
@@ -35,54 +23,69 @@ def main(cfg: DictConfig):
             settings=wandb.Settings(start_method="thread"),
         )
 
-    trainloader, valloader, X, phate_coords, colors, dist, mean, std, dist_std = load_data(cfg)
-    cfg.preprocessing.mean = mean
-    cfg.preprocessing.std = std
-    cfg.preprocessing.dist_std = dist_std
+    trainloader, valloader, X, phate_coords, colors, preprocessor = load_data(cfg)
     cfg.dimensions.data = X.shape[1]
-    model = Autoencoder(cfg)
-    early_stoppingEnc = EarlyStopping(cfg.training.monitor, patience=cfg.training.patience)
+    model = Autoencoder(cfg, preprocessor)
+
     if cfg.logger.use_wandb:
         logger = WandbLogger()
-        checkpoint_callbackEnc = ModelCheckpoint(
+        checkpoint_callback = ModelCheckpoint(
             dirpath=wandb.run.dir,  # Save checkpoints in wandb directory
             save_top_k=1,  # Save the top 1 model
-            monitor='validation/loss',  # Model selection based on validation loss
+            monitor=cfg.training.monitor,  # Model selection based on validation loss
             mode='min'  # Minimize validation loss
         )
     else:
         logger = TensorBoardLogger(save_dir=os.path.join(cfg.path.root, cfg.path.log))
-        checkpoint_callbackEnc = ModelCheckpoint(
+        checkpoint_callback = ModelCheckpoint(
             dirpath=cfg.path.root,  # Save checkpoints in wandb directory
             filename=cfg.path.model,
             save_top_k=1,
-            monitor='validation/loss',  # Model selection based on validation loss
+            monitor=cfg.training.monitor,  # Model selection based on validation loss
             mode='min'  # Minimize validation loss
         )
+
+    if cfg.training.mode == 'separate':
+        cfg.training.mode = 'encoder'
+        train_model(cfg, model.encoder, trainloader, valloader, logger, checkpoint_callback)
+        model.link_encoder()
+        cfg.training.mode = 'decoder'
+        train_model(cfg, model.decoder, trainloader, valloader, logger, checkpoint_callback)
+    elif cfg.training.mode == 'end2end': # encoder-only, decoder-only, or end-to-end
+        train_model(cfg, model, trainloader, valloader, logger, checkpoint_callback)
+    elif cfg.training.mode == 'encoder':
+        train_model(cfg, model.encoder, trainloader, valloader, logger, checkpoint_callback)
+    elif cfg.training.mode == 'decoder':
+        train_model(cfg, model.decoder, trainloader, valloader, logger, checkpoint_callback)
+    else:
+        raise ValueError('Invalid training mode')
+
+    if cfg.logger.use_wandb:
+        run.finish()
+
+def train_model(cfg, model, trainloader, valloader, logger, checkpoint_callback):
+    early_stopping = EarlyStopping(cfg.training.monitor, patience=cfg.training.patience)
     trainer = Trainer(
         logger=logger,
         max_epochs=cfg.training.max_epochs,
         accelerator=cfg.training.accelerator,
-        callbacks=[early_stoppingEnc,checkpoint_callbackEnc],
+        callbacks=[early_stopping,checkpoint_callback],
         log_every_n_steps=cfg.training.log_every_n_steps,
     )
- 
+
     trainer.fit(
         model=model,
         train_dataloaders=trainloader,
         val_dataloaders=valloader,
     )
 
-    if cfg.logger.use_wandb:
-        run.finish()
-
 def load_data(cfg):
     data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
     data = np.load(data_path, allow_pickle=True)
-    X = data['data']
-    phate_coords = data['phate']
+    X = data['data'].astype(np.float32)
+    phate_coords = data['phate'].astype(np.float32)
     colors = data['colors']
-    dist = data['dist']
+    dist = data['dist'].astype(np.float32)
     dist_std = np.std(dist.flatten())
     train_mask = data['is_train'].astype(bool) # !!! Fixed bug: when mask is not boolean it is problematic!
     X = X[train_mask,:]
@@ -95,5 +98,9 @@ def load_data(cfg):
         batch_size=cfg.training.batch_size,
         train_valid_split=cfg.training.train_valid_split,
         shuffle=cfg.training.shuffle,
-        seed=cfg.training.seed, return_mean_std=True, componentwise_std=cfg.model.componentwise_std)
-    return trainloader, valloader, X, phate_coords, colors, dist, mean, std, dist_std
+        seed=cfg.training.seed, return_mean_std=True, componentwise_std=False)
+    preprocessor = Preprocessor(mean=mean, std=std, dist_std=dist_std)
+    return trainloader, valloader, X, phate_coords, colors, preprocessor
+
+if __name__ == '__main__':
+    main()

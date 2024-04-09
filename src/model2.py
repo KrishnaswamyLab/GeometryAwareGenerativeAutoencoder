@@ -4,10 +4,7 @@ By the way refactor and clean up.
 """
 
 import torch
-import torch.nn as nn
 import pytorch_lightning as pl
-from abc import ABC, abstractmethod
-from transformations import NonTransform
 
 activation_dict = {
     'relu': torch.nn.ReLU(),
@@ -16,14 +13,10 @@ activation_dict = {
 }
 
 class MLP(torch.nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg, in_dim, out_dim):
         super().__init__()
         layer_widths = cfg.get("layer_widths", [[64, 64, 64]])
-        assert len(layer_widths) < 2, "layer_widths list must contain at least 2 elements"
-        dim = cfg.get("in_dim")
-        assert dim is not None, "dim must be specified"
-        out_dim = cfg.get("out_dim")
-        assert out_dim is not None, "out_dim must be specified"
+        assert len(layer_widths) >= 2, "layer_widths list must contain at least 2 elements"
         activation = cfg.get("activation", "relu")
         assert activation in activation_dict.keys(), f"activation must be one of {list(activation_dict.keys())}"
         batch_norm = cfg.get("batch_norm", False)
@@ -32,7 +25,7 @@ class MLP(torch.nn.Module):
         layers = []
         for i, width in enumerate(layer_widths):
             if i == 0:  # First layer, input dimension to first layer width
-                layers.append(torch.nn.Linear(dim, width))
+                layers.append(torch.nn.Linear(in_dim, width))
             else:  # Subsequent layers, previous layer width to current layer width
                 layers.append(torch.nn.Linear(layer_widths[i-1], width))
 
@@ -51,22 +44,22 @@ class MLP(torch.nn.Module):
         return self.net(x)
     
 class Encoder(pl.LightningModule):
-    def __init__(self, cfg):
+    def __init__(self, cfg, preprocessor):
         super().__init__()
-        cfg.preprocessing.mean = cfg.preprocessing.get('mean', 0.)
-        cfg.preprocessing.std = cfg.preprocessing.get('std', 1.)
-        cfg.preprocessing.dist_std = cfg.preprocessing.get('dist_std', 1.)
+        self.preprocessor = preprocessor
         cfg.loss.dist_mse_decay = cfg.loss.get('dist_mse_decay', 0.)
-        cfg.encoder.in_dim = cfg.dimensions.get('data')
-        cfg.encoder.out_dim = cfg.dimensions.get('latent')
+        in_dim = cfg.dimensions.get('data')
+        out_dim = cfg.dimensions.get('latent')
         self.save_hyperparameters(cfg)
-        self.mlp = MLP(cfg.encoder)
+        self.mlp = MLP(cfg.encoder, in_dim, out_dim)
         
     def normalize(self, x):
-        return (x - self.hparams.preprocessing.mean) / self.hparams.preprocessing.std
+        # return (x - self.hparams.preprocessing.mean) / self.hparams.preprocessing.std
+        return self.preprocessor.normalize(x)
 
     def normalize_dist(self, d):
-        return d / self.hparams.preprocessing.dist_std
+        # return d / self.hparams.preprocessing.dist_std
+        return self.preprocessor.normalize_dist(d)
 
     def forward(self, x, normalize=True): # takes in unnormalized data.
         if normalize:
@@ -107,15 +100,13 @@ class Encoder(pl.LightningModule):
 
 
 class Decoder(pl.LightningModule):
-    def __init__(self, cfg):
+    def __init__(self, cfg, preprocessor):
         super().__init__()
-        cfg.preprocessing.mean = cfg.preprocessing.get('mean', 0.)
-        cfg.preprocessing.std = cfg.preprocessing.get('std', 1.)
-        cfg.preprocessing.dist_std = cfg.preprocessing.get('dist_std', 1.)
-        cfg.decoder.in_dim = cfg.dimensions.get('latent')
-        cfg.decoder.out_dim = cfg.dimensions.get('data')
+        self.preprocessor = preprocessor
+        in_dim = cfg.dimensions.get('latent')
+        out_dim = cfg.dimensions.get('data')
         self.save_hyperparameters(cfg)
-        self.mlp = MLP(cfg.decoder)
+        self.mlp = MLP(cfg.decoder, in_dim, out_dim)
         self.encoder = None
         self.use_encoder = False
     
@@ -124,7 +115,8 @@ class Decoder(pl.LightningModule):
         self.use_encoder = True
         
     def unnormalize(self, x):
-        return x * self.hparams.preprocessing.std + self.hparams.preprocessing.mean
+        # return x * self.hparams.preprocessing.std + self.hparams.preprocessing.mean
+        return self.preprocessor.unnormalize(x)
 
     def forward(self, z, unnormalize=True): # outputs unnormalized data
         x = self.mlp(z)
@@ -167,13 +159,11 @@ class Decoder(pl.LightningModule):
         return optimizer
 
 class Autoencoder(pl.LightningModule):
-    def __init__(self, cfg):
+    def __init__(self, cfg, preprocessor):
         super().__init__()
-        assert cfg.encoder.in_dim == cfg.decoder.out_dim
-        assert cfg.encoder.out_dim == cfg.decoder.in_dim
-
-        self.encoder = Encoder(cfg)
-        self.decoder = Decoder(cfg)
+        self.encoder = Encoder(cfg, preprocessor)
+        self.decoder = Decoder(cfg, preprocessor)
+        self.save_hyperparameters(cfg)
     
     def forward(self, x):
         return self.decoder(self.encoder(x))
@@ -192,7 +182,7 @@ class Autoencoder(pl.LightningModule):
         """output are the outputs of forward method"""
         # x, x_hat: [B, D]; z: [B, emb_dim]; gt_dist: [B, (B-1)/2]
         loss = 0.0
-
+        assert self.hparams.loss.weights.dist + self.hparams.loss.weights.reconstr > 0.0, "At least one loss must be enabled"
         if self.hparams.loss.weights.dist > 0.0:
             dl = self.encoder.loss_function(d_norm, zhat)
             self.log(f'{stage}/dist_loss', dl, prog_bar=True, on_epoch=True)
@@ -230,24 +220,43 @@ class Autoencoder(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         loss = self.step(batch, batch_idx, 'train')
         return loss
-    
+
     def validation_step(self, batch, batch_idx):
         loss = self.step(batch, batch_idx, 'validation')
         return loss
-    
+
     def test_step(self, batch, batch_idx):
         loss = self.step(batch, batch_idx, 'test')
         return loss
     
+    def link_encoder(self): # for separate training
+        self.decoder.set_encoder(self.encoder)
+    
     def configure_optimizers(self):
-        if self.training_mode in ['end2end', 'encoder']:
-            optimizer_a = torch.optim.Adam(self.encoder.parameters(), lr=self.hparams.training.lr, weight_decay=self.hparams.training.weight_decay)
-        if self.training_mode in ['end2end', 'decoder']:
-            optimizer_b = torch.optim.Adam(self.decoder.parameters(), lr=self.hparams.training.lr, weight_decay=self.hparams.training.weight_decay)
-        
-        if self.training_mode == 'end2end':
-            return [optimizer_a, optimizer_b], []  # Add schedulers if needed
-        elif self.training_mode == 'encoder':
-            return optimizer_a
-        elif self.training_mode == 'decoder':
-            return optimizer_b
+        if self.hparams.training.mode == 'encoder':
+            return torch.optim.Adam(self.encoder.parameters(), lr=self.hparams.training.lr, weight_decay=self.hparams.training.weight_decay)
+        elif self.hparams.training.mode == 'decoder':
+            return torch.optim.Adam(self.decoder.parameters(), lr=self.hparams.training.lr, weight_decay=self.hparams.training.weight_decay)
+        elif self.hparams.training.mode == 'end2end':
+            return torch.optim.Adam(self.parameters(), lr=self.hparams.training.lr, weight_decay=self.hparams.training.weight_decay)
+        else:
+            raise ValueError(f"Invalid training mode: {self.hparams.training.mode}")
+
+class Preprocessor(torch.nn.Module):
+    def __init__(self, mean=0., std=1., dist_std=1.):
+        super().__init__()
+        self.register_buffer('mean', torch.tensor(mean, dtype=torch.float32), persistent=True)
+        self.register_buffer('std', torch.tensor(std, dtype=torch.float32), persistent=True)
+        self.register_buffer('dist_std', torch.tensor(dist_std, dtype=torch.float32), persistent=True)
+
+    def normalize(self, x):
+        return (x - self.mean) / self.std
+    
+    def normalize_dist(self, d):
+        return d / self.dist_std
+    
+    def unnormalize(self, x):
+        return x * self.std + self.mean
+    
+    def unnormalize_dist(self, d):
+        return d * self.dist_std

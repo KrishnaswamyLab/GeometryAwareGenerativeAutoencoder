@@ -1,0 +1,39 @@
+project: dmae
+program: train.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: validation/loss
+  goal: minimize
+parameters:
+  encoder.layer_widths: 
+    values: [[16,16]]
+  encoder.batch_norm: 
+    values: [true]
+  encoder.dropout: 
+    values: [0.2]
+  decoder.layer_widths: 
+    values: [[16,16]]
+  decoder.batch_norm:
+    values: [true]
+  decoder.dropout:
+    values: [0.2]
+  training.mode:
+    values: ['end2end','separate','encoder','decoder']
+  training.max_epochs:
+    values: [3]
+  loss.dist_mse_decay:
+    values: [0.2]
+  loss.weights.dist:
+    values: [1]
+  loss.weights.reconstr:
+    values: [1]
+  loss.weights.cycle:
+    values: [1]
+  loss.weights.cycle_dist:
+    values: [1]
+  
+  
