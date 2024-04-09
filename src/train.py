@@ -39,17 +39,15 @@ def main(cfg: DictConfig):
     cfg.preprocessing.mean = mean
     cfg.preprocessing.std = std
     cfg.preprocessing.dist_std = dist_std
-    cfg.encoder.in_dim = X.shape[1]
-    cfg.decoder.out_dim = X.shape[1]
-    encoder = Encoder(cfg)
-    decoder = Decoder(cfg)
+    cfg.dimensions.data = X.shape[1]
+    model = Autoencoder(cfg)
     early_stoppingEnc = EarlyStopping(cfg.training.monitor, patience=cfg.training.patience)
     if cfg.logger.use_wandb:
         logger = WandbLogger()
         checkpoint_callbackEnc = ModelCheckpoint(
             dirpath=wandb.run.dir,  # Save checkpoints in wandb directory
             save_top_k=1,  # Save the top 1 model
-            monitor='val_loss',  # Model selection based on validation loss
+            monitor='validation/loss',  # Model selection based on validation loss
             mode='min'  # Minimize validation loss
         )
     else:
@@ -58,7 +56,7 @@ def main(cfg: DictConfig):
             dirpath=cfg.path.root,  # Save checkpoints in wandb directory
             filename=cfg.path.model,
             save_top_k=1,
-            monitor='val_loss',  # Model selection based on validation loss
+            monitor='validation/loss',  # Model selection based on validation loss
             mode='min'  # Minimize validation loss
         )
     trainer = Trainer(
@@ -70,10 +68,13 @@ def main(cfg: DictConfig):
     )
  
     trainer.fit(
-        model=encoder,
+        model=model,
         train_dataloaders=trainloader,
         val_dataloaders=valloader,
     )
+
+    if cfg.logger.use_wandb:
+        run.finish()
 
 def load_data(cfg):
     data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
