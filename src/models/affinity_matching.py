@@ -162,7 +162,7 @@ class AffinityMatching(GeometricAE):
                                     percentage=False)
 
         best_metric = np.inf
-        encoder = encoder.to(device)
+        encoder = encoder.to(self.device)
 
         log('Training Encoder ...')
         for eid in range(max_epochs):
@@ -173,7 +173,7 @@ class AffinityMatching(GeometricAE):
             optimizer.zero_grad()
 
             for (_, batch_x) in train_loader:
-                batch_x = batch_x.to(device)
+                batch_x = batch_x.to(self.device)
 
                 batch_z = encoder.encode(batch_x)
                 train_Z.append(batch_z)
@@ -185,7 +185,7 @@ class AffinityMatching(GeometricAE):
                                                         t=train_dataset.t, 
                                                         alpha=self.kernel_alpha, 
                                                         bandwidth=self.kernel_bandwidth)
-            gt_prob_matrix = (train_dataset.row_stochastic_matrix).type(torch.float32).to(device)
+            gt_prob_matrix = (train_dataset.row_stochastic_matrix).type(torch.float32).to(self.device)
             encoder_loss = encoder.encoder_loss(gt_prob_matrix, pred_prob_matrix, type=self.loss_type)
         
             encoder_loss.backward()
@@ -202,7 +202,7 @@ class AffinityMatching(GeometricAE):
             val_Z = []
             with torch.no_grad():
                 for (_, batch_x) in train_val_loader:
-                    batch_x = batch_x.to(device)
+                    batch_x = batch_x.to(self.device)
 
                     batch_z = encoder.encode(batch_x)
                     val_Z.append(batch_z)
@@ -212,7 +212,7 @@ class AffinityMatching(GeometricAE):
                 train_val_pred_prob_matrix = encoder.compute_prob_matrix(val_Z, t=train_val_dataset.t, 
                                                                     alpha=self.kernel_alpha, 
                                                                     bandwidth=self.kernel_bandwidth)
-                gt_train_val_prob_matrix = (train_val_dataset.row_stochastic_matrix).type(torch.float32).to(device)
+                gt_train_val_prob_matrix = (train_val_dataset.row_stochastic_matrix).type(torch.float32).to(self.device)
                 val_encoder_loss = encoder.encoder_loss(gt_train_val_prob_matrix, 
                                                     train_val_pred_prob_matrix,
                                                     type=self.loss_type)
@@ -242,9 +242,9 @@ class AffinityMatching(GeometricAE):
         # Use embeddings from encoder to train decoder. Keep encoder frozen.
         encoder.eval()
         
-        train_data = torch.tensor(train_data, dtype=torch.float32).to(device) # TODO: Cuda fix; more efficient memory means possible
-        val_data = torch.tensor(val_data, dtype=torch.float32).to(device)
-        test_data = torch.tensor(test_data, dtype=torch.float32).to(device)
+        train_data = torch.tensor(train_data, dtype=torch.float32).to(self.device) # TODO: Cuda fix; more efficient memory means possible
+        val_data = torch.tensor(val_data, dtype=torch.float32).to(self.device)
+        test_data = torch.tensor(test_data, dtype=torch.float32).to(self.device)
 
         with torch.no_grad():
             train_Z = encoder.encode(train_data)
@@ -269,15 +269,15 @@ class AffinityMatching(GeometricAE):
                                     percentage=False)
 
         best_metric = np.inf
-        decoder = decoder.to(device)
+        decoder = decoder.to(self.device)
 
         for eid in range(max_epochs):
             decoder.train()
             decoder_epoch_loss = 0.0
 
             for _, (batch_z, batch_x) in enumerate(train_loader):
-                batch_z = batch_z.to(device)
-                batch_x = batch_x.to(device)
+                batch_z = batch_z.to(self.device)
+                batch_x = batch_x.to(self.device)
 
                 optimizer.zero_grad()
 
@@ -300,8 +300,8 @@ class AffinityMatching(GeometricAE):
             val_decoder_loss = 0.0
             with torch.no_grad():
                 for _, (batch_z, batch_x) in enumerate(val_loader):
-                    batch_z = batch_z.to(device)
-                    batch_x = batch_x.to(device)
+                    batch_z = batch_z.to(self.device)
+                    batch_x = batch_x.to(self.device)
 
                     batch_x_hat = decoder(batch_z)
                     val_decoder_loss += torch.nn.functional.mse_loss(batch_x, batch_x_hat).item()
