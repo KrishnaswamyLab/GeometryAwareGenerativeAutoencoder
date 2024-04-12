@@ -52,18 +52,10 @@ class Encoder(pl.LightningModule):
         out_dim = cfg.dimensions.get('latent')
         self.save_hyperparameters(cfg)
         self.mlp = MLP(cfg.encoder, in_dim, out_dim)
-        
-    def normalize(self, x):
-        # return (x - self.hparams.preprocessing.mean) / self.hparams.preprocessing.std
-        return self.preprocessor.normalize(x)
-
-    def normalize_dist(self, d):
-        # return d / self.hparams.preprocessing.dist_std
-        return self.preprocessor.normalize_dist(d)
 
     def forward(self, x, normalize=True): # takes in unnormalized data.
         if normalize:
-            x = self.normalize(x)
+            x = self.preprocessor.normalize(x)
         return self.mlp(x)
     
     def loss_function(self, dist_gt_norm, z): # assume normalized.
@@ -77,7 +69,7 @@ class Encoder(pl.LightningModule):
         x = batch['x']
         d = batch['d']
         z = self.forward(x)
-        d_norm = self.normalize_dist(d)
+        d_norm = self.preprocessor.normalize_dist(d)
         loss = self.loss_function(d_norm, z)
         self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
         return loss
@@ -113,15 +105,11 @@ class Decoder(pl.LightningModule):
     def set_encoder(self, encoder):
         self.encoder = encoder
         self.use_encoder = True
-        
-    def unnormalize(self, x):
-        # return x * self.hparams.preprocessing.std + self.hparams.preprocessing.mean
-        return self.preprocessor.unnormalize(x)
 
     def forward(self, z, unnormalize=True): # outputs unnormalized data
         x = self.mlp(z)
         if unnormalize:
-            x = self.unnormalize(x)
+            x = self.preprocessor.unnormalize(x)
         return x
 
     def loss_function(self, x_norm, xhat_norm): # assume normalized.
@@ -136,7 +124,7 @@ class Decoder(pl.LightningModule):
         else:
             assert 'z' in batch.keys()
             z = batch['z'] # after encoder is trained, do we need to make a new dataset?
-        x = self.normalize(x)
+        x = self.preprocessor.normalize(x)
         xhat = self.forward(z, unnormalize=False)
         loss = self.loss_function(x, xhat)
         self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
@@ -171,9 +159,9 @@ class Autoencoder(pl.LightningModule):
     def end2end_step(self, batch, batch_idx, stage):
         x = batch['x']
         d = batch['d']
-        x_norm = self.encoder.normalize(x)
+        x_norm = self.encoder.preprocessor.normalize(x)
         zhat = self.encoder(x)
-        d_norm = self.encoder.normalize_dist(d)
+        d_norm = self.encoder.preprocessor.normalize_dist(d)
         xhat_norm = self.decoder(zhat, unnormalize=False)
         loss = self.loss_function(xhat_norm, x_norm, zhat, d_norm, stage)
         return loss

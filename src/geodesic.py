@@ -13,7 +13,7 @@ import torch.optim as optim
 from torch.autograd.functional import jacobian
 import pytorch_lightning as pl
 
-def compute_jacobian_function(f, x, create_graph=False, retain_graph=True):
+def compute_jacobian_function(f, x, create_graph=True, retain_graph=True):
     """
     Compute the Jacobian of the decoder wrt a batch of points in the latent space using an efficient broadcasting approach.
     :param model: The VAE model.
@@ -36,8 +36,10 @@ def compute_jacobian_function(f, x, create_graph=False, retain_graph=True):
         jacobian[:, i, :] = gradients
     return jacobian
 
-def pullback_metric(x, fcn, create_graph=True, retain_graph=True):
+def pullback_metric(x, fcn, create_graph=True, retain_graph=True, pseudoinverse=False):
     jac = compute_jacobian_function(fcn, x, create_graph, retain_graph)
+    if pseudoinverse:
+        jac = torch.linalg.pinv(jac)
     metric = torch.einsum('Nki,Nkj->Nij', jac, jac)
     return metric
 
@@ -114,7 +116,7 @@ class GeodesicODE(pl.LightningModule):
     def length_loss(self, t, x):
         original_shape = x.shape
         x_flat = x.view(-1, x.shape[2])
-        metric_flat = pullback_metric(x_flat, self.hparams.fcn, create_graph=False, retain_graph=True)
+        metric_flat = pullback_metric(x_flat, self.hparams.fcn, create_graph=True, retain_graph=True)
         xdot = self.odefunc(t, x)
         xdot_flat = xdot.view(-1, xdot.shape[2])
         l_flat = torch.sqrt(torch.einsum('Ni,Nij,Nj->N', xdot_flat, metric_flat, xdot_flat))
@@ -157,6 +159,21 @@ class GeodesicODE(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay)
 
+class GeodesicODEPseudoinv(GeodesicODE):
+    def __init__(self, encoder, decoder, in_dim=2, hidden_dim=64, n_tsteps=1000, lam=10, lr=0.001, weight_decay=0, beta=0, n_pow=4):
+        super().__init__(encoder, in_dim, hidden_dim, n_tsteps, lam, lr, weight_decay, beta, n_pow)
+        self.save_hyperparameters()
+
+    def length_loss(self, t, x):
+        original_shape = x.shape
+        x_flat = x.view(-1, x.shape[2])
+        x_dec_flat = self.hparams.decoder(x_flat)
+        metric_flat = pullback_metric(x_dec_flat, self.hparams.fcn, create_graph=True, retain_graph=True, pseudoinverse=True)
+        xdot = self.odefunc(t, x)
+        xdot_flat = xdot.view(-1, xdot.shape[2])
+        l_flat = torch.sqrt(torch.einsum('Ni,Nij,Nj->N', xdot_flat, metric_flat, xdot_flat))
+        return l_flat.mean()# * (t[-1] - t[0]) # numerical integration, we set t in [0,1].
+    
 
 class CondCurve(nn.Module):
     def __init__(self, input_dim, hidden_dim, scale_factor=5, symmetric=False):
