@@ -50,7 +50,7 @@ class Encoder(pl.LightningModule):
         cfg.loss.dist_mse_decay = cfg.loss.get('dist_mse_decay', 0.)
         in_dim = cfg.dimensions.get('data')
         out_dim = cfg.dimensions.get('latent')
-        self.save_hyperparameters(cfg)
+        self.save_hyperparameters()
         self.mlp = MLP(cfg.encoder, in_dim, out_dim)
 
     def forward(self, x, normalize=True): # takes in unnormalized data.
@@ -60,8 +60,8 @@ class Encoder(pl.LightningModule):
     
     def loss_function(self, dist_gt_norm, z): # assume normalized.
         dist_emb = torch.nn.functional.pdist(z)
-        if self.hparams.loss.dist_mse_decay > 0.:
-            return ((dist_emb - dist_gt_norm)**2 * torch.exp(-self.hparams.loss.dist_mse_decay * dist_gt_norm)).mean()
+        if self.hparams.cfg.loss.dist_mse_decay > 0.:
+            return ((dist_emb - dist_gt_norm)**2 * torch.exp(-self.hparams.cfg.loss.dist_mse_decay * dist_gt_norm)).mean()
         else:
             return torch.nn.functional.mse_loss(dist_emb, dist_gt_norm)
 
@@ -87,7 +87,7 @@ class Encoder(pl.LightningModule):
         return loss
     
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.training.lr, weight_decay=self.hparams.training.weight_decay)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.cfg.training.lr, weight_decay=self.hparams.cfg.training.weight_decay)
         return optimizer
 
 
@@ -97,7 +97,7 @@ class Decoder(pl.LightningModule):
         self.preprocessor = preprocessor
         in_dim = cfg.dimensions.get('latent')
         out_dim = cfg.dimensions.get('data')
-        self.save_hyperparameters(cfg)
+        self.save_hyperparameters()
         self.mlp = MLP(cfg.decoder, in_dim, out_dim)
         self.encoder = None
         self.use_encoder = False
@@ -143,7 +143,7 @@ class Decoder(pl.LightningModule):
         return loss
     
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.training.lr, weight_decay=self.hparams.training.weight_decay)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.cfg.training.lr, weight_decay=self.hparams.cfg.training.weight_decay)
         return optimizer
 
 class Autoencoder(pl.LightningModule):
@@ -151,8 +151,10 @@ class Autoencoder(pl.LightningModule):
         super().__init__()
         self.encoder = Encoder(cfg, preprocessor)
         self.decoder = Decoder(cfg, preprocessor)
-        self.save_hyperparameters(cfg)
-    
+        # self.save_hyperparameters(cfg)
+        # self.save_hyperparameters(preprocessor_params)
+        self.save_hyperparameters()
+
     def forward(self, x):
         return self.decoder(self.encoder(x))
     
@@ -170,38 +172,38 @@ class Autoencoder(pl.LightningModule):
         """output are the outputs of forward method"""
         # x, x_hat: [B, D]; z: [B, emb_dim]; gt_dist: [B, (B-1)/2]
         loss = 0.0
-        assert self.hparams.loss.weights.dist + self.hparams.loss.weights.reconstr > 0.0, "At least one loss must be enabled"
-        if self.hparams.loss.weights.dist > 0.0:
+        assert self.hparams.cfg.loss.weights.dist + self.hparams.cfg.loss.weights.reconstr > 0.0, "At least one loss must be enabled"
+        if self.hparams.cfg.loss.weights.dist > 0.0:
             dl = self.encoder.loss_function(d_norm, zhat)
             self.log(f'{stage}/dist_loss', dl, prog_bar=True, on_epoch=True)
-            loss += self.hparams.loss.weights.dist * dl
+            loss += self.hparams.cfg.loss.weights.dist * dl
 
-        if self.hparams.loss.weights.reconstr > 0.0:
+        if self.hparams.cfg.loss.weights.reconstr > 0.0:
             rl = self.decoder.loss_function(x_norm, xhat_norm)
             self.log(f'{stage}/reconstr_loss', rl, prog_bar=True, on_epoch=True)
-            loss += self.hparams.loss.weights.reconstr * rl
+            loss += self.hparams.cfg.loss.weights.reconstr * rl
 
-        if self.hparams.loss.weights.cycle + self.hparams.loss.weights.cycle_dist > 0.0:
+        if self.hparams.cfg.loss.weights.cycle + self.hparams.cfg.loss.weights.cycle_dist > 0.0:
             z2 = self.encoder(xhat_norm, normalize=False)
-            if self.hparams.loss.weights.cycle > 0.0:
+            if self.hparams.cfg.loss.weights.cycle > 0.0:
                 l2 = torch.nn.functional.mse_loss(zhat, z2)
                 self.log(f'{stage}/cycle_loss', l2, prog_bar=True, on_epoch=True)
-                loss += self.hparams.loss.weights.cycle * l2
-            if self.hparams.loss.weights.cycle_dist > 0.0:
+                loss += self.hparams.cfg.loss.weights.cycle * l2
+            if self.hparams.cfg.loss.weights.cycle_dist > 0.0:
                 l3 = self.encoder.loss_function(d_norm, z2)
                 self.log(f'{stage}/cycle_dist_loss', l3, prog_bar=True, on_epoch=True)
-                loss += self.hparams.loss.weights.cycle_dist * l3
+                loss += self.hparams.cfg.loss.weights.cycle_dist * l3
         return loss
     
     def step(self, batch, batch_idx, stage):
-        if self.hparams.training.mode == 'end2end':
+        if self.hparams.cfg.training.mode == 'end2end':
             loss = self.end2end_step(batch, batch_idx, stage)
-        elif self.hparams.training.mode == 'encoder':
+        elif self.hparams.cfg.training.mode == 'encoder':
             loss = self.encoder.step(batch, batch_idx, f'{stage}_encoder')
-        elif self.hparams.training.mode == 'decoder':
+        elif self.hparams.cfg.training.mode == 'decoder':
             loss = self.decoder.step(batch, batch_idx, f'{stage}_decoder')
         else:
-            raise ValueError(f"Invalid training mode: {self.hparams.training.mode}")
+            raise ValueError(f"Invalid training mode: {self.hparams.cfg.training.mode}")
         self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
         return loss
         
@@ -221,14 +223,14 @@ class Autoencoder(pl.LightningModule):
         self.decoder.set_encoder(self.encoder)
     
     def configure_optimizers(self):
-        if self.hparams.training.mode == 'encoder':
-            return torch.optim.Adam(self.encoder.parameters(), lr=self.hparams.training.lr, weight_decay=self.hparams.training.weight_decay)
-        elif self.hparams.training.mode == 'decoder':
-            return torch.optim.Adam(self.decoder.parameters(), lr=self.hparams.training.lr, weight_decay=self.hparams.training.weight_decay)
-        elif self.hparams.training.mode == 'end2end':
-            return torch.optim.Adam(self.parameters(), lr=self.hparams.training.lr, weight_decay=self.hparams.training.weight_decay)
+        if self.hparams.cfg.training.mode == 'encoder':
+            return torch.optim.Adam(self.encoder.parameters(), lr=self.hparams.cfg.training.lr, weight_decay=self.hparams.cfg.training.weight_decay)
+        elif self.hparams.cfg.training.mode == 'decoder':
+            return torch.optim.Adam(self.decoder.parameters(), lr=self.hparams.cfg.training.lr, weight_decay=self.hparams.cfg.training.weight_decay)
+        elif self.hparams.cfg.training.mode == 'end2end':
+            return torch.optim.Adam(self.parameters(), lr=self.hparams.cfg.training.lr, weight_decay=self.hparams.cfg.training.weight_decay)
         else:
-            raise ValueError(f"Invalid training mode: {self.hparams.training.mode}")
+            raise ValueError(f"Invalid training mode: {self.hparams.cfg.training.mode}")
 
 class Preprocessor(torch.nn.Module):
     def __init__(self, mean=0., std=1., dist_std=1.):
@@ -248,3 +250,10 @@ class Preprocessor(torch.nn.Module):
     
     def unnormalize_dist(self, d):
         return d * self.dist_std
+    
+    def get_params(self):
+        return dict(
+            mean=self.mean,
+            std=self.std,
+            dist_std=self.dist_std
+        )
