@@ -4,7 +4,6 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-sys.path.append('../../src/')
 from data import RowStochasticDataset
 from model import AEProb, Decoder
 from models.unified_model import GeometricAE
@@ -78,6 +77,18 @@ class AffinityMatching(GeometricAE):
         
         seed_everything(seed)
 
+        if train_from_scratch is False:
+            encoder.load_from_checkpoint(os.path.join(model_save_path, 'encoder.ckpt'))
+            log(f'Loaded encoder from {model_save_path}, skipping encoder training ...')
+
+            decoder.load_from_checkpoint(os.path.join(model_save_path, 'decoder.ckpt'))
+            log(f'Loaded decoder from {model_save_path}, skipping decoder training ...')
+
+            self.encoder = encoder
+            self.decoder = decoder
+
+            return
+
         device_av = "cuda" if torch.cuda.is_available() else "cpu"
         if accelerator is None or accelerator == 'auto':
             device = device_av
@@ -121,29 +132,22 @@ class AffinityMatching(GeometricAE):
         decoder = Decoder(dim=self.ambient_dimension, emb_dim=self.latent_dimension,
                           layer_widths=self.layer_widths[::-1], activation_fn=act_fn)
         
-        if train_from_scratch is False:
-            encoder.load_from_checkpoint(os.path.join(model_save_path, 'encoder.ckpt'))
-            log(f'Loaded encoder from {model_save_path}, skipping encoder training ...')
+        os.makedirs(model_save_path, exist_ok=True)
 
-            decoder.load_from_checkpoint(os.path.join(model_save_path, 'decoder.ckpt'))
-            log(f'Loaded decoder from {model_save_path}, skipping decoder training ...')
-        else:
-            os.makedirs(model_save_path, exist_ok=True)
+        self._train_encoder(encoder, 
+                            train_dataset, train_loader, train_val_dataset, train_val_loader,
+                            max_epochs, lr, weight_decay, patience, log_every_n_steps, accelerator,
+                            os.path.join(model_save_path, 'encoder.ckpt'), wandb_run=None)
+        
+        # Use embeddings from encoder to train decoder. Keep encoder frozen.
+        self._train_decoder(encoder, decoder, 
+                            train_data, val_data, test_data,
+                            max_epochs, batch_size, lr, weight_decay, patience, log_every_n_steps, accelerator,
+                            os.path.join(model_save_path, 'decoder.ckpt'), wandb_run=None)
+        
 
-            self._train_encoder(encoder, 
-                                train_dataset, train_loader, train_val_dataset, train_val_loader,
-                                max_epochs, lr, weight_decay, patience, log_every_n_steps, accelerator,
-                                os.path.join(model_save_path, 'encoder.ckpt'), wandb_run=None)
-            
-            # Use embeddings from encoder to train decoder. Keep encoder frozen.
-            self._train_decoder(encoder, decoder, 
-                                train_data, val_data, test_data,
-                                max_epochs, batch_size, lr, weight_decay, patience, log_every_n_steps, accelerator,
-                                os.path.join(model_save_path, 'decoder.ckpt'), wandb_run=None)
-            
-
-            encoder.load_from_checkpoint(os.path.join(model_save_path, 'encoder.ckpt'))
-            decoder.load_from_checkpoint(os.path.join(model_save_path, 'decoder.ckpt'))
+        encoder.load_from_checkpoint(os.path.join(model_save_path, 'encoder.ckpt'))
+        decoder.load_from_checkpoint(os.path.join(model_save_path, 'decoder.ckpt'))
         
         self.encoder = encoder
         self.decoder = decoder
