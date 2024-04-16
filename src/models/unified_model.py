@@ -4,7 +4,7 @@ import numpy as np
 import phate
 from sklearn.manifold import TSNE
 import umap
-from other_methods import DiffusionMap
+# from other_methods import DiffusionMap
 
 class GeometricAE:
     def __init__(
@@ -81,9 +81,9 @@ class GeometricAE:
             t=self.t if self.t != 0 else 'auto',
             n_landmark=self.n_landmark,
         ).fit_transform(raw_data)
-        tsne_embed = TSNE(n_components=self.ambient_dimension, perplexity=5).fit_transform(raw_data)
-        umap_embed = umap.UMAP().fit_transform(raw_data)
-        dm_embed = DiffusionMap().fit_transform(raw_data)
+        # tsne_embed = TSNE(n_components=self.ambient_dimension, perplexity=5).fit_transform(raw_data)
+        # umap_embed = umap.UMAP().fit_transform(raw_data)
+        # dm_embed = DiffusionMap().fit_transform(raw_data)
 
         # TODO: Evaluate the embeddings
         ''' DeMAP '''
