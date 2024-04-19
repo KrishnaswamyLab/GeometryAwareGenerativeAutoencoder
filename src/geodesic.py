@@ -16,20 +16,22 @@ import warnings
 
 def compute_jacobian_function(f, x, create_graph=True, retain_graph=True):
     """
-    Compute the Jacobian of the decoder wrt a batch of points in the latent space using an efficient broadcasting approach.
-    :param model: The VAE model.
-    :param z_batch: A batch of points in the latent space (tensor).
-    :return: A batch of Jacobian matrices.
+    Compute the Jacobian of the f wrt a batch of points in the latent space using an efficient broadcasting approach.
+    Args:
+        f: The function to compute the Jacobian of. f: (B, D) -> (B, n).
+        x: (B, D) A batch of points in the dim D.
+    Returns:
+        jacobian: (B, n, D) The Jacobian of f wrt x.
     """
     # z_batch = z_batch.clone().detach().requires_grad_(True)
     x = x.clone()
     x.requires_grad_(True)
     # model.no_grad()
     output = f(x)
-    batch_size, output_dim, latent_dim = *output.shape, x.shape[-1]
+    batch_size, output_dim, input_dim = *output.shape, x.shape[-1]
 
     # Use autograd's grad function to get gradients for each output dimension
-    jacobian = torch.zeros(batch_size, output_dim, latent_dim).to(x.device)
+    jacobian = torch.zeros(batch_size, output_dim, input_dim).to(x.device)
     for i in range(output_dim):
         grad_outputs = torch.zeros(batch_size, output_dim).to(x.device)
         grad_outputs[:, i] = 1.0
@@ -243,11 +245,22 @@ def jacobian(func, inputs):
     return compute_jacobian_function(func, inputs)
 
 def velocity(cc, ts, x0, x1):
+    '''
+    Compute the velocity of the curve at each time point.
+    Args:
+        cc: Curve module
+        ts: torch.Tensor, [T]
+        x0: torch.Tensor, [B, D]
+        x1: torch.Tensor, [B, D]
+    Output:
+        velocities: torch.Tensor, [T, B, D]
+    '''
     tsc = ts.clone()
     tsc.requires_grad_(True)
     out = cc(x0, x1, tsc)
     orig_shape = out.size()
     out = out.flatten(1,2)
+
     jacobian = torch.zeros(*out.size()).to(tsc.device)
     jac = torch.zeros(*out.size()).to(tsc.device)
     for i in range(out.size(1)):
@@ -255,6 +268,7 @@ def velocity(cc, ts, x0, x1):
         grad_outputs[:, i] = 1.0
         jac[:,i] = grad(outputs=out, inputs=tsc, grad_outputs=grad_outputs, create_graph=True, retain_graph=True, only_inputs=True)[0]
     jac = jac.reshape(*orig_shape)
+    
     return jac
 
 class MLP(nn.Module):
