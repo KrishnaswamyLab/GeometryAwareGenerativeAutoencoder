@@ -16,7 +16,7 @@ import warnings
 
 def compute_jacobian_function(f, x, create_graph=True, retain_graph=True):
     """
-    Compute the Jacobian of the f wrt a batch of points in the latent space using an efficient broadcasting approach.
+    Compute the Jacobian of function f wrt x using an efficient broadcasting approach.
     Args:
         f: The function to compute the Jacobian of. f: (B, D) -> (B, n).
         x: (B, D) A batch of points in the dim D.
