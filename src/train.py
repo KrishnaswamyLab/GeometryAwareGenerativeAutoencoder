@@ -92,9 +92,17 @@ def load_data(cfg):
     phate_coords = phate_coords[train_mask,:]
     colors = colors[train_mask]
     dist = dist[train_mask,:][:,train_mask]
+    mask_x = data.get('mask_x', None)
+    mask_d = data.get('mask_d', None)
+    if mask_x is not None:
+        mask_x = mask_x[train_mask,:]
+    if mask_d is not None:
+        mask_d = mask_d[train_mask,:][:,train_mask]
     trainloader, valloader, mean, std = train_valid_loader_from_pc(
         X, # <---- Pointcloud
         dist, # <---- Distance matrix to match
+        mask_x=mask_x,
+        mask_d=mask_d,
         batch_size=cfg.training.batch_size,
         train_valid_split=cfg.training.train_valid_split,
         shuffle=cfg.training.shuffle,
