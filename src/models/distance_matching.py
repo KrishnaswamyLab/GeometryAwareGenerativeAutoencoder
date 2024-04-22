@@ -227,8 +227,15 @@ class DistanceMatching(GeometricAE):
             train_model(cfg, model.decoder, train_loader, val_loader, logger, checkpoint_callback)
         else:
             raise ValueError('Invalid training mode')            
+        ckpt = torch.load(model_save_path + '.ckpt')
+        print(ckpt['state_dict'].keys())
 
-        model.load_from_checkpoint(model_save_path + '.ckpt')
+        if cfg.training.mode == 'encoder':
+            model.encoder.load_from_checkpoint(model_save_path + '.ckpt')
+        elif cfg.training.mode == 'decoder':
+            model.decoder.load_from_checkpoint(model_save_path + '.ckpt')
+        else:
+            model.load_from_checkpoint(model_save_path + '.ckpt')
 
         self.encoder = model.encoder
         self.decoder = model.decoder
@@ -263,6 +270,7 @@ class DistanceMatching(GeometricAE):
 
 
 if __name__ == "__main__":
+    mode = 'encoder'
     model_hypers = {
         'ambient_dimension': 10,
         'latent_dimension': 2,
@@ -276,7 +284,7 @@ if __name__ == "__main__":
     }
     training_hypers = {
         'data_name': 'randomtest',
-        'mode': 'end2end', # 'encoder', 'decoder', 'end2end', 'separate
+        'mode': mode, # 'encoder', 'decoder', 'end2end', 'separate
         'max_epochs': 1,
         'batch_size': 64,
         'lr': 1e-3,
@@ -289,8 +297,8 @@ if __name__ == "__main__":
         'seed': 2024,
         'log_every_n_steps': 100,
         'accelerator': 'auto',
-        'train_from_scratch': False,
-        'model_save_path': './distance_matching/model'
+        'train_from_scratch': True,
+        'model_save_path': f'./distance_matching_{mode}/model'
     }
     # Test AffinityMatching model
     X = np.random.randn(100, 10) # 3000 samples, 10 features
