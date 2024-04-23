@@ -72,7 +72,8 @@ class PointCloudDataset(torch.utils.data.Dataset):
         dist_mat = self.distances[batch_idxs][:,batch_idxs]
         batch['d'] = dist_mat[np.triu_indices(dist_mat.size(0), k=1)]
         if self.mask_d is not None:
-            batch['md'] = self.mask_d[batch_idxs][:,batch_idxs]
+            mask_d_mat = self.mask_d[batch_idxs][:,batch_idxs]
+            batch['md'] = mask_d_mat[np.triu_indices(mask_d_mat.size(0), k=1)]
         if self.mask_x is not None:
             batch['mx'] = self.mask_x[batch_idxs]
 

@@ -123,6 +123,7 @@ class Decoder(pl.LightningModule):
         if mask is None:
             return torch.nn.functional.mse_loss(x_norm, xhat_norm)
         else:
+            print('mx used')
             return (torch.square(x_norm - xhat_norm) * mask).sum() / mask.sum()
 
     def step(self, batch, batch_idx, stage):

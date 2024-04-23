@@ -12,6 +12,7 @@ from model2 import Autoencoder, Preprocessor
 
 @hydra.main(version_base=None, config_path='../config', config_name='config')
 def main(cfg: DictConfig):
+    print(OmegaConf.to_yaml(cfg))  # This prints the entire configuration to the console
     if cfg.logger.use_wandb:
         config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
         run = wandb.init(
@@ -83,19 +84,22 @@ def load_data(cfg):
     data_path = os.path.join(cfg.data.root, cfg.data.name + cfg.data.filetype)
     data = np.load(data_path, allow_pickle=True)
     X = data['data'].astype(np.float32)
-    phate_coords = data['phate'].astype(np.float32)
+    # phate_coords = data['phate'].astype(np.float32)
     colors = data['colors']
     dist = data['dist'].astype(np.float32)
     dist_std = np.std(dist.flatten())
     train_mask = data['is_train'].astype(bool) # !!! Fixed bug: when mask is not boolean it is problematic!
     X = X[train_mask,:]
-    phate_coords = phate_coords[train_mask,:]
+    # phate_coords = phate_coords[train_mask,:]
+    phate_coords = None
     colors = colors[train_mask]
     dist = dist[train_mask,:][:,train_mask]
     mask_x = data.get('mask_x', None)
     mask_d = data.get('mask_d', None)
     if mask_x is not None:
-        mask_x = mask_x[train_mask,:]
+        mask_x = mask_x[train_mask]
+        if len(mask_x.shape) == 1:
+            mask_x = mask_x.reshape(-1,1)
     if mask_d is not None:
         mask_d = mask_d[train_mask,:][:,train_mask]
     trainloader, valloader, mean, std = train_valid_loader_from_pc(

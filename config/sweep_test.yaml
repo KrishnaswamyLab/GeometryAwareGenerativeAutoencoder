@@ -22,7 +22,9 @@ parameters:
   decoder.dropout:
     values: [0.2]
   training.mode:
-    values: ['end2end','separate','encoder','decoder']
+    # values: ['end2end','separate','encoder','decoder']
+    # values: ['end2end','separate']
+    values: ['end2end']
   training.max_epochs:
     values: [3]
   loss.dist_mse_decay:
@@ -35,5 +37,10 @@ parameters:
     values: [1]
   loss.weights.cycle_dist:
     values: [1]
-  
+  data.root:
+    values: ['../toy_data/converted']
+  data.name: 
+    values: ['make_mix_surface_masked']
+  logger.use_wandb:
+    values: [false]
   
