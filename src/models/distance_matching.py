@@ -188,7 +188,12 @@ class DistanceMatching(GeometricAE):
         self.device = device
 
         if train_from_scratch is False:
-            model.load_from_checkpoint(model_save_path + '.ckpt')
+            if cfg.training.mode == 'encoder':
+                model.encoder.load_from_checkpoint(model_save_path + '.ckpt')
+            elif cfg.training.mode == 'decoder':
+                model.decoder.load_from_checkpoint(model_save_path + '.ckpt')
+            else:
+                model.load_from_checkpoint(model_save_path + '.ckpt')
             print(f'Loaded encoder from {model_save_path}, skipping encoder training ...')
             print(f'Loaded decoder from {model_save_path}, skipping decoder training ...')
 
@@ -227,8 +232,8 @@ class DistanceMatching(GeometricAE):
             train_model(cfg, model.decoder, train_loader, val_loader, logger, checkpoint_callback)
         else:
             raise ValueError('Invalid training mode')            
-        ckpt = torch.load(model_save_path + '.ckpt')
-        print(ckpt['state_dict'].keys())
+        # ckpt = torch.load(model_save_path + '.ckpt')
+        # print(ckpt['state_dict'].keys())
 
         if cfg.training.mode == 'encoder':
             model.encoder.load_from_checkpoint(model_save_path + '.ckpt')
@@ -316,8 +321,8 @@ if __name__ == "__main__":
     # print('X: ', X.shape, 'metric: ', metric.shape)
 
     #geodesic pullback
-    T = 5
-    X_tb = np.random.randn(16, T, 10)
-    X_tb = torch.tensor(X_tb, dtype=torch.float32)
-    metric_tb = model.geodesic_encoder_pullback(X_tb)
-    print('X_tb: ', X_tb.shape, 'metric_tb: ', metric_tb.shape)
+    # T = 5
+    # X_tb = np.random.randn(16, T, 10)
+    # X_tb = torch.tensor(X_tb, dtype=torch.float32)
+    # metric_tb = model.geodesic_encoder_pullback(X_tb)
+    # print('X_tb: ', X_tb.shape, 'metric_tb: ', metric_tb.shape)
