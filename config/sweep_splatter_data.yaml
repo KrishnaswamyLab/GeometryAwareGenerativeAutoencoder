@@ -1,0 +1,45 @@
+project: dmae
+program: train.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: validation/loss
+  goal: minimize
+parameters:
+  data.root: 
+    values: ['../synthetic_data4']
+  data.name:
+    values: ['noisy_1_groups_17580_3000_1_0.18_0.5_all','noisy_1_groups_17580_3000_1_0.25_0.5_all','noisy_1_groups_17580_3000_1_0.5_0.5_all','noisy_1_groups_17580_3000_1_0_0.5_all','noisy_1_paths_17580_3000_1_0.18_0.5_all','noisy_1_paths_17580_3000_1_0.25_0.5_all','noisy_1_paths_17580_3000_1_0.5_0.5_all','noisy_1_paths_17580_3000_1_0_0.5_all','noisy_2_groups_17580_3000_1_0.18_0.5_all','noisy_2_groups_17580_3000_1_0.25_0.5_all','noisy_2_groups_17580_3000_1_0.5_0.5_all','noisy_2_groups_17580_3000_1_0_0.5_all','noisy_2_paths_17580_3000_1_0.18_0.5_all','noisy_2_paths_17580_3000_1_0.25_0.5_all','noisy_2_paths_17580_3000_1_0.5_0.5_all','noisy_2_paths_17580_3000_1_0_0.5_all','noisy_3_groups_17580_3000_1_0.18_0.5_all','noisy_3_groups_17580_3000_1_0.25_0.5_all','noisy_3_groups_17580_3000_1_0.5_0.5_all','noisy_3_groups_17580_3000_1_0_0.5_all','noisy_3_paths_17580_3000_1_0.18_0.5_all','noisy_3_paths_17580_3000_1_0.25_0.5_all','noisy_3_paths_17580_3000_1_0.5_0.5_all','noisy_3_paths_17580_3000_1_0_0.5_all','noisy_4_groups_17580_3000_1_0.18_0.5_all','noisy_4_groups_17580_3000_1_0.25_0.5_all','noisy_4_groups_17580_3000_1_0.5_0.5_all','noisy_4_groups_17580_3000_1_0_0.5_all','noisy_4_paths_17580_3000_1_0.18_0.5_all','noisy_4_paths_17580_3000_1_0.25_0.5_all','noisy_4_paths_17580_3000_1_0.5_0.5_all','noisy_4_paths_17580_3000_1_0_0.5_all','noisy_5_groups_17580_3000_1_0.18_0.5_all','noisy_5_groups_17580_3000_1_0.25_0.5_all','noisy_5_groups_17580_3000_1_0.5_0.5_all','noisy_5_groups_17580_3000_1_0_0.5_all','noisy_5_paths_17580_3000_1_0.18_0.5_all','noisy_5_paths_17580_3000_1_0.25_0.5_all','noisy_5_paths_17580_3000_1_0.5_0.5_all','noisy_5_paths_17580_3000_1_0_0.5_all']
+  dimensions.latent:
+    values: [2]
+  encoder.layer_widths: 
+    values: [[256,128,64]]
+  encoder.batch_norm: 
+    values: [true]
+  encoder.dropout: 
+    values: [0.2]
+  decoder.layer_widths: 
+    values: [[64,128,256]]
+  decoder.batch_norm:
+    values: [true]
+  decoder.dropout:
+    values: [0.2]
+  training.mode:
+    values: ['end2end','separate']
+  training.max_epochs:
+    values: [50]
+  loss.dist_mse_decay:
+    values: [0.5]
+  loss.weights.dist:
+    values: [0.9]
+  loss.weights.reconstr:
+    values: [0.1]
+  loss.weights.cycle:
+    values: [0.]
+  loss.weights.cycle_dist:
+    values: [0]
+  
+  

@@ -58,19 +58,26 @@ class Encoder(pl.LightningModule):
             x = self.preprocessor.normalize(x)
         return self.mlp(x)
     
-    def loss_function(self, dist_gt_norm, z): # assume normalized.
+    def loss_function(self, dist_gt_norm, z, mask=None): # assume normalized.
         dist_emb = torch.nn.functional.pdist(z)
         if self.hparams.cfg.loss.dist_mse_decay > 0.:
-            return ((dist_emb - dist_gt_norm)**2 * torch.exp(-self.hparams.cfg.loss.dist_mse_decay * dist_gt_norm)).mean()
+            if mask is None:
+                return (torch.square(dist_emb - dist_gt_norm) * torch.exp(-self.hparams.cfg.loss.dist_mse_decay * dist_gt_norm)).mean()
+            else:
+                return (torch.square(dist_emb - dist_gt_norm) * torch.exp(-self.hparams.cfg.loss.dist_mse_decay * dist_gt_norm) * mask).sum() / mask.sum()
         else:
-            return torch.nn.functional.mse_loss(dist_emb, dist_gt_norm)
+            if mask is None:
+                return torch.nn.functional.mse_loss(dist_emb, dist_gt_norm)
+            else:
+                return (torch.square(dist_emb - dist_gt_norm) * mask).sum() / mask.sum()
 
     def step(self, batch, batch_idx, stage):
         x = batch['x']
         d = batch['d']
+        mask = batch.get('md', None)
         z = self.forward(x)
         d_norm = self.preprocessor.normalize_dist(d)
-        loss = self.loss_function(d_norm, z)
+        loss = self.loss_function(d_norm, z, mask)
         self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
         return loss
 
@@ -112,11 +119,16 @@ class Decoder(pl.LightningModule):
             x = self.preprocessor.unnormalize(x)
         return x
 
-    def loss_function(self, x_norm, xhat_norm): # assume normalized.
-        return torch.nn.functional.mse_loss(x_norm, xhat_norm)
+    def loss_function(self, x_norm, xhat_norm, mask=None): # assume normalized.
+        if mask is None:
+            return torch.nn.functional.mse_loss(x_norm, xhat_norm)
+        else:
+            print('mx used')
+            return (torch.square(x_norm - xhat_norm) * mask).sum() / mask.sum()
 
     def step(self, batch, batch_idx, stage):
         x = batch['x']
+        mask = batch.get('mx', None)
         if self.use_encoder:
             assert self.encoder is not None
             with torch.no_grad():
@@ -126,7 +138,7 @@ class Decoder(pl.LightningModule):
             z = batch['z'] # after encoder is trained, do we need to make a new dataset?
         x = self.preprocessor.normalize(x)
         xhat = self.forward(z, unnormalize=False)
-        loss = self.loss_function(x, xhat)
+        loss = self.loss_function(x, xhat, mask)
         self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
         return loss
 
@@ -161,36 +173,41 @@ class Autoencoder(pl.LightningModule):
     def end2end_step(self, batch, batch_idx, stage):
         x = batch['x']
         d = batch['d']
+        mask_d = batch.get('md', None)
+        mask_x = batch.get('mx', None)
         x_norm = self.encoder.preprocessor.normalize(x)
         zhat = self.encoder(x)
         d_norm = self.encoder.preprocessor.normalize_dist(d)
         xhat_norm = self.decoder(zhat, unnormalize=False)
-        loss = self.loss_function(xhat_norm, x_norm, zhat, d_norm, stage)
+        loss = self.loss_function(xhat_norm, x_norm, zhat, d_norm, stage, mask_d, mask_x)
         return loss
 
-    def loss_function(self, xhat_norm, x_norm, zhat, d_norm, stage):
+    def loss_function(self, xhat_norm, x_norm, zhat, d_norm, stage, mask_d=None, mask_x=None):
         """output are the outputs of forward method"""
         # x, x_hat: [B, D]; z: [B, emb_dim]; gt_dist: [B, (B-1)/2]
         loss = 0.0
         assert self.hparams.cfg.loss.weights.dist + self.hparams.cfg.loss.weights.reconstr > 0.0, "At least one loss must be enabled"
         if self.hparams.cfg.loss.weights.dist > 0.0:
-            dl = self.encoder.loss_function(d_norm, zhat)
+            dl = self.encoder.loss_function(d_norm, zhat, mask_d)
             self.log(f'{stage}/dist_loss', dl, prog_bar=True, on_epoch=True)
             loss += self.hparams.cfg.loss.weights.dist * dl
 
         if self.hparams.cfg.loss.weights.reconstr > 0.0:
-            rl = self.decoder.loss_function(x_norm, xhat_norm)
+            rl = self.decoder.loss_function(x_norm, xhat_norm, mask_x)
             self.log(f'{stage}/reconstr_loss', rl, prog_bar=True, on_epoch=True)
             loss += self.hparams.cfg.loss.weights.reconstr * rl
 
         if self.hparams.cfg.loss.weights.cycle + self.hparams.cfg.loss.weights.cycle_dist > 0.0:
             z2 = self.encoder(xhat_norm, normalize=False)
             if self.hparams.cfg.loss.weights.cycle > 0.0:
-                l2 = torch.nn.functional.mse_loss(zhat, z2)
+                if mask_x is None:
+                    l2 = torch.nn.functional.mse_loss(zhat, z2)
+                else:
+                    l2 = (torch.square(zhat - z2) * mask_x).sum() / mask_x.sum()
                 self.log(f'{stage}/cycle_loss', l2, prog_bar=True, on_epoch=True)
                 loss += self.hparams.cfg.loss.weights.cycle * l2
             if self.hparams.cfg.loss.weights.cycle_dist > 0.0:
-                l3 = self.encoder.loss_function(d_norm, z2)
+                l3 = self.encoder.loss_function(d_norm, z2, mask_d)
                 self.log(f'{stage}/cycle_dist_loss', l3, prog_bar=True, on_epoch=True)
                 loss += self.hparams.cfg.loss.weights.cycle_dist * l3
         return loss
