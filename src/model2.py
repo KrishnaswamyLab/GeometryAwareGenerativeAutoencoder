@@ -59,7 +59,7 @@ class Encoder(pl.LightningModule):
         return self.mlp(x)
     
     def negative_sampling_loss(self, x, negative_x, z, negative_z, margin=1.0, loss_type='triplet'):
-    '''Negative sampling loss for contrastive learning'''
+        '''Negative sampling loss for contrastive learning'''
         loss = 0.0
         if loss_type == 'triplet':
             # distances between z and negative_z
