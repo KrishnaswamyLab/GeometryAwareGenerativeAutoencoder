@@ -58,6 +58,22 @@ class Encoder(pl.LightningModule):
             x = self.preprocessor.normalize(x)
         return self.mlp(x)
     
+    def negative_sampling_loss(self, x, negative_x, z, negative_z, margin=1.0, loss_type='triplet'):
+        '''Negative sampling loss for contrastive learning'''
+        loss = 0.0
+        if loss_type == 'triplet':
+            # distances between z and negative_z
+            d_z_zneg = torch.nn.functional.pairwise_distance(z, negative_z, p=1)
+            # distances between z and z
+            d_z_z = torch.nn.functional.pdist(z, p=1)
+
+            loss = torch.nn.functional.relu(d_z_z - d_z_zneg + margin).mean()
+            # TODO: distances between z and negative_z should be larger than z and x?
+        else:
+            raise ValueError(f"Invalid loss_type: {loss_type}")
+    
+        return loss
+    
     def loss_function(self, dist_gt_norm, z, mask=None): # assume normalized.
         dist_emb = torch.nn.functional.pdist(z)
         if self.hparams.cfg.loss.dist_mse_decay > 0.:

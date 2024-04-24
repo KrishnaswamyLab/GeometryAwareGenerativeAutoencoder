@@ -11,6 +11,7 @@ from model2 import Encoder, Decoder, Preprocessor, Autoencoder
 # from train import train_model
 from models.unified_model import GeometricAE
 
+from data_script import hemisphere_data, sklearn_swiss_roll
 from utils.seed import seed_everything
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
@@ -189,16 +190,20 @@ class DistanceMatching(GeometricAE):
 
         if train_from_scratch is False:
             if cfg.training.mode == 'encoder':
-                model.encoder.load_from_checkpoint(model_save_path + '.ckpt')
+                encoder = Encoder.load_from_checkpoint(model_save_path + '.ckpt')
+                self.encoder = encoder
+                self.decoder = model.decoder # a random decoder
             elif cfg.training.mode == 'decoder':
-                model.decoder.load_from_checkpoint(model_save_path + '.ckpt')
+                decoder = Decoder.load_from_checkpoint(model_save_path + '.ckpt')
+                self.decoder = decoder
+                self.encoder = model.encoder # a random encoder
             else:
-                model.load_from_checkpoint(model_save_path + '.ckpt')
+                model = Autoencoder.load_from_checkpoint(model_save_path + '.ckpt')
+                self.encoder = model.encoder
+                self.decoder = model.decoder
+            
             print(f'Loaded encoder from {model_save_path}, skipping encoder training ...')
             print(f'Loaded decoder from {model_save_path}, skipping decoder training ...')
-
-            self.encoder = model.encoder
-            self.decoder = model.decoder
 
             return
  
@@ -275,14 +280,23 @@ class DistanceMatching(GeometricAE):
 
 
 if __name__ == "__main__":
+    # Data
+    data_name = 'swiss_roll'
+    if data_name == 'swiss_roll':
+        gt_X, X, _ = sklearn_swiss_roll(n_samples=1000, noise=0.0)
+        colors = None
+    elif data_name == 'hemisphere':
+        gt_X, X, _ = hemisphere_data(n_samples=1000, noise=0.0)
+        colors = None
+
     mode = 'encoder'
     model_hypers = {
-        'ambient_dimension': 10,
+        'ambient_dimension': 3,
         'latent_dimension': 2,
         'model_type': 'distance',
         'activation': 'relu',
         'layer_widths': [256, 128, 64],
-        'knn': 5,
+        'knn': 10,
         't': 'auto',
         'n_landmark': 5000,
         'verbose': False
@@ -290,23 +304,25 @@ if __name__ == "__main__":
     training_hypers = {
         'data_name': 'randomtest',
         'mode': mode, # 'encoder', 'decoder', 'end2end', 'separate
-        'max_epochs': 1,
+        'max_epochs': 10,
         'batch_size': 64,
         'lr': 1e-3,
         'shuffle': True,
         'componentwise_std': False,
         'weight_decay': 1e-5,
-        'dist_mse_decay': 1e-5,
+        'dist_mse_decay': 0,
         'monitor': 'validation/loss',
         'patience': 100,
         'seed': 2024,
         'log_every_n_steps': 100,
         'accelerator': 'auto',
-        'train_from_scratch': True,
-        'model_save_path': f'./distance_matching_{mode}/model'
+        'train_from_scratch': False,
+        'model_save_path': f'./{data_name}_distance_matching_{mode}/model-v1'
     }
     # Test AffinityMatching model
-    X = np.random.randn(100, 10) # 3000 samples, 10 features
+    #X = np.random.randn(100, 10) # 3000 samples, 10 features
+
+    print(gt_X.shape, X.shape)
     model = DistanceMatching(**model_hypers)
     model.fit(X, train_mask=None, percent_test=0.3, **training_hypers)
 
@@ -315,6 +331,21 @@ if __name__ == "__main__":
     print('Encoded Z:', Z.shape)
     X_hat = model.decode(Z)
     print('Decoded X:', X_hat.shape)
+    phate_coords = model.phate_coords
+    print('PHATE Coords:', phate_coords.shape)
+
+    # Plot
+    import matplotlib.pyplot as plt
+    import scprep
+    fig = plt.figure(figsize=(16, 8))
+    ax = fig.add_subplot(131, projection='3d')
+    scprep.plot.scatter3d(X.detach().cpu().numpy(), c=colors, ax=ax, title='X')
+    ax = fig.add_subplot(132)
+    scprep.plot.scatter2d(Z.detach().cpu().numpy(), c=colors, ax=ax, title='Z')
+    ax = fig.add_subplot(133)
+    scprep.plot.scatter2d(phate_coords, c=colors, ax=ax, title='Phate')
+    plt.show()
+    plt.savefig(f'./distance_matching_{mode}/plot.png')
 
     # Pullback metrics
     # metric = model.encoder_pullback(X)
