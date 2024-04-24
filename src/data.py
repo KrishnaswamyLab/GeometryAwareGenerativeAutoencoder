@@ -45,9 +45,11 @@ class PointCloudDataset(torch.utils.data.Dataset):
     """
     Point Cloud Dataset
     """
-    def __init__(self, pointcloud, distances, batch_size = 64, shuffle=True):
+    def __init__(self, pointcloud, distances, mask_d=None, mask_x=None, batch_size = 64, shuffle=True):
         self.pointcloud = torch.tensor(pointcloud, dtype=torch.float32)
         self.distances = torch.tensor(distances, dtype=torch.float32)
+        self.mask_d = torch.tensor(mask_d, dtype=torch.float32) if mask_d is not None else None
+        self.mask_x = torch.tensor(mask_x, dtype=torch.float32) if mask_x is not None else None
         self.shuffle = shuffle
         self.batch_size = batch_size
 
@@ -69,11 +71,16 @@ class PointCloudDataset(torch.utils.data.Dataset):
         batch['x'] = self.pointcloud[batch_idxs]
         dist_mat = self.distances[batch_idxs][:,batch_idxs]
         batch['d'] = dist_mat[np.triu_indices(dist_mat.size(0), k=1)]
+        if self.mask_d is not None:
+            mask_d_mat = self.mask_d[batch_idxs][:,batch_idxs]
+            batch['md'] = mask_d_mat[np.triu_indices(mask_d_mat.size(0), k=1)]
+        if self.mask_x is not None:
+            batch['mx'] = self.mask_x[batch_idxs]
 
         return batch
 
-def dataloader_from_pc(pointcloud, distances, batch_size = 64, shuffle=True):
-    dataset = PointCloudDataset(pointcloud, distances, batch_size, shuffle=shuffle)
+def dataloader_from_pc(pointcloud, distances, batch_size = 64, shuffle=True, mask_d=None, mask_x=None):
+    dataset = PointCloudDataset(pointcloud=pointcloud, distances=distances, mask_d=mask_d, mask_x=mask_x, batch_size=batch_size, shuffle=shuffle)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=None, shuffle=shuffle)
 
     return dataloader
@@ -87,7 +94,9 @@ def dataloader_from_pc(pointcloud, distances, batch_size = 64, shuffle=True):
 
 def train_valid_loader_from_pc(pointcloud, distances, 
                                batch_size = 64, train_valid_split = 0.8, 
-                               shuffle=True, seed=42, return_mean_std=False, componentwise_std=False):
+                               shuffle=True, seed=42, return_mean_std=False, componentwise_std=False,
+                               mask_d=None, mask_x=None
+                               ):
     X = pointcloud
     D = distances
 
@@ -97,14 +106,30 @@ def train_valid_loader_from_pc(pointcloud, distances,
         idxs = np.random.permutation(len(X))
         X = X[idxs]
         D = D[idxs][:,idxs]
+        if mask_d is not None:
+            mask_d = mask_d[idxs][:,idxs]
+        if mask_x is not None:
+            mask_x = mask_x[idxs]
     split_idx = int(len(X)*train_valid_split)
     X_train = X[:split_idx]
     X_test = X[split_idx:]
     D_train = D[:split_idx,:split_idx]
     D_test = D[split_idx:,split_idx:]
-    
-    trainloader = dataloader_from_pc(X_train, D_train, batch_size)
-    testloader = dataloader_from_pc(X_test, D_test, batch_size)
+    if mask_d is not None:
+        mask_d_train = mask_d[:split_idx,:split_idx]
+        mask_d_test = mask_d[split_idx:,split_idx:]
+    else:
+        mask_d_train = None
+        mask_d_test = None
+    if mask_x is not None:
+        mask_x_train = mask_x[:split_idx]
+        mask_x_test = mask_x[split_idx:]
+    else:
+        mask_x_train = None
+        mask_x_test = None
+
+    trainloader = dataloader_from_pc(X_train, D_train, batch_size, mask_d=mask_d_train, mask_x=mask_x_train)
+    testloader = dataloader_from_pc(X_test, D_test, batch_size, mask_d=mask_d_test, mask_x=mask_x_test)
 
     if return_mean_std:
         if componentwise_std:

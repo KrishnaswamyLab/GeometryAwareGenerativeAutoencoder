@@ -1,0 +1,23 @@
+encoder:
+  layer_widths: [[16, 16]]
+  batch_norm: true
+  dropout: 0.2
+decoder:
+  layer_widths: [[16, 16]]
+  batch_norm: true
+  dropout: 0.2
+training:
+  mode: end2end
+  max_epochs: 3
+loss:
+  dist_mse_decay: 0.2
+  weights:
+    dist: 1
+    reconstr: 1
+    cycle: 1
+    cycle_dist: 1
+data:
+  root: '../toy_data/converted'
+  name: 'make_mix_surface_masked'
+logger:
+  use_wandb: false
