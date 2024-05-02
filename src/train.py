@@ -8,7 +8,7 @@ from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
 from omegaconf import DictConfig, OmegaConf
 
 from data import train_valid_loader_from_pc
-from model2 import Autoencoder, Preprocessor
+from model2 import Autoencoder, Preprocessor, Discriminator
 
 @hydra.main(version_base=None, config_path='../config', config_name='config')
 def main(cfg: DictConfig):
@@ -26,7 +26,10 @@ def main(cfg: DictConfig):
 
     trainloader, valloader, X, phate_coords, colors, preprocessor = load_data(cfg)
     cfg.dimensions.data = X.shape[1]
-    model = Autoencoder(cfg, preprocessor)
+    if cfg.training.mode == 'discriminator':
+        model = Discriminator(cfg, preprocessor)
+    else:
+        model = Autoencoder(cfg, preprocessor)
 
     if cfg.logger.use_wandb:
         logger = WandbLogger()
@@ -46,13 +49,15 @@ def main(cfg: DictConfig):
             mode='min'  # Minimize validation loss
         )
 
-    if cfg.training.mode == 'separate':
+    if cfg.training.mode == 'discriminator':
+        train_model(cfg, model, trainloader, valloader, logger, checkpoint_callback)
+    elif cfg.training.mode == 'separate':
         cfg.training.mode = 'encoder'
         train_model(cfg, model.encoder, trainloader, valloader, logger, checkpoint_callback)
         model.link_encoder()
         cfg.training.mode = 'decoder'
         train_model(cfg, model.decoder, trainloader, valloader, logger, checkpoint_callback)
-    elif cfg.training.mode == 'end2end': # encoder-only, decoder-only, or end-to-end
+    elif cfg.training.mode in ['end2end', 'negative', 'radius']: # encoder-only, decoder-only, or end-to-end
         train_model(cfg, model, trainloader, valloader, logger, checkpoint_callback)
     elif cfg.training.mode == 'encoder':
         train_model(cfg, model.encoder, trainloader, valloader, logger, checkpoint_callback)
