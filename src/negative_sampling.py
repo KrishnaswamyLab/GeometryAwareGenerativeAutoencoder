@@ -1,7 +1,8 @@
 import numpy as np
 from diffusionmap import DiffusionMap
+from scipy.spatial.distance import pdist, squareform
 
-def add_negative_samples(data_dict, subset_rate=0.5, noise_rate=1, seed=42, noise='gaussian', mask_dists=False):
+def add_negative_samples(data_dict, subset_rate=0.5, noise_rate=1, seed=42, noise='gaussian', mask_dists=False, neg_dist_rate=1.5, shell=True):
     np.random.seed(seed)
     data_train = data_dict['data'][data_dict['is_train']]
     subset_id = np.random.choice(data_train.shape[0], int(data_train.shape[0] * subset_rate), replace=True)
@@ -21,10 +22,18 @@ def add_negative_samples(data_dict, subset_rate=0.5, noise_rate=1, seed=42, nois
         data_subset_noisy = data_subset_noisy[subset_id]
     else:
         raise ValueError(f"Unknown noise type: {noise}")
+
     dists = data_dict['dist']
-    dists_B = np.ones((dists.shape[0], data_subset_noisy.shape[0])) * dists.std() * 3
-    dists_D = np.zeros((data_subset_noisy.shape[0], data_subset_noisy.shape[0]))
-    dists_new = np.r_[np.c_[dists, dists_B], np.c_[dists_B.T, dists_D]]
+    if shell:
+        phate_emb = data_dict['phate'] # [TODO] now only using the phate emb, should use potential?
+        negative_emb = generate_negative_samples(phate_emb, data_subset_noisy.shape[0], distance_factor=neg_dist_rate)
+        emb = np.concatenate([phate_emb, negative_emb])
+        dists_new = squareform(pdist(emb)) # [TODO] should only use training points for maximum caution.
+        data_dict['phate'] = emb
+    else:
+        dists_B = np.ones((dists.shape[0], data_subset_noisy.shape[0])) * dists.max() * neg_dist_rate
+        dists_D = np.zeros((data_subset_noisy.shape[0], data_subset_noisy.shape[0]))
+        dists_new = np.r_[np.c_[dists, dists_B], np.c_[dists_B.T, dists_D]]
 
     mask_d_A = np.ones(dists.shape, dtype=np.float32)
     mask_d_B = np.ones((dists.shape[0], data_subset_noisy.shape[0]), dtype=np.float32)
@@ -67,7 +76,34 @@ def make_hi_freq_noise(dataX, diff_map_op, noise_rate=0.1, seed=42, add_data_mea
     if add_data_mean:
         noise_noise = noise_noise + dataX.mean(axis=0)
     return noise_noise
+
+import numpy as np
+
+def calculate_bounding_radius(X):
+    centroid = np.mean(X, axis=0)
+    # Calculate distances from the centroid to all points
+    distances = np.linalg.norm(X - centroid, axis=1)  # Euclidean norm
+    # Maximum distance from the centroid to any point
+    bounding_radius = np.max(distances)
+    return bounding_radius
+
+def generate_distant_points(centroid, bounding_radius, num_points, dim, distance_factor=1.5):
+    # Generate random directions
+    directions = np.random.randn(num_points, dim)
+    directions = directions / np.linalg.norm(directions, axis=1, keepdims=True)
     
+    # Scale directions to have a radius that is beyond the bounding sphere
+    scaled_radius = bounding_radius * distance_factor
+    distant_points = centroid + directions * scaled_radius
+    return distant_points
+
+def generate_negative_samples(X, num_neg_samples, distance_factor=1.5):
+    centroid = np.mean(X, axis=0)
+    bounding_radius = calculate_bounding_radius(X)
+    num_points, dim = X.shape
+    distant_points = generate_distant_points(centroid, bounding_radius, num_neg_samples, dim, distance_factor)
+    return distant_points
+ 
 
 # def add_negative_samples(data_dict, subset_rate=0.5, noise_rate=0.2, seed=42):
 #     np.random.seed(seed)

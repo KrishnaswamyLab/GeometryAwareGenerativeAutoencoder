@@ -108,6 +108,8 @@ class GeodesicODE(pl.LightningModule):
         # batch_norm=False,
         beta=0.,
         n_pow=4,
+        discriminator_func=None,
+        discriminator_weight=1.,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -116,14 +118,23 @@ class GeodesicODE(pl.LightningModule):
         self.t = torch.linspace(0, 1, self.hparams.n_tsteps)
 
 
-    def length_loss(self, t, x):
-        x_flat = x.view(-1, x.shape[2])
-        metric_flat = pullback_metric(x_flat, self.hparams.fcn, create_graph=True, retain_graph=True)
-        xdot = self.odefunc(t, x)
-        xdot_flat = xdot.view(-1, xdot.shape[2])
-        l_flat = torch.sqrt(torch.einsum('Ni,Nij,Nj->N', xdot_flat, metric_flat, xdot_flat))
-        return l_flat.mean()# * (t[-1] - t[0]) # numerical integration, we set t in [0,1].
+    def length_loss(self, vectors_flat, jac_flat):
+        return torch.sqrt((torch.einsum("nij,nj->ni", jac_flat, vectors_flat)**2).sum(axis=1)).mean()
+        # loss = torch.sqrt(torch.square(jac_flat @ vectors_flat).sum(axis=1)).mean()
+
+
+    # def length_loss(self, t, x):
+    #     x_flat = x.view(-1, x.shape[2])
+    #     # metric_flat = pullback_metric(x_flat, self.hparams.fcn, create_graph=True, retain_graph=True)
+    #     jac_flat = jacobian(self.hparams.fcn, x_flat)
+    #     xdot = self.odefunc(t, x)
+    #     xdot_flat = xdot.view(-1, xdot.shape[2])
+    #     # l_flat = torch.sqrt(torch.einsum('Ni,Nij,Nj->N', xdot_flat, metric_flat, xdot_flat))
+    #     l_flat = torch.sqrt((torch.einsum("nij,nj->ni", jac_flat, xdot_flat)**2).sum(axis=1))
+    #     return l_flat.mean()# * (t[-1] - t[0]) # numerical integration, we set t in [0,1].
     
+
+
     def forward(self, x0):
         t = self.t
         x_t = odeint(self.odefunc, x0, t)
@@ -139,8 +150,26 @@ class GeodesicODE(pl.LightningModule):
         mpowerede_loss = 0.
         if self.hparams.beta > 0.:
             mpowerede_loss = (torch.pow(x_t[-1] - x1, self.hparams.n_pow)).mean() * self.hparams.beta
-        len_loss = self.length_loss(t, x_t)
-        loss = len_loss + self.hparams.lam * mse_loss + mpowerede_loss
+        x_flat = x_t.view(-1, x_t.shape[2])
+        # metric_flat = pullback_metric(x_flat, self.hparams.fcn, create_graph=True, retain_graph=True)
+        jac_flat = jacobian(self.hparams.fcn, x_flat)
+        xdot = self.odefunc(t, x_t)
+        xdot_flat = xdot.view(-1, xdot.shape[2])
+        # l_flat = torch.sqrt(torch.einsum('Ni,Nij,Nj->N', xdot_flat, metric_flat, xdot_flat))
+        len_loss = self.length_loss(xdot_flat, jac_flat)
+
+        # len_loss = self.length_loss(t, x_t)
+        # loss = len_loss + self.hparams.lam * mse_loss + mpowerede_loss
+        if self.hparams.discriminator_func is not None:
+            assert self.hparams.discriminator_weight > 0.
+            # loss = loss + self.discriminator_weight * (1. - self.discriminator_func.positive_proba(cc_pts_flat)).mean()
+            disc_loss = (1. - self.hparams.discriminator_func(x_flat)).mean()
+            # print(disc_loss.item())
+            # loss = loss + self.discriminator_weight * disc_loss * loss # increase the penalty for longer curves.
+            # loss = loss + self.discriminator_weight * disc_loss
+            loss = self.hparams.discriminator_weight * disc_loss * len_loss # increase the penalty for longer curves.
+
+        loss = loss + self.hparams.lam * mse_loss + mpowerede_loss
         return loss
         
     def training_step(self, batch, batch_idx):
@@ -222,7 +251,7 @@ class GeodesicODEDensity(GeodesicODE):
                 dloss = self.density_loss(x_t_flat, self.data_pts[indices])
             else:
                 dloss = self.density_loss(x_t_flat, self.data_pts)
-            loss += self.density_weight * dloss
+            loss = loss + self.density_weight * dloss
         return loss
 
 # DEPRECATED
@@ -339,7 +368,11 @@ class GeodesicBridge(pl.LightningModule):
                  num_layers,
                  lr,
                  weight_decay,
-                 n_tsteps=1000):
+                 n_tsteps=1000,
+                 discriminator_func=None,
+                 discriminator_weight=1.,
+                 multiply_loss=False,
+                ):
         super(GeodesicBridge, self).__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
@@ -356,7 +389,18 @@ class GeodesicBridge(pl.LightningModule):
                             num_layers=num_layers)
 
         self.ts = torch.linspace(0, 1, n_tsteps)
+        self.discriminator_func = discriminator_func
+        self.discriminator_weight = discriminator_weight
+        self.multiply_loss = multiply_loss
         # self.register_buffer("t", ts)
+        # if self.func is not None:
+        #     for param in self.func.parameters():
+        #         param.requires_grad = False
+        # Freeze self.discriminator if it is not None
+        # if self.discriminator is not None:
+        #     for param in self.discriminator.parameters():
+        #         param.requires_grad = False
+
 
     def forward(self, x0, x1, t):
         return self.cc(x0, x1, t)
@@ -373,6 +417,17 @@ class GeodesicBridge(pl.LightningModule):
         cc_pts_flat = cc_pts.flatten(0, 1)
         jac_flat = jacobian(self.func, cc_pts_flat)
         loss = self.length_loss(vectors_flat, jac_flat)
+        if self.discriminator_func is not None:
+            assert self.discriminator_weight > 0.
+            # loss = loss + self.discriminator_weight * (1. - self.discriminator_func.positive_proba(cc_pts_flat)).mean()
+            disc_loss = (1. - self.discriminator_func(cc_pts_flat)).mean()
+            # print(disc_loss.item())
+            # loss = loss + self.discriminator_weight * disc_loss * loss # increase the penalty for longer curves.
+            # loss = loss + self.discriminator_weight * disc_loss
+            if self.multiply_loss:
+                loss = self.discriminator_weight * disc_loss * loss # increase the penalty for longer curves.
+            else:
+                loss = loss + self.discriminator_weight * disc_loss
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -393,6 +448,20 @@ class GeodesicBridge(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
 
+    # def configure_optimizers(self):
+    #     # Collect all parameters of the model that are not part of the discriminator
+    #     if self.discriminator is not None:
+    #         # Create a set of all discriminator parameter ids
+    #         discriminator_params = set(p for p in self.discriminator.parameters())
+    #         # Filter model parameters to exclude those that are part of the discriminator
+    #         params = [p for p in self.parameters() if p not in discriminator_params]
+    #     else:
+    #         # If no discriminator, just use all parameters
+    #         params = self.parameters()
+
+    #     # Create and return the optimizer with only the desired parameters
+    #     optimizer = torch.optim.Adam(params, lr=self.lr, weight_decay=self.weight_decay)
+    #     return optimizer
 
 class GeodesicBridgeDensity(GeodesicBridge):
     def __init__(self,
@@ -454,7 +523,7 @@ class GeodesicBridgeDensity(GeodesicBridge):
                 dloss = self.density_loss(cc_pts_flat, self.data_pts[indices])
             else:
                 dloss = self.density_loss(cc_pts_flat, self.data_pts)
-            loss += self.density_weight * dloss
+            loss = loss + self.density_weight * dloss
         return loss
 
 # [DEPRECATED] Use GeodesicBridgeDensity and set euclidean=True.
@@ -506,8 +575,8 @@ class GeodesicBridgeDensityEuc(GeodesicBridgeDensity):
                 dloss = self.density_loss(cc_pts_flat, self.data_pts[indices])
             else:
                 dloss = self.density_loss(cc_pts_flat, self.data_pts)
-            loss += self.density_weight * dloss
+            loss = loss + self.density_weight * dloss
         if self.normalize_weight > 0:
             nloss = torch.square(torch.square(vectors_flat).sum(axis=1) - 1).mean()
-            loss += self.normalize_weight * nloss
+            loss = loss + self.normalize_weight * nloss
         return loss

@@ -5,6 +5,35 @@ By the way refactor and clean up.
 
 import torch
 import pytorch_lightning as pl
+import torch.nn as nn
+import numpy as np
+import torch.nn as nn
+import torch.nn.functional as F
+
+def calculate_bounding_radius(X, centroid):
+    # centroid = torch.mean(X, dim=0)
+    # Calculate distances from the centroid to all points
+    distances = torch.norm(X - centroid, dim=1, p=2)  # Euclidean norm
+    # Maximum distance from the centroid to any point
+    bounding_radius = torch.max(distances)
+    return bounding_radius
+
+def generate_distant_points(centroid, bounding_radius, num_points, dim, distance_factor=1.5):
+    # Generate random directions
+    directions = torch.randn(num_points, dim, device=centroid.device, dtype=centroid.dtype)
+    directions = directions / directions.norm(dim=1, keepdim=True)
+    
+    # Scale directions to have a radius that is beyond the bounding sphere
+    scaled_radius = bounding_radius * distance_factor
+    distant_points = centroid + directions * scaled_radius
+    return distant_points
+
+def generate_negative_samples(X, num_neg_samples, distance_factor=1.5):
+    centroid = torch.mean(X, dim=0)
+    bounding_radius = calculate_bounding_radius(X, centroid)
+    num_points, dim = X.shape
+    distant_points = generate_distant_points(centroid, bounding_radius, num_neg_samples, dim, distance_factor)
+    return distant_points
 
 activation_dict = {
     'relu': torch.nn.ReLU(),
@@ -192,7 +221,7 @@ class Autoencoder(pl.LightningModule):
         mask_d = batch.get('md', None)
         mask_x = batch.get('mx', None)
         x_norm = self.encoder.preprocessor.normalize(x)
-        zhat = self.encoder(x)
+        zhat = self.encoder(x_norm)
         d_norm = self.encoder.preprocessor.normalize_dist(d)
         xhat_norm = self.decoder(zhat, unnormalize=False)
         loss = self.loss_function(xhat_norm, x_norm, zhat, d_norm, stage, mask_d, mask_x)
@@ -228,6 +257,67 @@ class Autoencoder(pl.LightningModule):
                 loss += self.hparams.cfg.loss.weights.cycle_dist * l3
         return loss
     
+        
+    def negative_step(self, batch, batch_idx, stage):
+        x = batch['x']
+        d = batch['d']
+        mask_x = batch.get('mx', None).flatten().bool()
+        mask_d = mask_x.reshape(-1,1) & mask_x.reshape(1,-1) 
+        mask_d = mask_d[np.triu_indices(mask_d.size(0), k=1)]
+        assert self.hparams.cfg.loss.weights.negative > 0.
+        assert mask_x is not None, "Noisy negative sampling requires mask_x"
+        x_norm = self.encoder.preprocessor.normalize(x)
+        x_norm_p = x_norm[mask_x]
+        zhat = self.encoder(x_norm)
+        zp = zhat[mask_x]
+        zn = zhat[~mask_x]
+        zmeans = zp.mean(axis=0)
+        zstds = zp.std(axis=0)
+        # noise = torch.randn_like(zn) * zstds * 3. + zmeans
+        noise = generate_negative_samples(zp, zn.size(0))
+        dp = d[mask_d]
+        d_norm_p = self.encoder.preprocessor.normalize_dist(dp)
+        xhat_norm_p = self.decoder(zp, unnormalize=False)
+        loss_p = self.loss_function(xhat_norm_p, x_norm_p, zp, d_norm_p, stage, None, None)
+        # loss_n = nn.functional.mse_loss(zn, noise)
+        self.log(f'{stage}/loss_negative', loss_n, prog_bar=True, on_epoch=True)
+        loss = loss_p + self.hparams.cfg.loss.weights.negative * loss_n
+        return loss
+
+    def radius_loss(self, zp, zn, margin=0., distance_factor=1.1):
+        centroid = zp.mean(axis=0)
+        r2p = torch.square(calculate_bounding_radius(zp, centroid)) * distance_factor
+        r2n = torch.square(zn - centroid)
+        loss = torch.nn.functional.relu(r2p - r2n + margin).mean()
+        return loss
+
+    def radius_step(self, batch, batch_idx, stage):
+        x = batch['x']
+        d = batch['d']
+        mask_x = batch.get('mx', None).flatten().bool()
+        mask_d = mask_x.reshape(-1,1) & mask_x.reshape(1,-1) 
+        mask_d = mask_d[np.triu_indices(mask_d.size(0), k=1)]
+        assert self.hparams.cfg.loss.weights.negative > 0.
+        assert mask_x is not None, "Noisy negative sampling requires mask_x"
+        x_norm = self.encoder.preprocessor.normalize(x)
+        x_norm_p = x_norm[mask_x]
+        zhat = self.encoder(x_norm)
+        zp = zhat[mask_x]
+        zn = zhat[~mask_x]
+        # zmeans = zp.mean(axis=0)
+        # zstds = zp.std(axis=0)
+        # noise = torch.randn_like(zn) * zstds * 3. + zmeans
+        # noise = generate_negative_samples(zp, zn.size(0))
+        dp = d[mask_d]
+        d_norm_p = self.encoder.preprocessor.normalize_dist(dp)
+        xhat_norm_p = self.decoder(zp, unnormalize=False)
+        loss_p = self.loss_function(xhat_norm_p, x_norm_p, zp, d_norm_p, stage, None, None)
+        # loss_n = nn.functional.mse_loss(zn, noise)
+        loss_n = self.radius_loss(zp, zn)
+        self.log(f'{stage}/loss_negative', loss_n, prog_bar=True, on_epoch=True)
+        loss = loss_p + self.hparams.cfg.loss.weights.negative * loss_n
+        return loss
+    
     def step(self, batch, batch_idx, stage):
         if self.hparams.cfg.training.mode == 'end2end':
             loss = self.end2end_step(batch, batch_idx, stage)
@@ -235,11 +325,15 @@ class Autoencoder(pl.LightningModule):
             loss = self.encoder.step(batch, batch_idx, f'{stage}_encoder')
         elif self.hparams.cfg.training.mode == 'decoder':
             loss = self.decoder.step(batch, batch_idx, f'{stage}_decoder')
+        elif self.hparams.cfg.training.mode == 'negative':
+            loss = self.negative_step(batch, batch_idx, stage)
+        elif self.hparams.cfg.training.mode == 'radius':
+            loss = self.radius_step(batch, batch_idx, stage)
         else:
             raise ValueError(f"Invalid training mode: {self.hparams.cfg.training.mode}")
         self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
         return loss
-        
+
     def training_step(self, batch, batch_idx):
         loss = self.step(batch, batch_idx, 'train')
         return loss
@@ -260,7 +354,7 @@ class Autoencoder(pl.LightningModule):
             return torch.optim.Adam(self.encoder.parameters(), lr=self.hparams.cfg.training.lr, weight_decay=self.hparams.cfg.training.weight_decay)
         elif self.hparams.cfg.training.mode == 'decoder':
             return torch.optim.Adam(self.decoder.parameters(), lr=self.hparams.cfg.training.lr, weight_decay=self.hparams.cfg.training.weight_decay)
-        elif self.hparams.cfg.training.mode == 'end2end':
+        elif self.hparams.cfg.training.mode in ['end2end','negative', 'radius']:
             return torch.optim.Adam(self.parameters(), lr=self.hparams.cfg.training.lr, weight_decay=self.hparams.cfg.training.weight_decay)
         else:
             raise ValueError(f"Invalid training mode: {self.hparams.cfg.training.mode}")
@@ -290,3 +384,29 @@ class Preprocessor(torch.nn.Module):
             std=self.std,
             dist_std=self.dist_std
         )
+
+class Discriminator(Encoder):
+    def __init__(self, cfg, preprocessor):
+        super().__init__(cfg, preprocessor)
+        self.preprocessor = preprocessor
+        cfg.loss.dist_mse_decay = cfg.loss.get('dist_mse_decay', 0.)
+        in_dim = cfg.dimensions.get('data')
+        # out_dim = cfg.dimensions.get('latent')
+        out_dim = 2
+        self.save_hyperparameters()
+        self.mlp = MLP(cfg.encoder, in_dim, out_dim)
+    
+    def step(self, batch, batch_idx, stage):
+        x = batch['x']
+        d = batch['d']
+        mask = batch.get('mx', None)
+        assert mask is not None
+        y = mask.flatten().long()
+        logits = self(x)
+        loss = nn.CrossEntropyLoss()(logits, y)
+        self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
+        return loss
+    
+    def positive_proba(self, x, normalize=True):
+        logits = self(x, normalize=normalize)
+        return F.softmax(logits, dim=1)[:, 1]
