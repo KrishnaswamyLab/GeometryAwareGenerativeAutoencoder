@@ -419,6 +419,7 @@ class GeodesicBridge(pl.LightningModule):
         self.points_penalty = None
         if points_penalty_alpha > 0.:
             self.points_penalty = points_penalty_alpha * (self.ts - self.ts.mean())**points_penalty_power + 1
+            self.points_penalty = self.points_penalty / self.points_penalty.sum()
             # self.points_penalty = points_penalty_alpha * (self.ts - self.ts.mean())**points_penalty_power
         self.disc_use_max = disc_use_max
         self.points_penalty_grad = points_penalty_grad
