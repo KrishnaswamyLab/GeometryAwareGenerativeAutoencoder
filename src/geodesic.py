@@ -370,8 +370,10 @@ class GeodesicBridge(pl.LightningModule):
                  weight_decay,
                  n_tsteps=1000,
                  discriminator_func=None,
-                 discriminator_weight=1.,
+                 discriminator_weight=0.,
                  multiply_loss=False,
+                 discriminator_func_for_grad=None,
+                 discriminator_func_for_grad_weight=1.
                 ):
         super(GeodesicBridge, self).__init__()
         self.input_dim = input_dim
@@ -392,6 +394,8 @@ class GeodesicBridge(pl.LightningModule):
         self.discriminator_func = discriminator_func
         self.discriminator_weight = discriminator_weight
         self.multiply_loss = multiply_loss
+        self.discriminator_func_for_grad = discriminator_func_for_grad
+        self.discriminator_func_for_grad_weight = discriminator_func_for_grad_weight
         # self.register_buffer("t", ts)
         # if self.func is not None:
         #     for param in self.func.parameters():
@@ -428,6 +432,13 @@ class GeodesicBridge(pl.LightningModule):
                 loss = self.discriminator_weight * disc_loss * loss # increase the penalty for longer curves.
             else:
                 loss = loss + self.discriminator_weight * disc_loss
+        if self.discriminator_func_for_grad is not None:
+            assert self.discriminator_func_for_grad_weight > 0.
+            disc_jac = jacobian(self.discriminator_func_for_grad, cc_pts_flat).squeeze()
+            disc_jac_normalized = disc_jac / torch.sqrt(torch.square(disc_jac).sum(axis=1)).reshape(-1,1)
+            prj_lengths = (vectors_flat * disc_jac_normalized).sum(axis=1)
+            prj_loss = torch.square(prj_lengths).mean()
+            loss = loss + self.discriminator_func_for_grad_weight * prj_loss
         return loss
 
     def training_step(self, batch, batch_idx):
