@@ -63,43 +63,12 @@ class ODEFunc(nn.Module):
     def forward(self, t, x):
         return self.net(x)
 
-# class MLP(torch.nn.Module):
-#     def __init__(self, dim, out_dim=None, layer_widths=[64, 64, 64], activation_fn=torch.nn.ReLU(), dropout=0.0, batch_norm=False):
-#         super().__init__()
-#         if out_dim is None:
-#             out_dim = dim // 2
-#         if len(layer_widths) < 2:
-#             raise ValueError("layer_widths list must contain at least 2 elements")
-
-#         layers = []
-#         for i, width in enumerate(layer_widths):
-#             if i == 0:  # First layer, input dimension to first layer width
-#                 layers.append(torch.nn.Linear(dim, width))
-#             else:  # Subsequent layers, previous layer width to current layer width
-#                 layers.append(torch.nn.Linear(layer_widths[i-1], width))
-
-#             if batch_norm:
-#                 layers.append(torch.nn.BatchNorm1d(width))
-
-#             layers.append(activation_fn)
-
-#             if dropout > 0:
-#                 layers.append(torch.nn.Dropout(dropout))
-
-#         layers.append(torch.nn.Linear(layer_widths[-1], out_dim))
-#         self.net = torch.nn.Sequential(*layers)
-
-#     def forward(self, x):
-#         return self.net(x)
-
-
 class GeodesicODE(pl.LightningModule):
     def __init__(self, 
         fcn, # encoder/decoder
-        in_dim=2, 
+        in_dim=2,
         hidden_dim=64, 
         n_tsteps=1000, # num of t steps for length evaluation
-        lam=10, # regularization for end point
         # layer_widths=[64, 64, 64], 
         # activation_fn=torch.nn.ReLU(), 
         lr=1e-3, 
@@ -108,8 +77,15 @@ class GeodesicODE(pl.LightningModule):
         # batch_norm=False,
         beta=0.,
         n_pow=4,
+        len_weight=1.,
+        endpts_weight=1., # regularization for end point
         discriminator_func=None,
-        discriminator_weight=1.,
+        discriminator_weight=0.,
+        discriminator_func_for_grad=None,
+        discriminator_func_for_grad_weight=1.,
+        data_pts=None,
+        density_weight=0.0,
+        eps = 1e-5,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -120,20 +96,6 @@ class GeodesicODE(pl.LightningModule):
 
     def length_loss(self, vectors_flat, jac_flat):
         return torch.sqrt((torch.einsum("nij,nj->ni", jac_flat, vectors_flat)**2).sum(axis=1)).mean()
-        # loss = torch.sqrt(torch.square(jac_flat @ vectors_flat).sum(axis=1)).mean()
-
-
-    # def length_loss(self, t, x):
-    #     x_flat = x.view(-1, x.shape[2])
-    #     # metric_flat = pullback_metric(x_flat, self.hparams.fcn, create_graph=True, retain_graph=True)
-    #     jac_flat = jacobian(self.hparams.fcn, x_flat)
-    #     xdot = self.odefunc(t, x)
-    #     xdot_flat = xdot.view(-1, xdot.shape[2])
-    #     # l_flat = torch.sqrt(torch.einsum('Ni,Nij,Nj->N', xdot_flat, metric_flat, xdot_flat))
-    #     l_flat = torch.sqrt((torch.einsum("nij,nj->ni", jac_flat, xdot_flat)**2).sum(axis=1))
-    #     return l_flat.mean()# * (t[-1] - t[0]) # numerical integration, we set t in [0,1].
-    
-
 
     def forward(self, x0):
         t = self.t
@@ -142,33 +104,54 @@ class GeodesicODE(pl.LightningModule):
 
     def step(self, batch, batch_idx):
         t = self.t
-        x0, x1 = batch
+        x0, x1 = batch # [B, D]
         x_t = self.forward(x0)
-        mse_loss = F.mse_loss(x_t[-1], x1)
+
+        mse_loss = F.mse_loss(x_t[-1], x1) # endpoint loss
         if self.pretraining:
             return mse_loss
         mpowerede_loss = 0.
         if self.hparams.beta > 0.:
             mpowerede_loss = (torch.pow(x_t[-1] - x1, self.hparams.n_pow)).mean() * self.hparams.beta
-        x_flat = x_t.view(-1, x_t.shape[2])
-        # metric_flat = pullback_metric(x_flat, self.hparams.fcn, create_graph=True, retain_graph=True)
-        jac_flat = jacobian(self.hparams.fcn, x_flat)
-        xdot = self.odefunc(t, x_t)
-        xdot_flat = xdot.view(-1, xdot.shape[2])
-        # l_flat = torch.sqrt(torch.einsum('Ni,Nij,Nj->N', xdot_flat, metric_flat, xdot_flat))
+
+        x_flat = x_t.view(-1, x_t.shape[2]) # [T*B, D]
+        jac_flat = jacobian(self.hparams.fcn, x_flat) # [T*B, n, D]
+        xdot = self.odefunc(t, x_t) # velocity [T, B, D]
+        xdot_flat = xdot.view(-1, xdot.shape[2]) # [T*B, D]
         len_loss = self.length_loss(xdot_flat, jac_flat)
 
-        # len_loss = self.length_loss(t, x_t)
-        # loss = len_loss + self.hparams.lam * mse_loss + mpowerede_loss
+        # p(x) Discriminator loss for penalizing the curve to be in the high probability region of the discriminator.
         if self.hparams.discriminator_func is not None and self.hparams.discriminator_weight > 0.:
             # loss = loss + self.discriminator_weight * (1. - self.discriminator_func.positive_proba(cc_pts_flat)).mean()
-            disc_loss = (1. - self.hparams.discriminator_func(x_flat)).mean()
-            # print(disc_loss.item())
-            # loss = loss + self.discriminator_weight * disc_loss * loss # increase the penalty for longer curves.
-            # loss = loss + self.discriminator_weight * disc_loss
-            loss = self.hparams.discriminator_weight * disc_loss * len_loss # increase the penalty for longer curves.
+            disc_loss = (1. - self.hparams.discriminator_func(x_flat)).max()
+        
+        # dp(x)/dx loss for penalizing the curve to have zero normal component in surface.
+        if self.discriminator_func_for_grad is not None and self.discriminator_func_for_grad_weight > 0.:
+            disc_jac = jacobian(self.discriminator_func_for_grad, x_flat).squeeze() 
+            disc_jac_normalized = (disc_jac + self.eps) / (torch.sqrt(torch.square(disc_jac).sum(axis=1)).reshape(-1,1) + self.eps)
+            prj_lengthssq = torch.square((xdot_flat * disc_jac_normalized).sum(axis=1))
 
-        loss = loss + self.hparams.lam * mse_loss + mpowerede_loss
+            # points penalty to increase the penalty for the points that are start/end points.
+            if self.points_penalty is not None and self.points_penalty_grad:
+                prj_lengthssq = prj_lengthssq.reshape(xdot_flat.size(0), xdot_flat.size(1)) 
+                prj_lengthssq = prj_lengthssq * self.points_penalty.reshape(-1, 1)
+                prj_lengthssq = prj_lengthssq.flatten()
+
+            prj_loss = torch.square(prj_lengthssq).mean()
+            # prj_loss = torch.square(prj_lengthssq).max() # using max.
+        
+        # density loss
+        if self.data_pts is not None and self.density_weight > 0.:
+            if self.n_data_sample is not None and self.n_data_sample < self.data_pts.size(0):
+                indices = torch.randperm(self.data_pts.size(0))[:self.n_data_sample]
+                dloss = self.density_loss(x_flat, self.data_pts[indices], x_flat)
+            else:
+                dloss = self.density_loss(x_flat, self.data_pts, x_flat)
+
+        loss = len_loss * self.hparams.len_weight + self.hparams.endpts_weight * mse_loss + mpowerede_loss \
+            + self.hparams.discriminator_weight * disc_loss \
+            + self.discriminator_func_for_grad_weight * prj_loss + self.hparams.density_weight * dloss
+        
         return loss
         
     def training_step(self, batch, batch_idx):
@@ -189,85 +172,6 @@ class GeodesicODE(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay)
 
-class GeodesicODEDensity(GeodesicODE):
-    def __init__(self, 
-        fcn, # encoder/decoder
-        in_dim=2, 
-        hidden_dim=64, 
-        n_tsteps=1000, # num of t steps for length evaluation
-        lam=10, # regularization for end point
-        lr=1e-3, 
-        weight_decay=0.0, 
-        beta=0.,
-        n_pow=4,
-        data_pts=None,
-        n_data_sample=None,
-        n_topk=5,
-        density_weight=1.,
-        euclidean=False,
-    ):
-        super().__init__(fcn, in_dim, hidden_dim, n_tsteps, lam, lr, weight_decay, beta, n_pow)
-        self.save_hyperparameters()
-        self.register_buffer("data_pts", data_pts)
-        self.n_data_sample = n_data_sample
-        self.n_topk = n_topk
-        self.density_weight = density_weight
-
-    def density_loss(self, x_t_flat, data_pts):
-        vals, inds = torch.topk(
-            torch.cdist(x_t_flat, data_pts), k=self.n_topk, dim=-1, largest=False, sorted=False
-        )
-        return vals.mean()
-
-    def length_loss(self, t, x):
-        if self.hparams.euclidean:
-            x_flat = x.view(-1, x.shape[2])
-            # metric_flat = pullback_metric(x_flat, self.hparams.fcn, create_graph=True, retain_graph=True)
-            xdot = self.odefunc(t, x)
-            xdot_flat = xdot.view(-1, xdot.shape[2])
-            # l_flat = torch.sqrt(torch.einsum('Ni,Nij,Nj->N', xdot_flat, metric_flat, xdot_flat))
-            l_flat = torch.sqrt(torch.einsum('Ni,Ni->N', xdot_flat, xdot_flat))
-            return l_flat.mean()# * (t[-1] - t[0]) # numerical integration, we set t in [0,1].
-        else:
-            return super().length_loss(t, x)
-
-    def step(self, batch, batch_idx):
-        t = self.t
-        x0, x1 = batch
-        x_t = self.forward(x0)
-        mse_loss = F.mse_loss(x_t[-1], x1)
-        if self.pretraining:
-            return mse_loss
-        mpowerede_loss = 0.
-        if self.hparams.beta > 0.:
-            mpowerede_loss = (torch.pow(x_t[-1] - x1, self.hparams.n_pow)).mean() * self.hparams.beta
-        len_loss = self.length_loss(t, x_t)
-        loss = len_loss + self.hparams.lam * mse_loss + mpowerede_loss
-        if self.density_weight > 0.:
-            x_t_flat = x_t.view(-1, x_t.shape[2])
-            if self.n_data_sample is not None and self.n_data_sample < self.data_pts.size(0):
-                indices = torch.randperm(self.data_pts.size(0))[:self.n_data_sample]
-                dloss = self.density_loss(x_t_flat, self.data_pts[indices])
-            else:
-                dloss = self.density_loss(x_t_flat, self.data_pts)
-            loss = loss + self.density_weight * dloss
-        return loss
-
-# DEPRECATED
-class GeodesicODEPseudoinv(GeodesicODE):
-    def __init__(self, encoder, decoder, in_dim=2, hidden_dim=64, n_tsteps=1000, lam=10, lr=0.001, weight_decay=0, beta=0, n_pow=4):
-        super().__init__(encoder, in_dim, hidden_dim, n_tsteps, lam, lr, weight_decay, beta, n_pow)
-        self.save_hyperparameters()
-
-    def length_loss(self, t, x):
-        original_shape = x.shape
-        x_flat = x.view(-1, x.shape[2])
-        x_dec_flat = self.hparams.decoder(x_flat)
-        metric_flat = pullback_metric(x_dec_flat, self.hparams.fcn, create_graph=True, retain_graph=True, pseudoinverse=True)
-        xdot = self.odefunc(t, x)
-        xdot_flat = xdot.view(-1, xdot.shape[2])
-        l_flat = torch.sqrt(torch.einsum('Ni,Nij,Nj->N', xdot_flat, metric_flat, xdot_flat))
-        return l_flat.mean()# * (t[-1] - t[0]) # numerical integration, we set t in [0,1].
 
 def jacobian(func, inputs):
     return compute_jacobian_function(func, inputs)
