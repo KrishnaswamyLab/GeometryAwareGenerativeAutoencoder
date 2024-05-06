@@ -357,6 +357,41 @@ class CondCurve(nn.Module):
 
         return outs.view(t.size(0), x0.size(0), self.input_dim)
 
+class CondCurveOverfit(CondCurve):
+    def __init__(self, input_dim, hidden_dim, scale_factor, symmetric, num_layers, id_dim, id_emb_dim):
+        super(CondCurveOverfit, self).__init__(input_dim, hidden_dim, scale_factor, symmetric, num_layers)
+        self.id_net = MLP(input_dim=id_dim,
+                          hidden_dim=hidden_dim,
+                          output_dim=id_emb_dim,
+                          num_hidden_layers=num_layers)
+
+        self.mod_x0_x1 = MLP(input_dim=hidden_dim * 2 + 1 + id_emb_dim,
+                        hidden_dim=hidden_dim, 
+                        output_dim=input_dim, 
+                        num_hidden_layers=num_layers)
+    
+    def forward(self, x0, x1, t, ids):
+        t = t.unsqueeze(-1) if t.dim() == 1 else t
+        
+        x0_ = x0.repeat(t.size(0), 1)
+        x1_ = x1.repeat(t.size(0), 1)
+        ids_ = ids.repeat(t.size(0), 1)
+        t_ = t.repeat(1, x0.size(0)).view(-1, 1)
+
+        emb_x0 = self.x0_emb(x0_)
+        emb_x1 = self.x1_emb(x1_)
+
+        avg = t_ * x1_ + (1 - t_) * x0_
+        enveloppe = self.scale_factor * (1 - (t_ * 2 - 1).pow(2))
+        
+        ids_emb = self.id_net(ids_)
+
+        aug_state = torch.cat([emb_x0, emb_x1, t_, ids_emb], dim=-1)
+
+        outs = self.mod_x0_x1(aug_state) * enveloppe + avg
+
+        return outs.view(t.size(0), x0.size(0), self.input_dim)
+
 class GeodesicBridge(pl.LightningModule):
     def __init__(self,
                  func,
@@ -396,11 +431,6 @@ class GeodesicBridge(pl.LightningModule):
         self.lr = lr
         self.weight_decay = weight_decay
         self.func = func
-        self.cc = CondCurve(input_dim=input_dim,
-                            hidden_dim=hidden_dim,
-                            scale_factor=scale_factor,
-                            symmetric=symmetric,
-                            num_layers=num_layers)
 
         self.ts = torch.linspace(0, 1, n_tsteps)
         self.discriminator_func = discriminator_func
@@ -463,10 +493,8 @@ class GeodesicBridge(pl.LightningModule):
         vectors_flat = vectors.flatten(0,1)
         cc_pts_flat = cc_pts.flatten(0, 1)
         jac_flat = jacobian(self.func, cc_pts_flat)
-        if self.length_weight > 0.:
-            loss = self.length_loss(vectors_flat, jac_flat)
-        else:
-            loss = 0.
+        len_loss = self.length_loss(vectors_flat, jac_flat)
+        loss = self.length_weight * len_loss
         if self.discriminator_func is not None and self.discriminator_weight > 0.:
             # loss = loss + self.discriminator_weight * (1. - self.discriminator_func.positive_proba(cc_pts_flat)).mean()
             disc_val = self.discriminator_func(cc_pts_flat)
@@ -483,9 +511,8 @@ class GeodesicBridge(pl.LightningModule):
             # loss = loss + self.discriminator_weight * disc_loss * loss # increase the penalty for longer curves.
             # loss = loss + self.discriminator_weight * disc_loss
             if self.multiply_loss:
-                loss = self.discriminator_weight * disc_loss * loss # increase the penalty for longer curves.
-            else:
-                loss = loss + self.discriminator_weight * disc_loss
+                disc_loss = disc_loss * len_loss # increase the penalty for longer curves.
+            loss = loss + self.discriminator_weight * disc_loss
         if self.discriminator_func_for_grad is not None and self.discriminator_func_for_grad_weight > 0.:
             disc_jac = jacobian(self.discriminator_func_for_grad, cc_pts_flat).squeeze()
             disc_jac_normalized = (disc_jac + self.eps) / (torch.sqrt(torch.square(disc_jac).sum(axis=1)).reshape(-1,1) + self.eps)
@@ -494,8 +521,11 @@ class GeodesicBridge(pl.LightningModule):
                 prj_lengthssq = prj_lengthssq.reshape(vectors.size(0), vectors.size(1))
                 prj_lengthssq = prj_lengthssq * self.points_penalty.reshape(-1, 1)
                 prj_lengthssq = prj_lengthssq.flatten()
-            prj_loss = torch.square(prj_lengthssq).mean()
+            # prj_loss = torch.square(prj_lengthssq).mean() # [FIXME] I accidentally squared twice!
+            prj_loss = prj_lengthssq.mean() # fixed.
             # prj_loss = torch.square(prj_lengthssq).max() # using max.
+            if self.multiply_loss:
+                prj_loss = prj_loss * len_loss # increase the penalty for longer curves.
             loss = loss + self.discriminator_func_for_grad_weight * prj_loss
         if self.data_pts is not None and self.density_weight > 0.:
             if self.n_data_sample is not None and self.n_data_sample < self.data_pts.size(0):
@@ -539,6 +569,134 @@ class GeodesicBridge(pl.LightningModule):
     #     # Create and return the optimizer with only the desired parameters
     #     optimizer = torch.optim.Adam(params, lr=self.lr, weight_decay=self.weight_decay)
     #     return optimizer
+
+class GeodesicBridgeOverfit(GeodesicBridge):
+    def __init__(self,
+                 func,
+                 input_dim,
+                 hidden_dim,
+                 scale_factor,
+                 symmetric,
+                 num_layers,
+                 lr,
+                 weight_decay,
+                 n_tsteps=1000,
+                 discriminator_func=None,
+                 discriminator_weight=0.,
+                 multiply_loss=False,
+                 discriminator_func_for_grad=None,
+                 discriminator_func_for_grad_weight=1.,
+                 eps = 1e-5,
+                 length_weight=1.,
+                 data_pts=None,
+                 n_data_sample = None,
+                 n_topk = 5,
+                 n_top_k_sel=0,
+                density_weight=1.,
+                points_penalty_alpha=0.,
+                disc_use_max=False,
+                points_penalty_power=2,
+                points_penalty_grad=False,
+                points_penalty_disc=False,
+                points_penalty_density=False,
+                id_dim=0,  # learn an embedding for each curve, to overfit the model to each curve.
+                id_emb_dim=0,
+                ):
+        super().__init__(
+            func=func,
+            input_dim=input_dim,
+            hidden_dim=hidden_dim,
+            scale_factor=scale_factor,
+            symmetric=symmetric,
+            num_layers=num_layers,
+            lr=lr,
+            weight_decay=weight_decay,
+            n_tsteps=n_tsteps,
+            discriminator_func=discriminator_func,
+            discriminator_weight=discriminator_weight,
+            multiply_loss=multiply_loss,
+            discriminator_func_for_grad=discriminator_func_for_grad,
+            discriminator_func_for_grad_weight=discriminator_func_for_grad_weight,
+            eps=eps,
+            length_weight=length_weight,
+            data_pts=data_pts,
+            n_data_sample=n_data_sample,
+            n_topk=n_topk,
+            n_top_k_sel=n_top_k_sel,
+            density_weight=density_weight,
+            points_penalty_alpha=points_penalty_alpha,
+            disc_use_max=disc_use_max,
+            points_penalty_power=points_penalty_power,
+            points_penalty_grad=points_penalty_grad,
+            points_penalty_disc=points_penalty_disc,
+            points_penalty_density=points_penalty_density,
+        )
+        assert id_dim>0 and id_emb_dim>0
+        self.cc = CondCurveOverfit(input_dim=input_dim,
+                            hidden_dim=hidden_dim,
+                            scale_factor=scale_factor,
+                            symmetric=symmetric,
+                            num_layers=num_layers,
+                            id_dim=id_dim,
+                            id_emb_dim=id_emb_dim
+                        )
+    def forward(self, x0, x1, t, ids):
+        return self.cc(x0, x1, t, ids)
+
+    def step(self, batch, batch_idx):
+        x0, x1, ids = batch
+        def cc_func(x0, x1, t):
+            return self.cc(x0, x1, t, ids)
+        vectors = velocity(cc_func, self.ts, x0, x1)
+        cc_pts = self.cc(x0, x1, self.ts, ids)
+        vectors_flat = vectors.flatten(0,1)
+        cc_pts_flat = cc_pts.flatten(0, 1)
+        jac_flat = jacobian(self.func, cc_pts_flat)
+        if self.length_weight > 0.:
+            loss = self.length_loss(vectors_flat, jac_flat)
+        else:
+            loss = 0.
+        if self.discriminator_func is not None and self.discriminator_weight > 0.:
+            # loss = loss + self.discriminator_weight * (1. - self.discriminator_func.positive_proba(cc_pts_flat)).mean()
+            disc_val = self.discriminator_func(cc_pts_flat)
+            if self.disc_use_max:
+                disc_loss = (1. - disc_val).max()
+            else:
+                if self.points_penalty is not None and self.points_penalty_disc:
+                    disc_val = disc_val.reshape(cc_pts.size(0),cc_pts.size(1))
+                    disc_val = disc_val * self.points_penalty.reshape(-1,1)
+                    disc_val = disc_val.flatten()
+                disc_loss = (1. - disc_val).mean()
+            # disc_loss = (1. - self.discriminator_func(cc_pts_flat)).max() # using max.
+            # print(disc_loss.item())
+            # loss = loss + self.discriminator_weight * disc_loss * loss # increase the penalty for longer curves.
+            # loss = loss + self.discriminator_weight * disc_loss
+            if self.multiply_loss:
+                loss = self.discriminator_weight * disc_loss * loss # increase the penalty for longer curves.
+            else:
+                loss = loss + self.discriminator_weight * disc_loss
+        if self.discriminator_func_for_grad is not None and self.discriminator_func_for_grad_weight > 0.:
+            disc_jac = jacobian(self.discriminator_func_for_grad, cc_pts_flat).squeeze()
+            disc_jac_normalized = (disc_jac + self.eps) / (torch.sqrt(torch.square(disc_jac).sum(axis=1)).reshape(-1,1) + self.eps)
+            prj_lengthssq = torch.square((vectors_flat * disc_jac_normalized).sum(axis=1))
+            if self.points_penalty is not None and self.points_penalty_grad:
+                prj_lengthssq = prj_lengthssq.reshape(vectors.size(0), vectors.size(1))
+                prj_lengthssq = prj_lengthssq * self.points_penalty.reshape(-1, 1)
+                prj_lengthssq = prj_lengthssq.flatten()
+            # prj_loss = torch.square(prj_lengthssq).mean() # [FIXME] I accidentally squared twice!
+            prj_loss = prj_lengthssq.mean() # fixed.
+            # prj_loss = torch.square(prj_lengthssq).max() # using max.
+            loss = loss + self.discriminator_func_for_grad_weight * prj_loss
+        if self.data_pts is not None and self.density_weight > 0.:
+            if self.n_data_sample is not None and self.n_data_sample < self.data_pts.size(0):
+                indices = torch.randperm(self.data_pts.size(0))[:self.n_data_sample]
+                dloss = self.density_loss(cc_pts_flat, self.data_pts[indices], cc_pts)
+            else:
+                dloss = self.density_loss(cc_pts_flat, self.data_pts, cc_pts)
+            loss = loss + self.density_weight * dloss
+
+        return loss
+
 
 """
 [DEPRECATED. MEGRED TO GeodesicBridge.]
