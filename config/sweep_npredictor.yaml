@@ -1,0 +1,29 @@
+project: dmae
+program: train.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: validation/loss
+  goal: minimize
+parameters:
+  data.root: 
+    values: ['../data/noise_predictor/']
+  data.name:
+    values: ['hemisphere_gaussian', 'hemisphere_hi_freq']
+  encoder.layer_widths: 
+    values: [[256,128,64]]
+  encoder.batch_norm: 
+    values: [true]
+  encoder.dropout: 
+    values: [0.]
+  training.mode:
+    values: ['noise_predictor']
+  training.max_epochs:
+    values: [50]
+  training.weight_decay:
+    values: [0.]
+
+  

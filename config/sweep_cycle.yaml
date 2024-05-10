@@ -1,0 +1,61 @@
+project: dmae
+program: train.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: validation/loss
+  goal: minimize
+parameters:
+  data.root: 
+    # values: ['../data/negative_sampling/hifreq/']
+    values: ['../data/gt_geodesic/ae/']
+    # values: ['../data/negative_sampling_toy_hi_dim/False/']
+  data.name:
+    # values: ['swiss_roll_sklearn', 'hemisphere', 'hemisphere_hi_dim2',  'tree', 'eb_subset_all']
+    # values: ['swiss_roll_wider', 'swiss_roll_sklearn', 'swiss_roll_wider_hi_dim', 'swiss_roll_heatgeo_hi_dim', 'hemisphere_hi_dim2', 'tree_hi_dim']
+    # values: ['swiss_roll_wider']
+    # values: ['eb', 'swiss_roll_sklearn_3000', 'hemisphere_hi_dim2', 'swiss_roll_sklearn_hi_dim_3000', 'swiss_roll_wider_hi_dim', 'swiss_roll_wider', 'tree_hi_dim', 'tree']
+    values: ['hemisphere_none_0','hemisphere_5_0','hemisphere_15_0','hemisphere_50_0','hemisphere_15_0.1','hemisphere_15_0.3','swissroll_none_0','swissroll_5_0','swissroll_15_0','swissroll_50_0','swissroll_15_0.1','swissroll_15_0.3','ellipsoid_15_0.1','ellipsoid_15_0','ellipsoid_5_0','ellipsoid_15_0.3','ellipsoid_50_0','ellipsoid_none_0','torus_15_0.1','torus_15_0.3','torus_15_0','torus_50_0','torus_5_0','torus_none_0','saddle_15_0.1','saddle_15_0.3','saddle_15_0','saddle_50_0','saddle_5_0','saddle_none_0']
+  dimensions.latent:
+    values: [2,3]
+  encoder.layer_widths: 
+    # values: [[256,128,64],[32,32,32]]
+    values: [[256,128,64]]
+  encoder.batch_norm: 
+    values: [true]
+  encoder.dropout: 
+    # values: [0.,0.2,0.5]
+    values: [0.5]
+  decoder.layer_widths: 
+    values: [[64,128,256]]
+  decoder.batch_norm:
+    values: [true]
+  decoder.dropout:
+    values: [0.5]
+  training.mode:
+    values: ['end2end']
+  # training.lr:
+    # values: [1e-2, 1e-3]
+  training.max_epochs:
+    values: [50]
+  training.max_epochs:
+    values: [50]
+  loss.dist_mse_decay:
+    # values: [0.,0.2,0.5]
+    values: [0.5]
+  loss.weights.dist:
+    values: [77.4]
+    # values: [0.9]
+  loss.weights.reconstr:
+    # values: [0.1]
+    values: [0.32]
+  loss.weights.cycle:
+    values: [0.,1.]
+    # values: [0.]
+  loss.weights.cycle_dist:
+    values: [0]
+  
+  

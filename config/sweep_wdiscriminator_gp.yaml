@@ -1,0 +1,50 @@
+project: dmae
+program: train.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: validation/loss
+  goal: minimize
+parameters:
+  data.root: 
+    # values: ['../data/negative_sampling/hifreq/']
+    values: ['../data/gt_geodesic/disc/']
+  data.name:
+    # values: ['hemisphere', 'hemisphere_hi_dim2', 'swiss_roll_sklearn', 'tree', 'eb']
+    # values: ['swiss_roll_wider']
+    # values: ['swiss_roll_wider', 'swiss_roll_sklearn', 'swiss_roll_wider_hi_dim']
+    # values: ['eb', 'swiss_roll_sklearn_3000', 'hemisphere_hi_dim2', 'swiss_roll_sklearn_hi_dim_3000', 'swiss_roll_wider_hi_dim', 'swiss_roll_wider', 'tree_hi_dim', 'tree']
+    # values: ['hemisphere_none_0','hemisphere_5_0','hemisphere_15_0','hemisphere_50_0','hemisphere_15_0.1','hemisphere_15_0.3','swissroll_none_0','swissroll_5_0','swissroll_15_0','swissroll_50_0','swissroll_15_0.1','swissroll_15_0.3','ellipsoid_15_0.1','ellipsoid_15_0','ellipsoid_5_0','ellipsoid_15_0.3','ellipsoid_50_0','ellipsoid_none_0','torus_15_0.1','torus_15_0.3','torus_15_0','torus_50_0','torus_5_0','torus_none_0','saddle_15_0.1','saddle_15_0.3','saddle_15_0','saddle_50_0','saddle_5_0','saddle_none_0']
+    values: ['hemisphere_none_0']
+  # dimensions.latent:
+  #   # values: [5,15,20,25,30,2]
+  #   values: [2,3]
+  encoder.layer_widths: 
+    # values: [[256,128,64]]
+    values: [[256,128,64]]
+  encoder.batch_norm: 
+    values: [true]
+  encoder.dropout: 
+    # values: [0.,0.2,0.5]
+    values: [0.5]
+  # decoder.layer_widths: 
+  #   values: [[64,128,256]]
+  # decoder.batch_norm:
+  #   values: [true]
+  # decoder.dropout:
+  #   values: [0.2]
+  training.mode:
+    values: ['wdiscriminator']
+  training.max_epochs:
+    values: [50]
+  training.weight_decay:
+    values: [1e-4]
+  training.sample_rate: 
+    values: [0.1,0.5,1]
+  training.gradient_penalty_frequency:
+    values: [1,10,100]
+  loss.weights.grad:
+    values: [0.1,1,10]

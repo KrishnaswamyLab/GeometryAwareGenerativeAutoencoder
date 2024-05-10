@@ -7,12 +7,14 @@ encoder:
   activation: relu
   batch_norm: False
   dropout: 0.0
+  spectral_norm: False
 
 decoder:
   layer_widths: [64,64,64]
   activation: relu
   batch_norm: False
   dropout: 0.0
+  spectral_norm: False
 
 training:
   lr: 1e-3
@@ -28,6 +30,9 @@ training:
   shuffle: true
   # mode: 'end2end' # separate
   mode: 'separate'
+  clamp: 0.01
+  sample_rate: 0.1
+  gradient_penalty_frequency: 10
 
 loss:
   dist_mse_decay: 0.
@@ -36,10 +41,14 @@ loss:
     reconstr: 1
     cycle: 0.
     cycle_dist: 0.
+    negative: 0.
+    wgan: 1.
+    grad: 1.
 
 path:
   root: '../results/'
   model: 'model'
+  log: ''
 
 data:
   root: '../toy_data/converted'

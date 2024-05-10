@@ -1,0 +1,50 @@
+project: dmae
+program: train.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: validation/loss
+  goal: minimize
+parameters:
+  data.root: 
+    # values: ['../data/negative_sampling/hifreq/']
+    values: ['../data/negative_sampling_new/dist_mask_False/hi-freq/1.0/','../data/negative_sampling_new/dist_mask_True/hi-freq/1.0/','../data/negative_sampling_new/dist_mask_False/hi-freq/1.5/','../data/negative_sampling_new/dist_mask_True/hi-freq/1.5/','../data/negative_sampling_new/dist_mask_False/hi-freq-no-add/1.0/','../data/negative_sampling_new/dist_mask_True/hi-freq-no-add/1.0/','../data/negative_sampling_new/dist_mask_False/hi-freq-no-add/1.5/','../data/negative_sampling_new/dist_mask_True/hi-freq-no-add/1.5/']
+  data.name:
+    values: ['eb_subset_all', 'hemisphere_hi_dim2', 'hemisphere']
+  dimensions.latent:
+    # values: [5,15,20,25,30,2]
+    values: [3]
+  encoder.layer_widths: 
+    values: [[256,128,64]]
+  encoder.batch_norm: 
+    values: [true]
+  encoder.dropout: 
+    # values: [0.,0.2,0.5]
+    values: [0.]
+  decoder.layer_widths: 
+    values: [[64,128,256]]
+  decoder.batch_norm:
+    values: [true]
+  decoder.dropout:
+    values: [0.2]
+  training.mode:
+    values: ['end2end']
+  training.max_epochs:
+    values: [50]
+  loss.dist_mse_decay:
+    # values: [0.,0.2,0.5]
+    values: [0.5]
+  loss.weights.dist:
+    values: [77.4]
+  loss.weights.reconstr:
+    values: [0.32]
+  loss.weights.cycle:
+    # values: [0.,1.]
+    values: [0.3,1.,10.]
+  loss.weights.cycle_dist:
+    values: [0]
+  
+  
