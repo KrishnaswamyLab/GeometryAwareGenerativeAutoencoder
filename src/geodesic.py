@@ -219,13 +219,14 @@ class MLP(nn.Module):
         return self.layers(x)
 
 class CondCurve(nn.Module):
-    def __init__(self, input_dim, hidden_dim, scale_factor, symmetric, num_layers):
+    def __init__(self, input_dim, hidden_dim, scale_factor, symmetric, num_layers, k=2):
         super(CondCurve, self).__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.scale_factor = scale_factor
         self.symmetric = symmetric
         self.num_layers = num_layers
+        self.k = k
         
         self.mod_x0_x1 = MLP(input_dim=hidden_dim * 2 + 1,
                              hidden_dim=hidden_dim, 
@@ -253,7 +254,7 @@ class CondCurve(nn.Module):
         emb_x1 = self.x1_emb(x1_)
 
         avg = t_ * x1_ + (1 - t_) * x0_
-        enveloppe = self.scale_factor * (1 - (t_ * 2 - 1).pow(2))
+        enveloppe = self.scale_factor * (1 - (t_ * 2 - 1).pow(self.k))
         
         aug_state = torch.cat([emb_x0, emb_x1, t_], dim=-1)
 
@@ -262,12 +263,12 @@ class CondCurve(nn.Module):
         return outs.view(t.size(0), x0.size(0), self.input_dim)
 
 class CondCurveOverfit(CondCurve):
-    def __init__(self, input_dim, hidden_dim, scale_factor, symmetric, num_layers, id_dim, id_emb_dim):
-        super(CondCurveOverfit, self).__init__(input_dim, hidden_dim, scale_factor, symmetric, num_layers)
+    def __init__(self, input_dim, hidden_dim, scale_factor, symmetric, num_layers, id_dim, id_emb_dim, k=2):
+        super(CondCurveOverfit, self).__init__(input_dim, hidden_dim, scale_factor, symmetric, num_layers, k)
         self.id_net = MLP(input_dim=id_dim,
-                          hidden_dim=hidden_dim,
+                          hidden_dim=id_emb_dim,
                           output_dim=id_emb_dim,
-                          num_hidden_layers=num_layers)
+                          num_hidden_layers=1)
 
         self.mod_x0_x1 = MLP(input_dim=hidden_dim * 2 + 1 + id_emb_dim,
                         hidden_dim=hidden_dim, 
@@ -286,7 +287,7 @@ class CondCurveOverfit(CondCurve):
         emb_x1 = self.x1_emb(x1_)
 
         avg = t_ * x1_ + (1 - t_) * x0_
-        enveloppe = self.scale_factor * (1 - (t_ * 2 - 1).pow(2))
+        enveloppe = self.scale_factor * (1 - (t_ * 2 - 1).pow(self.k))
         
         ids_emb = self.id_net(ids_)
 
@@ -325,6 +326,7 @@ class GeodesicBridge(pl.LightningModule):
                 points_penalty_grad=False,
                 points_penalty_disc=False,
                 points_penalty_density=False,
+                cc_k=2,
                 ):
         super(GeodesicBridge, self).__init__()
         self.input_dim = input_dim
@@ -336,7 +338,8 @@ class GeodesicBridge(pl.LightningModule):
         self.weight_decay = weight_decay
         self.func = func
 
-        self.ts = torch.linspace(0, 1, n_tsteps)
+        ts = torch.linspace(0, 1, n_tsteps)
+        self.register_buffer("ts", ts)
         self.discriminator_func = discriminator_func
         self.discriminator_weight = discriminator_weight
         self.multiply_loss = multiply_loss
@@ -505,6 +508,7 @@ class GeodesicBridgeOverfit(GeodesicBridge):
                 points_penalty_density=False,
                 id_dim=0,  # learn an embedding for each curve, to overfit the model to each curve.
                 id_emb_dim=0,
+                cc_k=2
                 ):
         super().__init__(
             func=func,
@@ -534,6 +538,7 @@ class GeodesicBridgeOverfit(GeodesicBridge):
             points_penalty_grad=points_penalty_grad,
             points_penalty_disc=points_penalty_disc,
             points_penalty_density=points_penalty_density,
+            cc_k=cc_k,
         )
         assert id_dim>0 and id_emb_dim>0
         self.cc = CondCurveOverfit(input_dim=input_dim,
@@ -542,7 +547,8 @@ class GeodesicBridgeOverfit(GeodesicBridge):
                             symmetric=symmetric,
                             num_layers=num_layers,
                             id_dim=id_dim,
-                            id_emb_dim=id_emb_dim
+                            id_emb_dim=id_emb_dim,
+                            k=cc_k
                         )
     def forward(self, x0, x1, t, ids):
         return self.cc(x0, x1, t, ids)
@@ -556,14 +562,14 @@ class GeodesicBridgeOverfit(GeodesicBridge):
         vectors_flat = vectors.flatten(0,1)
         cc_pts_flat = cc_pts.flatten(0, 1)
         jac_flat = jacobian(self.func, cc_pts_flat)
-        if self.length_weight > 0.:
-            loss = self.length_loss(vectors_flat, jac_flat)
-        else:
-            loss = 0.
+        len_loss = self.length_loss(vectors_flat, jac_flat)
+        self.log(f'loss_length', len_loss, prog_bar=True, on_epoch=True)
+        loss = self.length_weight * len_loss
         if self.discriminator_func is not None and self.discriminator_weight > 0.:
             # loss = loss + self.discriminator_weight * (1. - self.discriminator_func.positive_proba(cc_pts_flat)).mean()
             disc_val = self.discriminator_func(cc_pts_flat)
             if self.disc_use_max:
+                
                 disc_loss = (1. - disc_val).max()
             else:
                 if self.points_penalty is not None and self.points_penalty_disc:
@@ -576,9 +582,9 @@ class GeodesicBridgeOverfit(GeodesicBridge):
             # loss = loss + self.discriminator_weight * disc_loss * loss # increase the penalty for longer curves.
             # loss = loss + self.discriminator_weight * disc_loss
             if self.multiply_loss:
-                loss = self.discriminator_weight * disc_loss * loss # increase the penalty for longer curves.
-            else:
-                loss = loss + self.discriminator_weight * disc_loss
+                disc_loss = disc_loss * len_loss # increase the penalty for longer curves.
+            self.log(f'loss_discriminator', disc_loss, prog_bar=True, on_epoch=True)
+            loss = loss + self.discriminator_weight * disc_loss
         if self.discriminator_func_for_grad is not None and self.discriminator_func_for_grad_weight > 0.:
             disc_jac = jacobian(self.discriminator_func_for_grad, cc_pts_flat).squeeze()
             disc_jac_normalized = (disc_jac + self.eps) / (torch.sqrt(torch.square(disc_jac).sum(axis=1)).reshape(-1,1) + self.eps)
@@ -590,6 +596,9 @@ class GeodesicBridgeOverfit(GeodesicBridge):
             # prj_loss = torch.square(prj_lengthssq).mean() # [FIXME] I accidentally squared twice!
             prj_loss = prj_lengthssq.mean() # fixed.
             # prj_loss = torch.square(prj_lengthssq).max() # using max.
+            if self.multiply_loss:
+                prj_loss = prj_loss * len_loss # increase the penalty for longer curves.
+            self.log(f'loss_discriminator_gradient', prj_loss, prog_bar=True, on_epoch=True)
             loss = loss + self.discriminator_func_for_grad_weight * prj_loss
         if self.data_pts is not None and self.density_weight > 0.:
             if self.n_data_sample is not None and self.n_data_sample < self.data_pts.size(0):
@@ -597,8 +606,9 @@ class GeodesicBridgeOverfit(GeodesicBridge):
                 dloss = self.density_loss(cc_pts_flat, self.data_pts[indices], cc_pts)
             else:
                 dloss = self.density_loss(cc_pts_flat, self.data_pts, cc_pts)
+            self.log(f'loss_density', dloss, prog_bar=True, on_epoch=True)
             loss = loss + self.density_weight * dloss
-
+        self.log(f'loss', loss, prog_bar=True, on_epoch=True)
         return loss
 
 

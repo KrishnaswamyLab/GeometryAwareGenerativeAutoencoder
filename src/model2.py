@@ -9,6 +9,7 @@ import torch.nn as nn
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import grad, Variable
 
 def calculate_bounding_radius(X, centroid):
     # centroid = torch.mean(X, dim=0)
@@ -398,7 +399,6 @@ class Discriminator(Encoder):
     
     def step(self, batch, batch_idx, stage):
         x = batch['x']
-        d = batch['d']
         mask = batch.get('mx', None)
         assert mask is not None
         y = mask.flatten().long()
@@ -410,3 +410,126 @@ class Discriminator(Encoder):
     def positive_proba(self, x, normalize=True):
         logits = self(x, normalize=normalize)
         return F.softmax(logits, dim=1)[:, 1]
+
+class NoisePredictor(Encoder):
+    def __init__(self, cfg, preprocessor):
+        super().__init__(cfg, preprocessor)
+        self.preprocessor = preprocessor
+        cfg.loss.dist_mse_decay = cfg.loss.get('dist_mse_decay', 0.)
+        in_dim = cfg.dimensions.get('data')
+        # out_dim = cfg.dimensions.get('latent')
+        out_dim = 1
+        self.save_hyperparameters()
+        self.mlp = MLP(cfg.encoder, in_dim, out_dim)
+    
+    def step(self, batch, batch_idx, stage):
+        x = batch['x']
+        mask = batch.get('mx', None)
+        assert mask is not None
+        y = mask.flatten()
+        # loss = torch.nn.functional.mse_loss(self(x), y)
+        loss = nn.L1Loss()(self(x), y)
+        self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
+        return loss
+
+"""
+DEPRECATED. now using gradient penalty instead of clipping.
+"""
+class WDiscriminatorClip(Encoder):
+    """
+    Using weight-clipping in WGAN:
+    https://github.com/martinarjovsky/WassersteinGAN/blob/f7a01e82007ea408647c451b9e1c8f1932a3db67/main.py#L184
+    """
+    def __init__(self, cfg, preprocessor):
+        super().__init__(cfg, preprocessor)
+        self.preprocessor = preprocessor
+        cfg.loss.dist_mse_decay = cfg.loss.get('dist_mse_decay', 0.)
+        in_dim = cfg.dimensions.get('data')
+        # out_dim = cfg.dimensions.get('latent')
+        out_dim = 1
+        self.save_hyperparameters()
+        self.mlp = MLP(cfg.encoder, in_dim, out_dim)
+    
+    def step(self, batch, batch_idx, stage):
+        x = batch['x']
+        mask = batch.get('mx', None).flatten()
+        assert mask is not None
+        for p in self.mlp.parameters():
+            # p.data.clamp_(self.hparams.cfg.training.clamp_lower, self.hparams.cfg.training.clamp_upper)
+            p.data.clamp_(- self.hparams.cfg.training.clamp, self.hparams.cfg.training.clamp)
+        scores = self(x)
+        mask_label = -(mask * 2 - 1.)
+        loss = (scores.flatten() * mask_label).mean()
+
+        self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
+        return loss
+
+class WDiscriminator(Encoder):
+    """
+    using the gradient penalty in WGAN-GP
+    https://github.com/igul222/improved_wgan_training/blob/fa66c574a54c4916d27c55441d33753dcc78f6bc/gan_toy.py#L70
+    """
+    def __init__(self, cfg, preprocessor):
+        super().__init__(cfg, preprocessor)
+        self.preprocessor = preprocessor
+        cfg.loss.dist_mse_decay = cfg.loss.get('dist_mse_decay', 0.)
+        in_dim = cfg.dimensions.get('data')
+        # out_dim = cfg.dimensions.get('latent')
+        out_dim = 1
+        self.save_hyperparameters()
+        self.mlp = MLP(cfg.encoder, in_dim, out_dim)
+
+    def step(self, batch, batch_idx, stage):
+        x = batch['x']
+        mask = batch.get('mx', None).flatten()
+        assert mask is not None
+
+        scores = self(x)
+        wgan_loss = self.compute_wgan_loss(scores, mask)
+        self.log(f'{stage}/wgan_loss', wgan_loss, prog_bar=True, on_epoch=True)
+        loss = self.hparams.cfg.loss.weights.wgan * wgan_loss
+        
+        # Compute gradient penalty conditionally
+        if (batch_idx % self.hparams.cfg.training.gradient_penalty_frequency == 0):
+            grad_loss = self.compute_gradient_penalty(x, mask)
+            self.log(f'{stage}/grad_loss', grad_loss, prog_bar=True, on_epoch=True)
+            loss += self.hparams.cfg.loss.weights.grad * grad_loss
+
+        self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
+        return loss
+
+    def compute_wgan_loss(self, scores, mask):
+        mask_label = -(mask * 2 - 1.)
+        return (scores.flatten() * mask_label).mean()
+
+    def compute_gradient_penalty(self, x, mask):
+        # adapted from https://github.com/EmilienDupont/wgan-gp/blob/ef82364f2a2ec452a52fbf4a739f95039ae76fe3/training.py#L82C9-L82C66
+        x_pos = x[mask.bool()]
+        x_neg = x[~mask.bool()]
+        sample_pts = int(min(x_pos.size(0), x_neg.size(0)) * self.hparams.cfg.training.sample_rate)
+        indices_pos = torch.randperm(x_pos.size(0))[:sample_pts]
+        sampled_x_pos = x_pos[indices_pos]
+        indices_neg = torch.randperm(x_neg.size(0))[:sample_pts]
+        sampled_x_neg = x_neg[indices_neg]
+        
+        alpha = torch.rand((sample_pts, 1), device=x.device, dtype=torch.float32)
+        x_interp = alpha * sampled_x_pos + (1 - alpha) * sampled_x_neg
+        x_interp = x_interp.clone().detach().requires_grad_(True)
+        
+        s_interp = self(x_interp)
+        grad_outputs = torch.ones(s_interp.size(), dtype=s_interp.dtype, device=s_interp.device)
+        jac = torch.autograd.grad(outputs=s_interp, inputs=x_interp, grad_outputs=grad_outputs, create_graph=True, retain_graph=True)[0]
+        jac_norm = torch.sqrt(torch.square(jac).sum(axis=1) + 1e-10)
+        
+        return torch.square(jac_norm - 1).mean()
+
+    def validation_step(self, batch, batch_idx):
+        with torch.set_grad_enabled(True): # the loss requires gradient
+            loss = self.step(batch, batch_idx, 'validation')
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        with torch.set_grad_enabled(True): # the loss requires gradient
+            loss = self.step(batch, batch_idx, 'test')
+        return loss
+    

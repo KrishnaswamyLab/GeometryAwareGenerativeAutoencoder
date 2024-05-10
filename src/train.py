@@ -8,7 +8,7 @@ from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
 from omegaconf import DictConfig, OmegaConf
 
 from data import train_valid_loader_from_pc
-from model2 import Autoencoder, Preprocessor, Discriminator
+from model2 import Autoencoder, Preprocessor, Discriminator, NoisePredictor, WDiscriminator
 
 @hydra.main(version_base=None, config_path='../config', config_name='config')
 def main(cfg: DictConfig):
@@ -28,6 +28,10 @@ def main(cfg: DictConfig):
     cfg.dimensions.data = X.shape[1]
     if cfg.training.mode == 'discriminator':
         model = Discriminator(cfg, preprocessor)
+    elif cfg.training.mode == 'noise_predictor':
+        model = NoisePredictor(cfg, preprocessor)
+    elif cfg.training.mode == 'wdiscriminator':
+        model = WDiscriminator(cfg, preprocessor)
     else:
         model = Autoencoder(cfg, preprocessor)
 
@@ -49,7 +53,7 @@ def main(cfg: DictConfig):
             mode='min'  # Minimize validation loss
         )
 
-    if cfg.training.mode == 'discriminator':
+    if cfg.training.mode in ['discriminator', 'wdiscriminator', 'noise_predictor']:
         train_model(cfg, model, trainloader, valloader, logger, checkpoint_callback)
     elif cfg.training.mode == 'separate':
         cfg.training.mode = 'encoder'
@@ -90,14 +94,17 @@ def load_data(cfg):
     data = np.load(data_path, allow_pickle=True)
     X = data['data'].astype(np.float32)
     # phate_coords = data['phate'].astype(np.float32)
-    colors = data['colors']
     dist = data['dist'].astype(np.float32)
     dist_std = np.std(dist.flatten())
     train_mask = data['is_train'].astype(bool) # !!! Fixed bug: when mask is not boolean it is problematic!
     X = X[train_mask,:]
     # phate_coords = phate_coords[train_mask,:]
     phate_coords = None
-    colors = colors[train_mask]
+    if 'colors' in data.files:
+        colors = data['colors']
+        colors = colors[train_mask]
+    else:
+        colors = None
     dist = dist[train_mask,:][:,train_mask]
     mask_x = data.get('mask_x', None)
     mask_d = data.get('mask_d', None)

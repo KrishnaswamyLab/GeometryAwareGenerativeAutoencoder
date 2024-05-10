@@ -2,6 +2,21 @@ import numpy as np
 from diffusionmap import DiffusionMap
 from scipy.spatial.distance import pdist, squareform
 
+def gradually_add(data, noise_rate=1, seed=42, noise='gaussian'):
+    np.random.shuffle(data)
+    np.random.seed(seed)
+    noise_rates = np.random.rand(data.shape[0], 1) * noise_rate
+    if noise == 'gaussian':
+        data_std = data.std()
+        noise = np.random.randn(*data.shape)
+        data_noisy = data + noise * noise_rates * data_std
+    elif noise == 'hi-freq':
+        diff_map_op = DiffusionMap(n_components=3, t=3, random_state=seed).fit(data)
+        data_noisy = data + make_hi_freq_noise(data, diff_map_op, noise_rate=noise_rates, add_data_mean=False)
+    else:
+        raise ValueError(f"Unknown noise type: {noise}")
+    return data_noisy, noise_rates.flatten()
+
 def add_negative_samples(data_dict, subset_rate=0.5, noise_rate=1, seed=42, noise='gaussian', mask_dists=False, neg_dist_rate=1.5, shell=True):
     np.random.seed(seed)
     data_train = data_dict['data'][data_dict['is_train']]
