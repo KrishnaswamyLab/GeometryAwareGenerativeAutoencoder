@@ -45,7 +45,6 @@ class OffManifolderLinear():
         if self.density_loss_function is not None:
             return self.density_loss_function(points)
         else:
-            raise NotImplementedError("Don't use density loss!")
             return torch.vmap(self._1density_loss)(points)
 
     def immersion(self, points):
@@ -144,4 +143,17 @@ def offmanifolder4_maker(
         # weighting_factor = discriminator_(x)*disc_factor
         weighting_factor = torch.exp((1-discriminator_(x))*disc_factor) - 1
         return torch.cat([z, weighting_factor.reshape(-1,1) * rand_pts], dim=1)
+    return ofm_
+
+def offmanifolder5_maker(
+    encoder_, 
+    discriminator_, 
+    disc_factor = 4,
+    max_prob=1.
+):
+    def ofm_(x):
+        z = encoder_(x)
+        weighting_factor1 = (max_prob-discriminator_(x))/max_prob*disc_factor
+        weighting_factor2 = torch.exp(weighting_factor1)
+        return torch.cat([z * (weighting_factor2.reshape(-1,1)), (weighting_factor1 * 10).unsqueeze(1).repeat(1, 1)], dim=1)
     return ofm_

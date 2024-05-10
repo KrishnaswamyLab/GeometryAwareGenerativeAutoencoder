@@ -10,6 +10,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import grad, Variable
+from torch.nn.utils import spectral_norm
 
 def calculate_bounding_radius(X, centroid):
     # centroid = torch.mean(X, dim=0)
@@ -45,29 +46,42 @@ activation_dict = {
 class MLP(torch.nn.Module):
     def __init__(self, cfg, in_dim, out_dim):
         super().__init__()
-        layer_widths = cfg.get("layer_widths", [[64, 64, 64]])
+        layer_widths = cfg.get("layer_widths", [64, 64, 64])
         assert len(layer_widths) >= 2, "layer_widths list must contain at least 2 elements"
         activation = cfg.get("activation", "relu")
         assert activation in activation_dict.keys(), f"activation must be one of {list(activation_dict.keys())}"
         batch_norm = cfg.get("batch_norm", False)
         dropout = cfg.get("dropout", 0.0)
+        use_spectral_norm = cfg.get("spectral_norm", False)  # Configuration for using spectral normalization
 
         layers = []
         for i, width in enumerate(layer_widths):
             if i == 0:  # First layer, input dimension to first layer width
-                layers.append(torch.nn.Linear(in_dim, width))
+                linear_layer = torch.nn.Linear(in_dim, width)
             else:  # Subsequent layers, previous layer width to current layer width
-                layers.append(torch.nn.Linear(layer_widths[i-1], width))
+                linear_layer = torch.nn.Linear(layer_widths[i-1], width)
+
+            # Conditionally apply spectral normalization
+            if use_spectral_norm:
+                linear_layer = spectral_norm(linear_layer)
+
+            layers.append(linear_layer)
 
             if batch_norm:
                 layers.append(torch.nn.BatchNorm1d(width))
+            
             activation_func = activation_dict[activation]
             layers.append(activation_func)
 
             if dropout > 0:
                 layers.append(torch.nn.Dropout(dropout))
-            
-        layers.append(torch.nn.Linear(layer_widths[-1], out_dim))
+        
+        # Adding the final layer
+        final_linear_layer = torch.nn.Linear(layer_widths[-1], out_dim)
+        if use_spectral_norm:
+            final_linear_layer = spectral_norm(final_linear_layer)
+        layers.append(final_linear_layer)
+
         self.net = torch.nn.Sequential(*layers)
 
     def forward(self, x):
@@ -464,7 +478,10 @@ class WDiscriminatorClip(Encoder):
         self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
         return loss
 
-class WDiscriminator(Encoder):
+"""
+DEPRECATED. now using spectral normalization instead of clipping or GP.
+"""
+class WDGPiscriminator(Encoder):
     """
     using the gradient penalty in WGAN-GP
     https://github.com/igul222/improved_wgan_training/blob/fa66c574a54c4916d27c55441d33753dcc78f6bc/gan_toy.py#L70
@@ -483,7 +500,9 @@ class WDiscriminator(Encoder):
         x = batch['x']
         mask = batch.get('mx', None).flatten()
         assert mask is not None
-
+        for p in self.mlp.parameters():
+            # p.data.clamp_(self.hparams.cfg.training.clamp_lower, self.hparams.cfg.training.clamp_upper)
+            p.data.clamp_(- self.hparams.cfg.training.clamp, self.hparams.cfg.training.clamp)
         scores = self(x)
         wgan_loss = self.compute_wgan_loss(scores, mask)
         self.log(f'{stage}/wgan_loss', wgan_loss, prog_bar=True, on_epoch=True)
@@ -533,3 +552,24 @@ class WDiscriminator(Encoder):
             loss = self.step(batch, batch_idx, 'test')
         return loss
     
+class WDiscriminator(Encoder):
+    def __init__(self, cfg, preprocessor):
+        super().__init__(cfg, preprocessor)
+        self.preprocessor = preprocessor
+        cfg.loss.dist_mse_decay = cfg.loss.get('dist_mse_decay', 0.)
+        in_dim = cfg.dimensions.get('data')
+        # out_dim = cfg.dimensions.get('latent')
+        out_dim = 1
+        self.save_hyperparameters()
+        self.mlp = MLP(cfg.encoder, in_dim, out_dim)
+    
+    def step(self, batch, batch_idx, stage):
+        x = batch['x']
+        mask = batch.get('mx', None).flatten()
+        assert mask is not None
+        scores = self(x)
+        mask_label = -(mask * 2 - 1.)
+        loss = (scores.flatten() * mask_label).mean()
+
+        self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
+        return loss
