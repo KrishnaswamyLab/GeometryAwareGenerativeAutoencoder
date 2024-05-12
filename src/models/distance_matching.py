@@ -299,7 +299,6 @@ if __name__ == "__main__":
     save_folder = f'./{data_name}/dmatch_{mode}'
 
     # Data
-    data_name = 'swiss_roll'
     if data_name == 'swiss_roll':
         gt_X, X, _ = sklearn_swiss_roll(n_samples=1000, noise=0.0)
         colors = None
