@@ -4,11 +4,12 @@ import numpy as np
 import torch
 import phate
 import scipy
+import matplotlib.pyplot as plt
+import scprep
 
 sys.path.append('../../src/')
 from data import train_valid_loader_from_pc
 from model2 import Encoder, Decoder, Preprocessor, Autoencoder
-# from train import train_model
 from models.unified_model import GeometricAE
 
 from data_script import hemisphere_data, sklearn_swiss_roll
@@ -16,7 +17,7 @@ from utils.seed import seed_everything
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 
 activation_dict = {
     'relu': torch.nn.ReLU(),
@@ -78,6 +79,7 @@ class DistanceMatching(GeometricAE):
     
     def fit(self, 
             X, 
+            X_dist,
             train_mask,
             percent_test,
             data_name,
@@ -109,9 +111,13 @@ class DistanceMatching(GeometricAE):
             train_mask = train_mask.astype(bool)
 
         # PHATE coordinates, gt distance matrix
-        self.phate_coords = self.phate_op.fit_transform(X)
-        self.diff_potential = self.phate_op.diff_potential
-        phate_dist = scipy.spatial.distance.cdist(self.diff_potential, self.diff_potential) # [N, N]
+        if X_dist is None:
+            self.phate_coords = self.phate_op.fit_transform(X)
+            self.diff_potential = self.phate_op.diff_potential
+            phate_dist = scipy.spatial.distance.cdist(self.diff_potential, self.diff_potential) # [N, N]
+        else:
+            phate_dist = X_dist
+            self.phate_coords = phate_coords
         dist_std = np.std(phate_dist.flatten())
 
         X = X[train_mask,:]
@@ -229,7 +235,7 @@ class DistanceMatching(GeometricAE):
             model.link_encoder()
             cfg.training.mode = 'decoder'
             train_model(cfg, model.decoder, train_loader, val_loader, logger, checkpoint_callback)
-        elif cfg.training.mode == 'end2end': # encoder-only, decoder-only, or end-to-end
+        elif cfg.training.mode == 'end2end':
             train_model(cfg, model, train_loader, val_loader, logger, checkpoint_callback)
         elif cfg.training.mode == 'encoder':
             train_model(cfg, model.encoder, train_loader, val_loader, logger, checkpoint_callback)
@@ -237,8 +243,6 @@ class DistanceMatching(GeometricAE):
             train_model(cfg, model.decoder, train_loader, val_loader, logger, checkpoint_callback)
         else:
             raise ValueError('Invalid training mode')            
-        # ckpt = torch.load(model_save_path + '.ckpt')
-        # print(ckpt['state_dict'].keys())
 
         if cfg.training.mode == 'encoder':
             model.encoder.load_from_checkpoint(model_save_path + '.ckpt')
@@ -258,12 +262,11 @@ class DistanceMatching(GeometricAE):
         if self.encoder is None:
             raise ValueError('Encoder not trained yet. Please train the model first.')
         X = X.to(self.device)
+
         self.encoder.eval()
-        # with torch.no_grad(): # Need gradients for pullback metrics
-            # X = torch.tensor(X, dtype=torch.float32).to(self.device)
         Z = self.encoder(X)
         
-        return Z #.detach().cpu().numpy()
+        return Z
     
     def decode(self, Z):
         ''' Decode latent space Z to ambient space. '''
@@ -271,12 +274,9 @@ class DistanceMatching(GeometricAE):
             raise ValueError('Decoder not trained yet. Please train the model first.')
         Z = Z.to(self.device)
         self.decoder.eval()
-        # with torch.no_grad():
-        #     Z = torch.tensor(Z, dtype=torch.float32).to(self.device)
         X_hat = self.decoder(Z)
         
-        return X_hat #.detach().cpu().numpy()
-    
+        return X_hat
 
 
 if __name__ == "__main__":
@@ -289,16 +289,18 @@ if __name__ == "__main__":
         gt_X, X, _ = hemisphere_data(n_samples=1000, noise=0.0)
         colors = None
 
-    mode = 'encoder'
+    mode = 'end2end'
+    save_folder = f'./{data_name}/dmatch_{mode}'
+    os.makedirs(save_folder, exist_ok=True)
+
     model_hypers = {
         'ambient_dimension': 3,
-        'latent_dimension': 2,
+        'latent_dimension': 3,
         'model_type': 'distance',
         'activation': 'relu',
         'layer_widths': [256, 128, 64],
-        'knn': 10,
+        'knn': 5,
         't': 'auto',
-        'n_landmark': 5000,
         'verbose': False
     }
     training_hypers = {
@@ -317,14 +319,12 @@ if __name__ == "__main__":
         'log_every_n_steps': 100,
         'accelerator': 'auto',
         'train_from_scratch': False,
-        'model_save_path': f'./{data_name}_distance_matching_{mode}/model-v1'
+        'model_save_path': f'{save_folder}/model'
     }
-    # Test AffinityMatching model
-    #X = np.random.randn(100, 10) # 3000 samples, 10 features
 
-    print(gt_X.shape, X.shape)
+    print('Fitting on X: ', gt_X.shape, X.shape)
     model = DistanceMatching(**model_hypers)
-    model.fit(X, train_mask=None, percent_test=0.3, **training_hypers)
+    model.fit(X, X_dist=None, train_mask=None, percent_test=0.2, **training_hypers)
 
     X = torch.tensor(X, dtype=torch.float32)
     Z = model.encode(X)
@@ -335,8 +335,6 @@ if __name__ == "__main__":
     print('PHATE Coords:', phate_coords.shape)
 
     # Plot
-    import matplotlib.pyplot as plt
-    import scprep
     fig = plt.figure(figsize=(16, 8))
     ax = fig.add_subplot(131, projection='3d')
     scprep.plot.scatter3d(X.detach().cpu().numpy(), c=colors, ax=ax, title='X')
@@ -345,15 +343,4 @@ if __name__ == "__main__":
     ax = fig.add_subplot(133)
     scprep.plot.scatter2d(phate_coords, c=colors, ax=ax, title='Phate')
     plt.show()
-    plt.savefig(f'./distance_matching_{mode}/plot.png')
-
-    # Pullback metrics
-    # metric = model.encoder_pullback(X)
-    # print('X: ', X.shape, 'metric: ', metric.shape)
-
-    #geodesic pullback
-    # T = 5
-    # X_tb = np.random.randn(16, T, 10)
-    # X_tb = torch.tensor(X_tb, dtype=torch.float32)
-    # metric_tb = model.geodesic_encoder_pullback(X_tb)
-    # print('X_tb: ', X_tb.shape, 'metric_tb: ', metric_tb.shape)
+    plt.savefig(f'{save_folder}/plot.png')
