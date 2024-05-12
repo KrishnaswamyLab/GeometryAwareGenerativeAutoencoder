@@ -91,6 +91,10 @@ class DistanceMatching(GeometricAE):
             componentwise_std,
             weight_decay,
             dist_mse_decay,
+            dist_wieght=1.0,
+            reconstr_weight=0.0,
+            cycle_weight=0.0,
+            cycle_dist_weight=0.0,
             monitor='validation/loss',
             patience=100,
             seed=2024,
@@ -156,10 +160,10 @@ class DistanceMatching(GeometricAE):
             'loss': {
                 'dist_mse_decay': dist_mse_decay,
                 'weights': {
-                    'dist': 0.9,
-                    'reconstr': 0.1,
-                    'cycle': 0.0,
-                    'cycle_dist': 0.0,
+                    'dist': dist_wieght,
+                    'reconstr': reconstr_weight,
+                    'cycle': cycle_weight,
+                    'cycle_dist': cycle_dist_weight
                 }
             },
             'training': {
@@ -280,6 +284,20 @@ class DistanceMatching(GeometricAE):
 
 
 if __name__ == "__main__":
+    import argparse
+
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('--data_name', type=str, default='swiss_roll')
+    argparser.add_argument('--mode', type=str, default='encoder')
+    argparser.add_argument('--from_scratch', action='store_true')
+
+    args = argparser.parse_args()
+    data_name = args.data_name
+    mode = args.mode
+    from_scratch = args.from_scratch
+
+    save_folder = f'./{data_name}/dmatch_{mode}'
+
     # Data
     data_name = 'swiss_roll'
     if data_name == 'swiss_roll':
@@ -288,9 +306,9 @@ if __name__ == "__main__":
     elif data_name == 'hemisphere':
         gt_X, X, _ = hemisphere_data(n_samples=1000, noise=0.0)
         colors = None
-
-    mode = 'end2end'
-    save_folder = f'./{data_name}/dmatch_{mode}'
+    
+    if from_scratch:
+        os.system(f'rm -rf {save_folder}')
     os.makedirs(save_folder, exist_ok=True)
 
     model_hypers = {
@@ -313,12 +331,16 @@ if __name__ == "__main__":
         'componentwise_std': False,
         'weight_decay': 1e-5,
         'dist_mse_decay': 0,
+        'dist_wieght': 0.9,
+        'reconstr_weight': 0.1,
+        'cycle_weight': 0.1,
+        'cycle_dist_weight': 0.1,
         'monitor': 'validation/loss',
         'patience': 100,
         'seed': 2024,
         'log_every_n_steps': 100,
         'accelerator': 'auto',
-        'train_from_scratch': False,
+        'train_from_scratch': from_scratch,
         'model_save_path': f'{save_folder}/model'
     }
 
@@ -335,12 +357,17 @@ if __name__ == "__main__":
     print('PHATE Coords:', phate_coords.shape)
 
     # Plot
-    fig = plt.figure(figsize=(16, 8))
-    ax = fig.add_subplot(131, projection='3d')
+    fig = plt.figure(figsize=(24, 8))
+    ax = fig.add_subplot(141, projection='3d')
     scprep.plot.scatter3d(X.detach().cpu().numpy(), c=colors, ax=ax, title='X')
-    ax = fig.add_subplot(132)
-    scprep.plot.scatter2d(Z.detach().cpu().numpy(), c=colors, ax=ax, title='Z')
-    ax = fig.add_subplot(133)
-    scprep.plot.scatter2d(phate_coords, c=colors, ax=ax, title='Phate')
-    plt.show()
+
+    ax = fig.add_subplot(142, projection='3d')
+    scprep.plot.scatter3d(Z.detach().cpu().numpy(), c=colors, ax=ax, title='Z')
+
+    ax = fig.add_subplot(143, projection='3d')
+    scprep.plot.scatter3d(phate_coords, c=colors, ax=ax, title='Phate')
+
+    ax = fig.add_subplot(144, projection='3d')
+    scprep.plot.scatter3d(X_hat.detach().cpu().numpy(), c=colors, ax=ax, title='X_hat')
+
     plt.savefig(f'{save_folder}/plot.png')
