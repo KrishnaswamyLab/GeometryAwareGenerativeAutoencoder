@@ -67,83 +67,83 @@ class OffManifolderLinear():
             return J.T @ J
         return torch.vmap(pullback_per_point)(points)
 
-def offmanifolder_maker(
-    encoder, 
-    discriminator, 
-    emb_dim,
-    device,
-    folding_dim = 10,
-    density_exponential = 4,
-):
-    assert folding_dim > emb_dim
-    # preserve_matrix = torch.zeros(emb_dim, folding_dim, dtype=torch.float).to(device)
-    # random_matrix = torch.randn(1, folding_dim - emb_dim).to(device)
-    random_matrix = torch.ones(1, folding_dim - emb_dim, dtype=torch.float, device=device)
-    def ofm_(x):
-        z = encoder(x)
-        # preserved_subspace = z @ preserve_matrix
-        preserved_subspace = torch.cat([z, torch.zeros((z.size(0), folding_dim-emb_dim), dtype=z.dtype, device=device)], dim=1)
-        random_dirs = torch.cat([torch.zeros((z.size(0), emb_dim), dtype=z.dtype, device=device), random_matrix.repeat(z.size(0), 1)], dim=1)
-        # weighting_factor = torch.exp((1-discriminator(x))*density_exponential) - 1 # starts at 1; gets higher immediately.
-        weighting_factor = ((1-discriminator(x))*density_exponential) # starts at 1; gets higher immediately.
-        return preserved_subspace + random_dirs*weighting_factor[:,None]
-    return ofm_
+# def offmanifolder_maker(
+#     encoder, 
+#     discriminator, 
+#     emb_dim,
+#     device,
+#     folding_dim = 10,
+#     density_exponential = 4,
+# ):
+#     assert folding_dim > emb_dim
+#     # preserve_matrix = torch.zeros(emb_dim, folding_dim, dtype=torch.float).to(device)
+#     # random_matrix = torch.randn(1, folding_dim - emb_dim).to(device)
+#     random_matrix = torch.ones(1, folding_dim - emb_dim, dtype=torch.float, device=device)
+#     def ofm_(x):
+#         z = encoder(x)
+#         # preserved_subspace = z @ preserve_matrix
+#         preserved_subspace = torch.cat([z, torch.zeros((z.size(0), folding_dim-emb_dim), dtype=z.dtype, device=device)], dim=1)
+#         random_dirs = torch.cat([torch.zeros((z.size(0), emb_dim), dtype=z.dtype, device=device), random_matrix.repeat(z.size(0), 1)], dim=1)
+#         # weighting_factor = torch.exp((1-discriminator(x))*density_exponential) - 1 # starts at 1; gets higher immediately.
+#         weighting_factor = ((1-discriminator(x))*density_exponential) # starts at 1; gets higher immediately.
+#         return preserved_subspace + random_dirs*weighting_factor[:,None]
+#     return ofm_
 
-    # large dim / rand prj moves the pt far away
+#     # large dim / rand prj moves the pt far away
 
-def offmanifolder1_maker(
-    encoder_, 
-    discriminator_, 
-    disc_factor = 4,
-):
-    def ofm_(x):
-        z = encoder_(x)
-        weighting_factor = discriminator_(x)*disc_factor
-        return torch.cat([z, weighting_factor.unsqueeze(1).repeat(1, 1)], dim=1)
-    return ofm_
+# def offmanifolder1_maker(
+#     encoder_, 
+#     discriminator_, 
+#     disc_factor = 4,
+# ):
+#     def ofm_(x):
+#         z = encoder_(x)
+#         weighting_factor = discriminator_(x)*disc_factor
+#         return torch.cat([z, weighting_factor.unsqueeze(1).repeat(1, 1)], dim=1)
+#     return ofm_
 
-def offmanifolder2_maker(
-    encoder_, 
-    discriminator_, 
-    disc_factor = 4,
-):
-    def ofm_(x):
-        z = encoder_(x)
-        # weighting_factor = discriminator_(x)*disc_factor
-        weighting_factor = torch.exp((1-discriminator_(x))*disc_factor) - 1
-        return torch.cat([z, weighting_factor.unsqueeze(1).repeat(1, 1)], dim=1)
-    return ofm_
+# def offmanifolder2_maker(
+#     encoder_, 
+#     discriminator_, 
+#     disc_factor = 4,
+# ):
+#     def ofm_(x):
+#         z = encoder_(x)
+#         # weighting_factor = discriminator_(x)*disc_factor
+#         weighting_factor = torch.exp((1-discriminator_(x))*disc_factor) - 1
+#         return torch.cat([z, weighting_factor.unsqueeze(1).repeat(1, 1)], dim=1)
+#     return ofm_
 
-def offmanifolder3_maker(
-    encoder_, 
-    discriminator_, 
-    disc_factor = 4,
-    folding_dim = 10,
-):
-    def ofm_(x):
-        z = encoder_(x)
-        # weighting_factor = discriminator_(x)*disc_factor
-        weighting_factor = torch.exp((1-discriminator_(x))*disc_factor) - 1
-        rand_pts = torch.rand(z.shape[0], folding_dim - z.shape[1], device=x.device, dtype=torch.float32)
-        return torch.cat([z, weighting_factor.reshape(-1,1) * rand_pts], dim=1)
-    return ofm_
+# def offmanifolder3_maker(
+#     encoder_, 
+#     discriminator_, 
+#     disc_factor = 4,
+#     folding_dim = 10,
+# ):
+#     def ofm_(x):
+#         z = encoder_(x)
+#         # weighting_factor = discriminator_(x)*disc_factor
+#         weighting_factor = torch.exp((1-discriminator_(x))*disc_factor) - 1
+#         rand_pts = torch.rand(z.shape[0], folding_dim - z.shape[1], device=x.device, dtype=torch.float32)
+#         return torch.cat([z, weighting_factor.reshape(-1,1) * rand_pts], dim=1)
+#     return ofm_
 
-def offmanifolder4_maker(
-    encoder_, 
-    discriminator_,
-    device,
-    disc_factor = 4,
-    emb_dim=2,
-    folding_dim = 10,
-):
-    random_matrix = torch.randn(emb_dim, folding_dim - emb_dim, device=device, dtype=torch.float32)
-    def ofm_(x):
-        z = encoder_(x)
-        rand_pts = z @ random_matrix
-        # weighting_factor = discriminator_(x)*disc_factor
-        weighting_factor = torch.exp((1-discriminator_(x))*disc_factor) - 1
-        return torch.cat([z, weighting_factor.reshape(-1,1) * rand_pts], dim=1)
-    return ofm_
+# def offmanifolder4_maker(
+#     encoder_, 
+#     discriminator_,
+#     device,
+#     disc_factor = 4,
+#     emb_dim=2,
+#     folding_dim = 10,
+# ):
+#     random_matrix = torch.randn(emb_dim, folding_dim - emb_dim, device=device, dtype=torch.float32)
+#     def ofm_(x):
+#         z = encoder_(x)
+#         rand_pts = z @ random_matrix
+#         # weighting_factor = discriminator_(x)*disc_factor
+#         weighting_factor = torch.exp((1-discriminator_(x))*disc_factor) - 1
+#         return torch.cat([z, weighting_factor.reshape(-1,1) * rand_pts], dim=1)
+#     return ofm_
 
 def offmanifolder5_maker(
     encoder_, 
@@ -155,5 +155,7 @@ def offmanifolder5_maker(
         z = encoder_(x)
         weighting_factor1 = (max_prob-discriminator_(x))/max_prob*disc_factor
         weighting_factor2 = torch.exp(weighting_factor1)
-        return torch.cat([z * (weighting_factor2.reshape(-1,1)), (weighting_factor1 * 10).unsqueeze(1).repeat(1, 1)], dim=1)
+        return torch.cat([z * (weighting_factor2.reshape(-1,1)), (weighting_factor1 * 100).unsqueeze(1).repeat(1, 1)], dim=1)
     return ofm_
+
+offmanifolder_maker = offmanifolder5_maker

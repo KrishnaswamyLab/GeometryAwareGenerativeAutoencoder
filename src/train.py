@@ -9,6 +9,8 @@ from omegaconf import DictConfig, OmegaConf
 
 from data import train_valid_loader_from_pc
 from model2 import Autoencoder, Preprocessor, Discriminator, NoisePredictor, WDiscriminator
+from model_curved_space import SphereEncoder, HyperbolicLorenzEncoder
+from model_fim_matching import FIMMEncoder
 
 @hydra.main(version_base=None, config_path='../config', config_name='config')
 def main(cfg: DictConfig):
@@ -32,6 +34,12 @@ def main(cfg: DictConfig):
         model = NoisePredictor(cfg, preprocessor)
     elif cfg.training.mode == 'wdiscriminator':
         model = WDiscriminator(cfg, preprocessor)
+    elif cfg.training.mode == 'sphere':
+        model = SphereEncoder(cfg, preprocessor)
+    elif cfg.training.mode == 'hyperbolic':
+        model = HyperbolicLorenzEncoder(cfg, preprocessor)
+    elif cfg.training.mode == 'fimm':
+        model = FIMMEncoder(cfg, preprocessor)
     else:
         model = Autoencoder(cfg, preprocessor)
 
@@ -53,7 +61,7 @@ def main(cfg: DictConfig):
             mode='min'  # Minimize validation loss
         )
 
-    if cfg.training.mode in ['discriminator', 'wdiscriminator', 'noise_predictor']:
+    if cfg.training.mode in ['discriminator', 'wdiscriminator', 'noise_predictor', 'sphere', 'hyperbolic', 'fimm']:
         train_model(cfg, model, trainloader, valloader, logger, checkpoint_callback)
     elif cfg.training.mode == 'separate':
         cfg.training.mode = 'encoder'

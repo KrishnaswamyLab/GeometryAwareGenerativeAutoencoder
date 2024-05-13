@@ -567,9 +567,18 @@ class WDiscriminator(Encoder):
         x = batch['x']
         mask = batch.get('mx', None).flatten()
         assert mask is not None
+        if self.hparams.cfg.training.clip:
+            for p in self.mlp.parameters():
+                # p.data.clamp_(self.hparams.cfg.training.clamp_lower, self.hparams.cfg.training.clamp_upper)
+                p.data.clamp_(- self.hparams.cfg.training.clamp, self.hparams.cfg.training.clamp)
+
         scores = self(x)
         mask_label = -(mask * 2 - 1.)
-        loss = (scores.flatten() * mask_label).mean()
 
+        wgan_loss = (scores.flatten() * mask_label).mean()
+        self.log(f'{stage}/wgan_loss', wgan_loss, prog_bar=True, on_epoch=True)
+        pos1_loss = scores[mask.bool()].var()
+        self.log(f'{stage}/pos1_loss', pos1_loss, prog_bar=True, on_epoch=True)
+        loss = self.hparams.cfg.loss.weights.wgan * wgan_loss + self.hparams.cfg.loss.weights.pos1 * pos1_loss
         self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
         return loss

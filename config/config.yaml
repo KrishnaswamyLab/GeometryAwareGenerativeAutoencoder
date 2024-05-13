@@ -30,7 +30,8 @@ training:
   shuffle: true
   # mode: 'end2end' # separate
   mode: 'separate'
-  clamp: 0.01
+  clip: False
+  clamp: 0.1
   sample_rate: 0.1
   gradient_penalty_frequency: 10
 
@@ -44,6 +45,7 @@ loss:
     negative: 0.
     wgan: 1.
     grad: 1.
+    pos1: 1.
 
 path:
   root: '../results/'
@@ -54,6 +56,13 @@ data:
   root: '../toy_data/converted'
   filetype: '.npz'
   name: 'make_mix_surface'
+
+fimm:
+  t: 1.
+  alpha: 1.
+  bandwidth: 1.
+  knn: 5
+  prob_method: 'gaussian'
 
 logger:
   use_wandb: True

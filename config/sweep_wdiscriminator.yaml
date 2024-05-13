@@ -13,7 +13,8 @@ parameters:
     values: ['../data/gt_geodesic/disc/']
   data.name:
     # values: ['hemisphere_none_0','hemisphere_5_0','hemisphere_15_0','hemisphere_50_0','hemisphere_15_0.1','hemisphere_15_0.3','swissroll_none_0','swissroll_5_0','swissroll_15_0','swissroll_50_0','swissroll_15_0.1','swissroll_15_0.3','ellipsoid_15_0.1','ellipsoid_15_0','ellipsoid_5_0','ellipsoid_15_0.3','ellipsoid_50_0','ellipsoid_none_0','torus_15_0.1','torus_15_0.3','torus_15_0','torus_50_0','torus_5_0','torus_none_0','saddle_15_0.1','saddle_15_0.3','saddle_15_0','saddle_50_0','saddle_5_0','saddle_none_0']
-    values: ['hemisphere_none_0']
+    # values: ['swissroll_15_0.3','swissroll_15_0','swissroll_15_0.1','swissroll_none_0','swissroll_50_0','swissroll_5_0','hemisphere_5_0']
+    values: ['swissroll_none_0']
   encoder.layer_widths: 
     values: [[256,128,64]]
   encoder.batch_norm: 
@@ -28,3 +29,10 @@ parameters:
     values: [50]
   training.weight_decay:
     values: [1e-4]
+  training.clip:
+    values: [True]
+  training.clamp:
+    # values: [0.01,0.05,0.1]
+    values: [1,2,10]
+  loss.weights.pos1:
+    values: [0.,1.]
