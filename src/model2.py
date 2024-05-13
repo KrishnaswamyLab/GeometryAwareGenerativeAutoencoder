@@ -235,8 +235,9 @@ class Autoencoder(pl.LightningModule):
         d = batch['d']
         mask_d = batch.get('md', None)
         mask_x = batch.get('mx', None)
-        x_norm = self.encoder.preprocessor.normalize(x) #Note: No need to normalize x for the encoder.
-        #zhat = self.encoder(x_norm) 
+        x_norm = self.encoder.preprocessor.normalize(x) # Note: No need to normalize x for the encoder.
+        #zhat = self.encoder(x_norm) # TODO: decide if we should normalize x for decoder reconstruction loss.
+        #x_norm = x
         zhat = self.encoder(x)
         d_norm = self.encoder.preprocessor.normalize_dist(d)
         xhat_norm = self.decoder(zhat, unnormalize=False)

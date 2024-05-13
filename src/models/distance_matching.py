@@ -207,9 +207,17 @@ class DistanceMatching(GeometricAE):
                 decoder = Decoder.load_from_checkpoint(model_save_path + '.ckpt')
                 self.decoder = decoder
                 self.encoder = model.encoder # a random encoder
-            else:
+            elif cfg.training.mode == 'end2end':
                 model = Autoencoder.load_from_checkpoint(model_save_path + '.ckpt')
                 self.encoder = model.encoder
+                self.decoder = model.decoder
+            elif cfg.training.mode == 'separate':
+                encoder = Encoder.load_from_checkpoint(model_save_path + '_encoder.ckpt')
+                # filter out unnecessary keys
+                state_dict = torch.load(model_save_path + '_decoder.ckpt')['state_dict']
+                state_dict = {k: v for k, v in state_dict.items() if 'encoder' not in k}
+                model.decoder.load_state_dict(state_dict)
+                self.encoder = encoder
                 self.decoder = model.decoder
             
             print(f'Loaded encoder from {model_save_path}, skipping encoder training ...')
@@ -235,10 +243,29 @@ class DistanceMatching(GeometricAE):
 
         if cfg.training.mode == 'separate':
             cfg.training.mode = 'encoder'
-            train_model(cfg, model.encoder, train_loader, val_loader, logger, checkpoint_callback)
+            encoder_checkpoint_callback = ModelCheckpoint(
+                dirpath=cfg.path.root,  # Save checkpoints in wandb directory
+                filename=f'{cfg.path.model}_encoder',
+                save_top_k=1,
+                monitor=cfg.training.monitor,  # Model selection based on validation loss
+                mode='min',  # Minimize validation loss
+            )
+            print('=====Training encoder ..., save at ', encoder_checkpoint_callback.filename)
+            train_model(cfg, model.encoder, train_loader, val_loader, logger, encoder_checkpoint_callback)
             model.link_encoder()
+
             cfg.training.mode = 'decoder'
-            train_model(cfg, model.decoder, train_loader, val_loader, logger, checkpoint_callback)
+            decoder_checkpoint_callback = ModelCheckpoint(
+                dirpath=cfg.path.root,  # Save checkpoints in wandb directory
+                filename=f'{cfg.path.model}_decoder',
+                save_top_k=1,
+                monitor=cfg.training.monitor,  # Model selection based on validation loss
+                mode='min',  # Minimize validation loss
+            )
+            train_model(cfg, model.decoder, train_loader, val_loader, logger, decoder_checkpoint_callback)
+            print('=====Training decoder ..., save at ', decoder_checkpoint_callback.filename)
+
+            cfg.training.mode = 'separate'
         elif cfg.training.mode == 'end2end':
             train_model(cfg, model, train_loader, val_loader, logger, checkpoint_callback)
         elif cfg.training.mode == 'encoder':
@@ -252,8 +279,19 @@ class DistanceMatching(GeometricAE):
             model.encoder.load_from_checkpoint(model_save_path + '.ckpt')
         elif cfg.training.mode == 'decoder':
             model.decoder.load_from_checkpoint(model_save_path + '.ckpt')
-        else:
+        elif cfg.training.mode == 'end2end':
             model.load_from_checkpoint(model_save_path + '.ckpt')
+        elif cfg.training.mode == 'separate':
+            state_dict = torch.load(model_save_path + '_encoder.ckpt')['state_dict']
+            print('Encoder state_dict:', state_dict.keys())
+            model.encoder.load_from_checkpoint(model_save_path + '_encoder.ckpt')
+
+            state_dict = torch.load(model_save_path + '_decoder.ckpt')['state_dict']
+            print('Decoder state_dict:', state_dict.keys())
+            # model.decoder.load_from_checkpoint(model_save_path + '_decoder.ckpt')
+            # filter out unnecessary keys
+            #state_dict = {k: v for k, v in state_dict.items() if 'encoder' not in k}
+            model.decoder.load_state_dict(state_dict)
 
         self.encoder = model.encoder
         self.decoder = model.decoder
@@ -289,11 +327,13 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument('--data_name', type=str, default='swiss_roll')
     argparser.add_argument('--mode', type=str, default='encoder')
+    argparser.add_argument('--epoch', type=int, default=10)
     argparser.add_argument('--from_scratch', action='store_true')
 
     args = argparser.parse_args()
     data_name = args.data_name
     mode = args.mode
+    max_epochs = args.epoch
     from_scratch = args.from_scratch
 
     save_folder = f'./{data_name}/dmatch_{mode}'
@@ -323,7 +363,7 @@ if __name__ == "__main__":
     training_hypers = {
         'data_name': 'randomtest',
         'mode': mode, # 'encoder', 'decoder', 'end2end', 'separate
-        'max_epochs': 10,
+        'max_epochs': max_epochs,
         'batch_size': 64,
         'lr': 1e-3,
         'shuffle': True,
