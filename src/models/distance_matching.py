@@ -4,11 +4,12 @@ import numpy as np
 import torch
 import phate
 import scipy
+import matplotlib.pyplot as plt
+import scprep
 
 sys.path.append('../../src/')
 from data import train_valid_loader_from_pc
 from model2 import Encoder, Decoder, Preprocessor, Autoencoder
-# from train import train_model
 from models.unified_model import GeometricAE
 
 from data_script import hemisphere_data, sklearn_swiss_roll
@@ -16,7 +17,7 @@ from utils.seed import seed_everything
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 
 activation_dict = {
     'relu': torch.nn.ReLU(),
@@ -78,6 +79,7 @@ class DistanceMatching(GeometricAE):
     
     def fit(self, 
             X, 
+            X_dist,
             train_mask,
             percent_test,
             data_name,
@@ -89,6 +91,10 @@ class DistanceMatching(GeometricAE):
             componentwise_std,
             weight_decay,
             dist_mse_decay,
+            dist_wieght=1.0,
+            reconstr_weight=0.0,
+            cycle_weight=0.0,
+            cycle_dist_weight=0.0,
             monitor='validation/loss',
             patience=100,
             seed=2024,
@@ -109,9 +115,13 @@ class DistanceMatching(GeometricAE):
             train_mask = train_mask.astype(bool)
 
         # PHATE coordinates, gt distance matrix
-        self.phate_coords = self.phate_op.fit_transform(X)
-        self.diff_potential = self.phate_op.diff_potential
-        phate_dist = scipy.spatial.distance.cdist(self.diff_potential, self.diff_potential) # [N, N]
+        if X_dist is None:
+            self.phate_coords = self.phate_op.fit_transform(X)
+            self.diff_potential = self.phate_op.diff_potential
+            phate_dist = scipy.spatial.distance.cdist(self.diff_potential, self.diff_potential) # [N, N]
+        else:
+            phate_dist = X_dist
+            self.phate_coords = phate_coords
         dist_std = np.std(phate_dist.flatten())
 
         X = X[train_mask,:]
@@ -150,10 +160,10 @@ class DistanceMatching(GeometricAE):
             'loss': {
                 'dist_mse_decay': dist_mse_decay,
                 'weights': {
-                    'dist': 0.9,
-                    'reconstr': 0.1,
-                    'cycle': 0.0,
-                    'cycle_dist': 0.0,
+                    'dist': dist_wieght,
+                    'reconstr': reconstr_weight,
+                    'cycle': cycle_weight,
+                    'cycle_dist': cycle_dist_weight
                 }
             },
             'training': {
@@ -197,9 +207,17 @@ class DistanceMatching(GeometricAE):
                 decoder = Decoder.load_from_checkpoint(model_save_path + '.ckpt')
                 self.decoder = decoder
                 self.encoder = model.encoder # a random encoder
-            else:
+            elif cfg.training.mode == 'end2end':
                 model = Autoencoder.load_from_checkpoint(model_save_path + '.ckpt')
                 self.encoder = model.encoder
+                self.decoder = model.decoder
+            elif cfg.training.mode == 'separate':
+                encoder = Encoder.load_from_checkpoint(model_save_path + '_encoder.ckpt')
+                # filter out unnecessary keys
+                state_dict = torch.load(model_save_path + '_decoder.ckpt')['state_dict']
+                state_dict = {k: v for k, v in state_dict.items() if 'encoder' not in k}
+                model.decoder.load_state_dict(state_dict)
+                self.encoder = encoder
                 self.decoder = model.decoder
             
             print(f'Loaded encoder from {model_save_path}, skipping encoder training ...')
@@ -225,11 +243,30 @@ class DistanceMatching(GeometricAE):
 
         if cfg.training.mode == 'separate':
             cfg.training.mode = 'encoder'
-            train_model(cfg, model.encoder, train_loader, val_loader, logger, checkpoint_callback)
+            encoder_checkpoint_callback = ModelCheckpoint(
+                dirpath=cfg.path.root,  # Save checkpoints in wandb directory
+                filename=f'{cfg.path.model}_encoder',
+                save_top_k=1,
+                monitor=cfg.training.monitor,  # Model selection based on validation loss
+                mode='min',  # Minimize validation loss
+            )
+            print('=====Training encoder ..., save at ', encoder_checkpoint_callback.filename)
+            train_model(cfg, model.encoder, train_loader, val_loader, logger, encoder_checkpoint_callback)
             model.link_encoder()
+
             cfg.training.mode = 'decoder'
-            train_model(cfg, model.decoder, train_loader, val_loader, logger, checkpoint_callback)
-        elif cfg.training.mode == 'end2end': # encoder-only, decoder-only, or end-to-end
+            decoder_checkpoint_callback = ModelCheckpoint(
+                dirpath=cfg.path.root,  # Save checkpoints in wandb directory
+                filename=f'{cfg.path.model}_decoder',
+                save_top_k=1,
+                monitor=cfg.training.monitor,  # Model selection based on validation loss
+                mode='min',  # Minimize validation loss
+            )
+            train_model(cfg, model.decoder, train_loader, val_loader, logger, decoder_checkpoint_callback)
+            print('=====Training decoder ..., save at ', decoder_checkpoint_callback.filename)
+
+            cfg.training.mode = 'separate'
+        elif cfg.training.mode == 'end2end':
             train_model(cfg, model, train_loader, val_loader, logger, checkpoint_callback)
         elif cfg.training.mode == 'encoder':
             train_model(cfg, model.encoder, train_loader, val_loader, logger, checkpoint_callback)
@@ -237,15 +274,24 @@ class DistanceMatching(GeometricAE):
             train_model(cfg, model.decoder, train_loader, val_loader, logger, checkpoint_callback)
         else:
             raise ValueError('Invalid training mode')            
-        # ckpt = torch.load(model_save_path + '.ckpt')
-        # print(ckpt['state_dict'].keys())
 
         if cfg.training.mode == 'encoder':
             model.encoder.load_from_checkpoint(model_save_path + '.ckpt')
         elif cfg.training.mode == 'decoder':
             model.decoder.load_from_checkpoint(model_save_path + '.ckpt')
-        else:
+        elif cfg.training.mode == 'end2end':
             model.load_from_checkpoint(model_save_path + '.ckpt')
+        elif cfg.training.mode == 'separate':
+            state_dict = torch.load(model_save_path + '_encoder.ckpt')['state_dict']
+            print('Encoder state_dict:', state_dict.keys())
+            model.encoder.load_from_checkpoint(model_save_path + '_encoder.ckpt')
+
+            state_dict = torch.load(model_save_path + '_decoder.ckpt')['state_dict']
+            print('Decoder state_dict:', state_dict.keys())
+            # model.decoder.load_from_checkpoint(model_save_path + '_decoder.ckpt')
+            # filter out unnecessary keys
+            #state_dict = {k: v for k, v in state_dict.items() if 'encoder' not in k}
+            model.decoder.load_state_dict(state_dict)
 
         self.encoder = model.encoder
         self.decoder = model.decoder
@@ -258,12 +304,11 @@ class DistanceMatching(GeometricAE):
         if self.encoder is None:
             raise ValueError('Encoder not trained yet. Please train the model first.')
         X = X.to(self.device)
+
         self.encoder.eval()
-        # with torch.no_grad(): # Need gradients for pullback metrics
-            # X = torch.tensor(X, dtype=torch.float32).to(self.device)
         Z = self.encoder(X)
         
-        return Z #.detach().cpu().numpy()
+        return Z
     
     def decode(self, Z):
         ''' Decode latent space Z to ambient space. '''
@@ -271,60 +316,76 @@ class DistanceMatching(GeometricAE):
             raise ValueError('Decoder not trained yet. Please train the model first.')
         Z = Z.to(self.device)
         self.decoder.eval()
-        # with torch.no_grad():
-        #     Z = torch.tensor(Z, dtype=torch.float32).to(self.device)
         X_hat = self.decoder(Z)
         
-        return X_hat #.detach().cpu().numpy()
-    
+        return X_hat
 
 
 if __name__ == "__main__":
+    import argparse
+
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('--data_name', type=str, default='swiss_roll')
+    argparser.add_argument('--mode', type=str, default='encoder')
+    argparser.add_argument('--epoch', type=int, default=10)
+    argparser.add_argument('--from_scratch', action='store_true')
+
+    args = argparser.parse_args()
+    data_name = args.data_name
+    mode = args.mode
+    max_epochs = args.epoch
+    from_scratch = args.from_scratch
+
+    save_folder = f'./{data_name}/dmatch_{mode}'
+
     # Data
-    data_name = 'swiss_roll'
     if data_name == 'swiss_roll':
         gt_X, X, _ = sklearn_swiss_roll(n_samples=1000, noise=0.0)
         colors = None
     elif data_name == 'hemisphere':
         gt_X, X, _ = hemisphere_data(n_samples=1000, noise=0.0)
         colors = None
+    
+    if from_scratch:
+        os.system(f'rm -rf {save_folder}')
+    os.makedirs(save_folder, exist_ok=True)
 
-    mode = 'encoder'
     model_hypers = {
         'ambient_dimension': 3,
-        'latent_dimension': 2,
+        'latent_dimension': 3,
         'model_type': 'distance',
         'activation': 'relu',
         'layer_widths': [256, 128, 64],
-        'knn': 10,
+        'knn': 5,
         't': 'auto',
-        'n_landmark': 5000,
         'verbose': False
     }
     training_hypers = {
         'data_name': 'randomtest',
         'mode': mode, # 'encoder', 'decoder', 'end2end', 'separate
-        'max_epochs': 10,
+        'max_epochs': max_epochs,
         'batch_size': 64,
         'lr': 1e-3,
         'shuffle': True,
         'componentwise_std': False,
         'weight_decay': 1e-5,
         'dist_mse_decay': 0,
+        'dist_wieght': 0.9,
+        'reconstr_weight': 0.1,
+        'cycle_weight': 0.1,
+        'cycle_dist_weight': 0.1,
         'monitor': 'validation/loss',
         'patience': 100,
         'seed': 2024,
         'log_every_n_steps': 100,
         'accelerator': 'auto',
-        'train_from_scratch': False,
-        'model_save_path': f'./{data_name}_distance_matching_{mode}/model-v1'
+        'train_from_scratch': from_scratch,
+        'model_save_path': f'{save_folder}/model'
     }
-    # Test AffinityMatching model
-    #X = np.random.randn(100, 10) # 3000 samples, 10 features
 
-    print(gt_X.shape, X.shape)
+    print('Fitting on X: ', gt_X.shape, X.shape)
     model = DistanceMatching(**model_hypers)
-    model.fit(X, train_mask=None, percent_test=0.3, **training_hypers)
+    model.fit(X, X_dist=None, train_mask=None, percent_test=0.2, **training_hypers)
 
     X = torch.tensor(X, dtype=torch.float32)
     Z = model.encode(X)
@@ -335,25 +396,17 @@ if __name__ == "__main__":
     print('PHATE Coords:', phate_coords.shape)
 
     # Plot
-    import matplotlib.pyplot as plt
-    import scprep
-    fig = plt.figure(figsize=(16, 8))
-    ax = fig.add_subplot(131, projection='3d')
+    fig = plt.figure(figsize=(24, 8))
+    ax = fig.add_subplot(141, projection='3d')
     scprep.plot.scatter3d(X.detach().cpu().numpy(), c=colors, ax=ax, title='X')
-    ax = fig.add_subplot(132)
-    scprep.plot.scatter2d(Z.detach().cpu().numpy(), c=colors, ax=ax, title='Z')
-    ax = fig.add_subplot(133)
-    scprep.plot.scatter2d(phate_coords, c=colors, ax=ax, title='Phate')
-    plt.show()
-    plt.savefig(f'./distance_matching_{mode}/plot.png')
 
-    # Pullback metrics
-    # metric = model.encoder_pullback(X)
-    # print('X: ', X.shape, 'metric: ', metric.shape)
+    ax = fig.add_subplot(142, projection='3d')
+    scprep.plot.scatter3d(Z.detach().cpu().numpy(), c=colors, ax=ax, title='Z')
 
-    #geodesic pullback
-    # T = 5
-    # X_tb = np.random.randn(16, T, 10)
-    # X_tb = torch.tensor(X_tb, dtype=torch.float32)
-    # metric_tb = model.geodesic_encoder_pullback(X_tb)
-    # print('X_tb: ', X_tb.shape, 'metric_tb: ', metric_tb.shape)
+    ax = fig.add_subplot(143, projection='3d')
+    scprep.plot.scatter3d(phate_coords, c=colors, ax=ax, title='Phate')
+
+    ax = fig.add_subplot(144, projection='3d')
+    scprep.plot.scatter3d(X_hat.detach().cpu().numpy(), c=colors, ax=ax, title='X_hat')
+
+    plt.savefig(f'{save_folder}/plot.png')
