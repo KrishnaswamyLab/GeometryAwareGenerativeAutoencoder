@@ -1,0 +1,17 @@
+project: dmae
+program: run.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: loss
+  goal: minimize
+parameters:
+  data_name:
+    values: ['hemisphere_none_0','hemisphere_5_0','hemisphere_15_0','hemisphere_50_0','hemisphere_15_0.1','hemisphere_15_0.3','swissroll_none_0','swissroll_5_0','swissroll_15_0','swissroll_50_0','swissroll_15_0.1','swissroll_15_0.3','ellipsoid_15_0.1','ellipsoid_15_0','ellipsoid_5_0','ellipsoid_15_0.3','ellipsoid_50_0','ellipsoid_none_0','torus_15_0.1','torus_15_0.3','torus_15_0','torus_50_0','torus_5_0','torus_none_0','saddle_15_0.1','saddle_15_0.3','saddle_15_0','saddle_50_0','saddle_5_0','saddle_none_0']
+  dimensions_latent:
+    values: [3]
+
+  

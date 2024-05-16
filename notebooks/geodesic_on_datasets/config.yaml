@@ -1,0 +1,7 @@
+ae_sweep_id: 59muwbsf
+disc_sweep_id: w8hu793l
+data_name: hemisphere_none_0
+weights_cycle: 1.0
+dimensions_latent: 3
+use_wandb: True
+max_epochs: 400

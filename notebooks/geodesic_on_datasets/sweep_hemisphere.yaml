@@ -1,0 +1,34 @@
+project: dmae
+program: run.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: loss
+  goal: minimize
+parameters:
+  ae_sweep_id: 
+    values: ['7y9hq8xw']
+  disc_sweep_id: 
+    values: ['ojlwtenl']
+  data_name:
+    # values: ['eb', 'swiss_roll_sklearn_3000', 'hemisphere_hi_dim2', 'swiss_roll_sklearn_hi_dim_3000', 'swiss_roll_wider_hi_dim', 'swiss_roll_wider', 'tree_hi_dim', 'tree']
+    # values: ['eb', 'swiss_roll_wider', 'swiss_roll_wider_hi_dim', 'tree_hi_dim', 'tree']
+    values: ['hemisphere', 'hemisphere_hi_dim2']
+  dimensions_latent:
+    values: [2,3]
+  discriminator_func_for_grad_weight:
+    values: [4,8]
+  length_weight:
+    values: [1,8,16]
+  discriminator_weight:
+    values: [4,8]
+  points_penalty_alpha:
+    values: [1,2]
+  points_penalty_power:
+    values: [2]
+  multiply_loss:
+    values: [True, False]
+
