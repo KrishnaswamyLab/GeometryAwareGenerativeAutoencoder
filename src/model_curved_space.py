@@ -15,15 +15,17 @@ class SphereEncoder(Encoder):
         self.r = nn.Parameter(torch.tensor(1.0))
     
     def forward(self, x, normalize=True):
-        z = super.forward(x, normalize)
-        z = z / torch.square(z).sum(axis=1)
+        z = super().forward(x, normalize)
+        z = (z + 1e-8) / (torch.square(z).sum(axis=1) + 1e-8).reshape(-1,1)
         return z
 
-    def loss_function(self, dist_gt_norm, z): # don't use the mask any more.
+    def loss_function(self, dist_gt_norm, z, mask): # don't use the mask any more.
         # dist_emb = torch.nn.functional.pdist(z)
         dist_emb = z @ z.T
         dist_emb = torch.clamp(dist_emb, -1, 1) # prevent numerical issues.
         dist_emb = self.r * torch.acos(dist_emb)
+        dist_emb = dist_emb[np.triu_indices(dist_emb.size(0), k=1)]
+
         if self.hparams.cfg.loss.dist_mse_decay > 0.:
             return (torch.square(dist_emb - dist_gt_norm) * torch.exp(-self.hparams.cfg.loss.dist_mse_decay * dist_gt_norm)).mean()
         else:
@@ -52,14 +54,15 @@ class HyperbolicLorenzEncoder(Encoder):
         self.r = nn.Parameter(torch.tensor(1.0))
     
     def forward(self, x, normalize=True):
-        z = super.forward(x, normalize)
+        z = super().forward(x, normalize)
         z0 = torch.sqrt(1 + torch.sum(z ** 2, dim=-1, keepdim=True) + 1e-8)
         z_hyperboloid = torch.cat([z0, z], dim=-1)
         return z_hyperboloid
     
-    def loss_function(self, dist_gt_norm, z): # don't use the mask any more.
+    def loss_function(self, dist_gt_norm, z, mask): # don't use the mask any more.
         dist_emb = minkowski_inner_product_matrix(z)
         dist_emb = self.r * safe_acosh(dist_emb)
+        dist_emb = dist_emb[np.triu_indices(dist_emb.size(0), k=1)]
 
         if self.hparams.cfg.loss.dist_mse_decay > 0.:
             return (torch.square(dist_emb - dist_gt_norm) * torch.exp(-self.hparams.cfg.loss.dist_mse_decay * dist_gt_norm)).mean()

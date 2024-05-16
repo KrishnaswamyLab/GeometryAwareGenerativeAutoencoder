@@ -84,7 +84,7 @@ class FIMMEncoder(Encoder):
     def __init__(self, cfg, preprocessor):
         super().__init__(cfg, preprocessor)
 
-    def loss_function(self, dist_gt_norm, z): # don't use the mask any more.
+    def loss_function(self, dist_gt_norm, z, mask): # don't use the mask any more.
         q = compute_prob_matrix(z, t=self.hparams.cfg.fimm.t, alpha=self.hparams.cfg.fimm.alpha, bandwidth=self.hparams.cfg.fimm.bandwidth, knn=self.hparams.cfg.fimm.knn, prob_method=self.hparams.cfg.fimm.prob_method)
         logq = torch.log(q + 1e-8)
         dist_emb = torch.nn.functional.pdist(logq)
@@ -93,3 +93,24 @@ class FIMMEncoder(Encoder):
             return (torch.square(dist_emb - dist_gt_norm) * torch.exp(-self.hparams.cfg.loss.dist_mse_decay * dist_gt_norm)).mean()
         else:
             return torch.nn.functional.mse_loss(dist_emb, dist_gt_norm)
+
+class JSDMEncoder(Encoder):
+    def __init__(self, cfg, preprocessor):
+        super().__init__(cfg, preprocessor)
+        self.compute_prob_matrix = lambda z: compute_prob_matrix(z, t=self.hparams.cfg.fimm.t, alpha=self.hparams.cfg.fimm.alpha, bandwidth=self.hparams.cfg.fimm.bandwidth, knn=self.hparams.cfg.fimm.knn, prob_method=self.hparams.cfg.fimm.prob_method)
+
+    def loss_function(self, p, z, mask):
+        """
+        the step(self, batch, batch_idx, stage) will take d = batch['d'],
+        but we put the p in the place of 'd' for compatibility (because they have the same shape),
+        so the "dist" parameter is actually p
+        """
+        q = self.compute_prob_matrix(z)
+        m = 0.5 * (p + q)
+        logq = torch.log(q + 1e-7)
+        logp = torch.log(p + 1e-7)
+        logm = torch.log(m + 1e-7)
+        kl1 = p * (logp - logm)
+        kl2 = q * (logq - logm)
+        jsd = 0.5 * (kl1 + kl2)
+        return jsd
