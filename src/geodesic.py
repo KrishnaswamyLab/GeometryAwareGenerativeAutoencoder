@@ -371,6 +371,13 @@ class GeodesicBridge(pl.LightningModule):
         #     for param in self.discriminator.parameters():
         #         param.requires_grad = False
 
+        self.cc = CondCurve(input_dim=input_dim,
+                    hidden_dim=hidden_dim,
+                    scale_factor=scale_factor,
+                    symmetric=symmetric,
+                    num_layers=num_layers,
+                    k=cc_k
+                )
 
     def forward(self, x0, x1, t):
         return self.cc(x0, x1, t)
@@ -555,16 +562,21 @@ class GeodesicBridgeOverfit(GeodesicBridge):
 
     def step(self, batch, batch_idx):
         x0, x1, ids = batch
+
         def cc_func(x0, x1, t):
             return self.cc(x0, x1, t, ids)
+
         vectors = velocity(cc_func, self.ts, x0, x1)
         cc_pts = self.cc(x0, x1, self.ts, ids)
         vectors_flat = vectors.flatten(0,1)
         cc_pts_flat = cc_pts.flatten(0, 1)
         jac_flat = jacobian(self.func, cc_pts_flat)
+        
         len_loss = self.length_loss(vectors_flat, jac_flat)
         self.log(f'loss_length', len_loss, prog_bar=True, on_epoch=True)
+        
         loss = self.length_weight * len_loss
+
         if self.discriminator_func is not None and self.discriminator_weight > 0.:
             # loss = loss + self.discriminator_weight * (1. - self.discriminator_func.positive_proba(cc_pts_flat)).mean()
             disc_val = self.discriminator_func(cc_pts_flat)
