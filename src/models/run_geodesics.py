@@ -101,7 +101,7 @@ def fit_geodesics(model, wd, x, probab, starts, ends, ts):
         starts, ends: np.dnarray of shape [N, d]
         ts: torch.tensor of shape [N, 1] time points where to evaluate the geodesic.
     Returns:
-        geodesic: torch.tensor of shape [N, len(ts), d] geodesic points.
+        geodesic: torch.tensor of shape [len(ts), N, d] geodesic points.
     '''
 
     print('Fitting geodesics...')
@@ -220,6 +220,8 @@ if __name__ == "__main__":
     with torch.no_grad():
         geo_model.eval()
         pred_geodesics = geo_model(xbatch, xendbatch, ts, ids)
+    
+    print('Predicated Geodesics: ', pred_geodesics.shape)
 
     # Plot X, neg_X, and probability.
     X = data['data']
@@ -235,7 +237,7 @@ if __name__ == "__main__":
     fig.add_trace(go.Scatter3d(x=starts[:,0], y=starts[:,1], z=starts[:,2], mode='markers', marker=dict(size=3, color='red')))
     fig.add_trace(go.Scatter3d(x=ends[:,0], y=ends[:,1], z=ends[:,2], mode='markers', marker=dict(size=3, color='blue')))
     for i in range(starts.shape[0]):
-        fig.add_trace(go.Scatter3d(x=pred_geodesics[i,:,0], y=pred_geodesics[i,:,1], z=pred_geodesics[i,:,2], mode='lines', line=dict(width=2)))
+        fig.add_trace(go.Scatter3d(x=pred_geodesics[:,i,0], y=pred_geodesics[:,i,1], z=pred_geodesics[:,i,2], mode='lines', line=dict(width=2)))
     fig.write_html(f'{save_folder}/geodesic.html')
 
 
