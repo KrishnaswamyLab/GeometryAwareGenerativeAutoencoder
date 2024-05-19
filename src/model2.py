@@ -573,9 +573,9 @@ class WDiscriminator(Encoder):
                 p.data.clamp_(- self.hparams.cfg.training.clamp, self.hparams.cfg.training.clamp)
 
         scores = self(x)
-        mask_label = -(mask * 2 - 1.)
+        mask_label = -(mask * 2 - 1.) # -1 for positive, 1 for negative
 
-        wgan_loss = (scores.flatten() * mask_label).mean()
+        wgan_loss = (scores.flatten() * mask_label).mean() # high scores for positive samples, low scores for negative samples
         self.log(f'{stage}/wgan_loss', wgan_loss, prog_bar=True, on_epoch=True)
         pos1_loss = scores[mask.bool()].var()
         self.log(f'{stage}/pos1_loss', pos1_loss, prog_bar=True, on_epoch=True)
