@@ -14,14 +14,14 @@ data_name = args.data_name
 
 seed = 32
 
-ae_dir = '../../data/gt_geodesic_swiss_roll_wide/ae/'
-disc_dir = '../../data/gt_geodesic_swiss_roll_wide/disc/'
+ae_dir = '/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/data/neurips_results/toy/ae/'
+disc_dir = '/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/data/neurips_results/toy/disc/'
 pathlib.Path(ae_dir).mkdir(parents=True, exist_ok=True)
 pathlib.Path(disc_dir).mkdir(parents=True, exist_ok=True)
 # folder = '../../data/gt_geodesic/'
-folder = '../../data/swiss_roll_wide_geod/'
+folder = '/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/data/neurips_results/toy/'
 
-data = np.load(f'{folder}/{data_name}')
+data = np.load(f'{folder}/{data_name}', allow_pickle=True)
 data_dict_raw = {f:data[f] for f in data.files}
 
 points = data_dict_raw['X']
