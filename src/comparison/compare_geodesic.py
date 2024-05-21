@@ -119,12 +119,13 @@ if __name__ == '__main__':
     data_paths.sort()
     dataset_names = [file.split('.npz')[0] for file in data_paths]
     #dataset_name = 'hemisphere_none_0.1'
-    methods = 'diffusion_map,djikstra'
+    methods = 'diffusion_map,djikstra,phate'
     methods = methods.split(',')
     k = 5
     latent_dim = 3
     seed = 42
 
+    df = pd.DataFrame() # columns: method, pearson_corr, pearson_p, spearman_corr, spearman_p
     for dataset_name in dataset_names:
         print(f"Dataset: {dataset_name}")
 
@@ -149,7 +150,6 @@ if __name__ == '__main__':
         print(f"Ground-truth geodesic distances: {gt_geodesic.shape}")
 
         # correlation between predicted and ground-truth geodesic distances
-        df = pd.DataFrame() # columns: method, pearson_corr, pearson_p, spearman_corr, spearman_p
         for method in methods:
             pred_geodesic = np.array(pred_lengths[methods.index(method)])
             pr, pp = pearsonr(pred_geodesic, gt_geodesic)
