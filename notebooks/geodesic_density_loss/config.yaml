@@ -1,0 +1,7 @@
+ae_sweep_id: ys48kno0
+disc_sweep_id: ujke176v
+data_name: ellipsoid_15_0
+weights_cycle: 1.0
+dimensions_latent: 3
+use_wandb: True
+max_epochs: 400
