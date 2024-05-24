@@ -12,6 +12,8 @@ parameters:
   data_name:
     values: ['hemisphere_none_0','ellipsoid_none_0','torus_none_0','saddle_none_0']
   dimensions_latent:
-    values: [3,10]
-
-  
+    values: [3]
+  ae_sweep_id:
+    values: ['jtpxi61p']
+  disc_sweep_id: 
+    values: ['5nidtly5']

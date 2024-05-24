@@ -21,8 +21,8 @@ def compute_encoding_metrics(model, x_test, x_noiseless=None, dist_true=None):
     # TODO check attr device exists
     x_tensor = torch.from_numpy(x_test).float().to(model.device)
     model.eval()
-    z_pred = model.encode(x_tensor)
-    x_pred = model.decode(z_pred)
+    z_pred = model.encoder(x_tensor)
+    x_pred = model.decoder(z_pred)
     z_pred = z_pred.detach().cpu().numpy()
     x_pred = x_pred.detach().cpu().numpy()
     demap_val = np.nan
@@ -185,8 +185,8 @@ def pearson_correlation_corresponding(A, B):
 def compute_recon_metric(model, x_test, pca):
     x_tensor = torch.from_numpy(x_test).float().to(model.device)
     model.eval()
-    z_pred = model.encode(x_tensor)
-    x_pred = model.decode(z_pred)
+    z_pred = model.encoder(x_tensor)
+    x_pred = model.decoder(z_pred)
     z_pred = z_pred.detach().cpu().numpy()
     x_pred = x_pred.detach().cpu().numpy()
     magic_op = magic.MAGIC(verbose=0)
@@ -196,7 +196,15 @@ def compute_recon_metric(model, x_test, pca):
     # corrs = spearman_correlation_corresponding(x_pred_ambient, x_magic_ambient)
     corrs = pearson_correlation_corresponding(x_pred_ambient, x_magic_ambient)
     score = corrs.mean()
-    return score
+    n_top_genes = 1000
+    orig_vars = x_magic_ambient.var(axis=0)
+    top_100_idx = np.argsort(orig_vars)[::-1][:n_top_genes]
+    magic_top100 = x_magic_ambient[:,top_100_idx]
+    dec_top100 = x_pred_ambient[:,top_100_idx]
+    corrs_magic = np.corrcoef(magic_top100, rowvar=False)
+    corrs_dec = np.corrcoef(dec_top100, rowvar=False)
+    score2 = ((corrs_magic - corrs_dec)**2).mean()
+    return score, score2
 
 def compute_all_metrics(model, data_path, noiseless_path, ambient_path, w_gt=False):
     if w_gt:
@@ -205,10 +213,10 @@ def compute_all_metrics(model, data_path, noiseless_path, ambient_path, w_gt=Fal
         x_test, x_noiseless, dist_true, pca = get_dataset_contents(data_path, noiseless_path, ambient_path)
     
     # Only run recon score if model has decode function
-    if hasattr(model, 'decode'):
-        score = compute_recon_metric(model, x_test, pca)
+    if hasattr(model, 'decoder'):
+        score1, score2 = compute_recon_metric(model, x_test, pca)
     else:
-        score = np.nan
+        score1, score2 = np.nan, np.nan
 
     encoding_metrics = compute_encoding_metrics(model, x_test, x_noiseless, dist_true)
     if w_gt:
@@ -220,6 +228,7 @@ def compute_all_metrics(model, data_path, noiseless_path, ambient_path, w_gt=Fal
 
     for k, v in encoding_metrics.items():
         res_dict[k] = v
-    res_dict['recon score'] = score
+    res_dict['DRS'] = score1
+    res_dict['DGCS'] = score2
     # res_dict['reconstr_weight'] = model.reconstr_weight
     return res_dict

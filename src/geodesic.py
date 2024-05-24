@@ -13,6 +13,8 @@ import torch.optim as optim
 from torch.autograd.functional import jacobian
 import pytorch_lightning as pl
 import warnings
+import ot as pot
+
 
 def compute_jacobian_function(f, x, create_graph=True, retain_graph=True):
     """
@@ -743,4 +745,75 @@ class GeodesicBridgeDensityEuc(GeodesicBridgeDensity):
         if self.normalize_weight > 0:
             nloss = torch.square(torch.square(vectors_flat).sum(axis=1) - 1).mean()
             loss = loss + self.normalize_weight * nloss
+        return loss
+
+class GeodesicFM(GeodesicBridgeOverfit):
+    def __init__(self,
+                func,
+                encoder,
+                input_dim,
+                hidden_dim,
+                scale_factor=1,
+                symmetric=True,
+                num_layers=3, 
+                n_tsteps=100,
+                lr=1e-3,
+                weight_decay=1e-3,
+                flow_weight=1.,
+                length_weight=1.,
+                ):
+            super().__init__(
+                func=func,
+                input_dim=input_dim, 
+                hidden_dim=hidden_dim, 
+                scale_factor=scale_factor, 
+                symmetric=symmetric, 
+                num_layers=num_layers, 
+                n_tsteps=n_tsteps, 
+                lr=lr, 
+                weight_decay=weight_decay,
+                discriminator_weight=0.,
+                discriminator_func_for_grad_weight=0.,
+                id_dim=1,
+                id_emb_dim=1,
+                density_weight=0.,
+                length_weight=length_weight,
+            )
+            self.encoder = encoder
+            self.flow_model = MLP(input_dim=input_dim+1,hidden_dim=hidden_dim,output_dim=input_dim,num_hidden_layers=num_layers)
+            self.flow_weight = flow_weight
+
+    def step(self, batch, batch_idx):
+        x0, x1 = batch
+        ids = torch.zeros((x0.size(0),1), device=x0.device, dtype=x0.dtype)
+        x0 = x0[torch.randperm(x0.shape[0])]
+        a, b = pot.unif(x0.size()[0]), pot.unif(x1.size()[0])
+        z0, z1 = self.encoder(x0), self.encoder(x1)
+        M = torch.cdist(z0, z1) ** 2
+        M = M / M.max()
+        pi = pot.emd(a, b, M.detach().cpu().numpy())
+        p = pi.flatten()
+        p = p / p.sum()
+        choices = np.random.choice(pi.shape[0] * pi.shape[1], p=p, size=x0.shape[0])
+        i, j = np.divmod(choices, pi.shape[1])
+        
+        x0 = x0[i]
+        x1 = x1[j]
+        def cc_func(x0, x1, t):
+            return self.cc(x0, x1, t, ids)
+        vectors = velocity(cc_func, self.ts, x0, x1)
+        cc_pts = self.cc(x0, x1, self.ts, ids)
+        vectors_flat = vectors.flatten(0,1)
+        cc_pts_flat = cc_pts.flatten(0, 1)
+        jac_flat = jacobian(self.func, cc_pts_flat)
+        len_loss = self.length_loss(vectors_flat, jac_flat)
+        self.log(f'loss_length', len_loss, prog_bar=True, on_epoch=True)
+        loss = self.length_weight * len_loss
+        ts_expanded = self.ts.unsqueeze(1).unsqueeze(2)
+        ts_expanded = ts_expanded.expand(-1, cc_pts.shape[1], -1)
+        vt = self.flow_model(torch.cat([cc_pts, ts_expanded], dim=2).flatten(0,1))
+        v_loss = ((vt - vectors_flat) ** 2).mean()
+        self.log(f'fm_length', v_loss, prog_bar=True, on_epoch=True)
+        loss = loss + self.flow_weight * v_loss
+        self.log(f'loss', loss, prog_bar=True, on_epoch=True)
         return loss
