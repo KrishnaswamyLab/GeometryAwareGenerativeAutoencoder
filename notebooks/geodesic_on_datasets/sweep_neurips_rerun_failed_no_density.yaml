@@ -1,0 +1,20 @@
+project: dmae
+program: run_no_density.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: loss
+  goal: minimize
+parameters:
+  data_name:
+    # values: ['ellipsoid_15_0', 'ellipsoid_15_0.1', 'ellipsoid_15_0.3', 'ellipsoid_15_0.5', 'ellipsoid_15_0.7', 'ellipsoid_none_0.1', 'ellipsoid_5_0.1', 'ellipsoid_10_0.1', 'ellipsoid_15_0.1', 'ellipsoid_50_0.1', 'hemisphere_15_0', 'hemisphere_15_0.1', 'hemisphere_15_0.3', 'hemisphere_15_0.5', 'hemisphere_15_0.7', 'hemisphere_none_0.1', 'hemisphere_5_0.1', 'hemisphere_10_0.1', 'hemisphere_15_0.1', 'hemisphere_50_0.1', 'saddle_15_0', 'saddle_15_0.1', 'saddle_15_0.3', 'saddle_15_0.5', 'saddle_15_0.7', 'saddle_none_0.1', 'saddle_5_0.1', 'saddle_10_0.1', 'saddle_15_0.1', 'saddle_50_0.1', 'torus_15_0', 'torus_15_0.1', 'torus_15_0.3', 'torus_15_0.5', 'torus_15_0.7', 'torus_none_0.1', 'torus_5_0.1', 'torus_10_0.1', 'torus_15_0.1', 'torus_50_0.1']
+    values: ['saddle_10_0.1', 'saddle_50_0.1']
+  dimensions_latent:
+    values: [3,10]
+  disc_sweep_id:
+    values: ['yq61xvno']
+
+  

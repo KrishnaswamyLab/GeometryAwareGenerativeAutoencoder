@@ -1,0 +1,36 @@
+project: dmae
+program: train.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: validation/loss
+  goal: minimize
+parameters:
+  data.root: 
+    values: ['../data/neurips_results/splatter/disc/']
+  data.name:
+    values: ['noisy_1_groups_17580_3000_1_0.18_0.5_all','noisy_1_groups_17580_3000_1_0.25_0.5_all','noisy_1_groups_17580_3000_1_0.5_0.5_all','noisy_1_groups_17580_3000_1_0_0.5_all','noisy_1_paths_17580_3000_1_0.18_0.5_all','noisy_1_paths_17580_3000_1_0.25_0.5_all','noisy_1_paths_17580_3000_1_0.5_0.5_all','noisy_1_paths_17580_3000_1_0_0.5_all','noisy_2_groups_17580_3000_1_0.18_0.5_all','noisy_2_groups_17580_3000_1_0.25_0.5_all','noisy_2_groups_17580_3000_1_0.5_0.5_all','noisy_2_groups_17580_3000_1_0_0.5_all','noisy_2_paths_17580_3000_1_0.18_0.5_all','noisy_2_paths_17580_3000_1_0.25_0.5_all','noisy_2_paths_17580_3000_1_0.5_0.5_all','noisy_2_paths_17580_3000_1_0_0.5_all','noisy_3_groups_17580_3000_1_0.18_0.5_all','noisy_3_groups_17580_3000_1_0.25_0.5_all','noisy_3_groups_17580_3000_1_0.5_0.5_all','noisy_3_groups_17580_3000_1_0_0.5_all','noisy_3_paths_17580_3000_1_0.18_0.5_all','noisy_3_paths_17580_3000_1_0.25_0.5_all','noisy_3_paths_17580_3000_1_0.5_0.5_all','noisy_3_paths_17580_3000_1_0_0.5_all','noisy_4_groups_17580_3000_1_0.18_0.5_all','noisy_4_groups_17580_3000_1_0.25_0.5_all','noisy_4_groups_17580_3000_1_0.5_0.5_all','noisy_4_groups_17580_3000_1_0_0.5_all','noisy_4_paths_17580_3000_1_0.18_0.5_all','noisy_4_paths_17580_3000_1_0.25_0.5_all','noisy_4_paths_17580_3000_1_0.5_0.5_all','noisy_4_paths_17580_3000_1_0_0.5_all','noisy_5_groups_17580_3000_1_0.18_0.5_all','noisy_5_groups_17580_3000_1_0.25_0.5_all','noisy_5_groups_17580_3000_1_0.5_0.5_all','noisy_5_groups_17580_3000_1_0_0.5_all','noisy_5_paths_17580_3000_1_0.18_0.5_all','noisy_5_paths_17580_3000_1_0.25_0.5_all','noisy_5_paths_17580_3000_1_0.5_0.5_all','noisy_5_paths_17580_3000_1_0_0.5_all']
+  encoder.layer_widths: 
+    values: [[256,128,64]]
+  encoder.batch_norm: 
+    values: [true]
+  encoder.spectral_norm: 
+    values: [true]
+  encoder.dropout: 
+    values: [0.5]
+  training.mode:
+    values: ['wdiscriminator']
+  training.max_epochs:
+    values: [50]
+  training.weight_decay:
+    values: [1e-4]
+  training.clip:
+    values: [True]
+  training.clamp:
+    # values: [0.01,0.05,0.1]
+    values: [0.1]
+  loss.weights.pos1:
+    values: [1.]

@@ -124,10 +124,11 @@ cfg_main_disc_sweep_id = args.cfg_main_disc_sweep_id
 # cfg_main_disc_sweep_id = '5nidtly5'
 # cfg_main_data_name = 'hemisphere_none_0'
 cfg_main_weights_cycle = 1.0
-cfg_main_dimensions_latent = 10.
+# cfg_main_dimensions_latent = 10
+cfg_main_dimensions_latent = 3
 n_steps = 100
 
-res_path = f'results_fast_10/{cfg_main_data_name}/'
+res_path = f'results_fast/{cfg_main_data_name}/'
 pathlib.Path(res_path).mkdir(parents=True, exist_ok=True)
 
 n_total = 3000

@@ -24,8 +24,14 @@ files_new = [
  'Ellipsoid_15_0.7',
  'Ellipsoid_50_0.1']
 files_new2 = ['Saddle_10_0.1', 'Saddle_50_0.1']
-files = [f for f in files_new2 if f not in files_old + files_new]
+files3 = ['Ellipsoid_15_0', 'Hemisphere_15_0', 'Saddle_15_0', 'Torus_15_0']
+
+# files = [f for f in files_new2 if f not in files_old + files_new]
 # files = [f for f in files_new if f not in files_old]
+files = list(set(files_new2 + files_new + files_old + files_new2))
+files3 = ['Ellipsoid_15_0', 'Hemisphere_15_0', 'Saddle_15_0', 'Torus_15_0']
+# files = [f for f in files3 if f not in files]
+# files = files3
 with open('job.txt', 'w') as file:
     for data_name in files:
         mfd, rot_dim, noise  = data_name.split('_')
