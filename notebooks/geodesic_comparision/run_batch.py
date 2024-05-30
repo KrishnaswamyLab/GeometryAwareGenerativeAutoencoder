@@ -115,17 +115,27 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--cfg_main_data_name', type=str, default='hemisphere_none_0')
 parser.add_argument('--cfg_main_ae_sweep_id', type=str, default='jtpxi61p')
 parser.add_argument('--cfg_main_disc_sweep_id', type=str, default='5nidtly5')
+parser.add_argument('--max_epochs', type=int, default=400)
+parser.add_argument('--lr', type=float, default=1e-3)
+parser.add_argument('--num_layers', type=int, default=3)
+parser.add_argument('--hidden_dim', type=int, default=64)
+
 
 args = parser.parse_args()
 cfg_main_data_name = args.cfg_main_data_name
 cfg_main_ae_sweep_id = args.cfg_main_ae_sweep_id
 cfg_main_disc_sweep_id = args.cfg_main_disc_sweep_id
+max_epochs = args.max_epochs
+lr = args.lr
+num_layers = args.num_layers
+hidden_dim = args.hidden_dim
 # cfg_main_ae_sweep_id = 'jtpxi61p'
 # cfg_main_disc_sweep_id = '5nidtly5'
 # cfg_main_data_name = 'hemisphere_none_0'
 cfg_main_weights_cycle = 1.0
-cfg_main_dimensions_latent = 3.
-n_steps = 20
+# cfg_main_dimensions_latent = 3.
+cfg_main_dimensions_latent = 10.
+n_steps = 200
 
 res_path = f'results/{cfg_main_data_name}/'
 pathlib.Path(res_path).mkdir(parents=True, exist_ok=True)
@@ -290,12 +300,12 @@ gbmodel = GeodesicBridgeOverfit(
     # discriminator_func=disc_func_pen,
     # discriminator_func_for_grad=discriminator_func_for_grad,
     input_dim=x.size(1), 
-    hidden_dim=64, 
+    hidden_dim=hidden_dim, 
     scale_factor=1, 
     symmetric=True, 
-    num_layers=3, 
+    num_layers=num_layers, 
     n_tsteps=n_steps, 
-    lr=1e-3, 
+    lr=lr, 
     weight_decay=1e-3,
     discriminator_weight=0.,
     discriminator_func_for_grad_weight=0.,
@@ -314,10 +324,10 @@ gbmodel = GeodesicBridgeOverfit(
 #     checkpoint_dir = results_path  # Use a local directory for saving checkpoints
 
 
-gbmodel.lr=1e-3
+gbmodel.lr=lr
 trainer = pl.Trainer(
     # logger=logger,
-    max_epochs=400,
+    max_epochs=max_epochs,
     log_every_n_steps=20,
     accelerator='cuda',
 )
@@ -422,12 +432,12 @@ gbmodel = GeodesicBridgeOverfit(
     # discriminator_func=disc_func_pen,
     # discriminator_func_for_grad=discriminator_func_for_grad,
     input_dim=x.size(1), 
-    hidden_dim=64, 
+    hidden_dim=hidden_dim, 
     scale_factor=1, 
     symmetric=True, 
-    num_layers=3, 
+    num_layers=num_layers, 
     n_tsteps=n_steps, 
-    lr=1e-3, 
+    lr=lr, 
     weight_decay=1e-3,
     discriminator_weight=0.,
     discriminator_func_for_grad_weight=0.,
@@ -446,10 +456,10 @@ gbmodel = GeodesicBridgeOverfit(
 #     checkpoint_dir = results_path  # Use a local directory for saving checkpoints
 
 
-gbmodel.lr=1e-3
+gbmodel.lr=lr
 trainer = pl.Trainer(
     # logger=logger,
-    max_epochs=400,
+    max_epochs=max_epochs,
     log_every_n_steps=20,
     accelerator='cuda',
 )
@@ -554,12 +564,12 @@ gbmodel = GeodesicBridgeOverfit(
     # discriminator_func=disc_func_pen,
     # discriminator_func_for_grad=discriminator_func_for_grad,
     input_dim=x.size(1), 
-    hidden_dim=64, 
+    hidden_dim=hidden_dim, 
     scale_factor=1, 
     symmetric=True, 
-    num_layers=3, 
+    num_layers=num_layers, 
     n_tsteps=n_steps, 
-    lr=1e-3, 
+    lr=lr, 
     weight_decay=1e-3,
     discriminator_weight=0.,
     discriminator_func_for_grad_weight=0.,
@@ -579,10 +589,10 @@ gbmodel = GeodesicBridgeOverfit(
 #     checkpoint_dir = results_path  # Use a local directory for saving checkpoints
 
 
-gbmodel.lr=1e-3
+gbmodel.lr=lr
 trainer = pl.Trainer(
     # logger=logger,
-    max_epochs=400,
+    max_epochs=max_epochs,
     log_every_n_steps=20,
     accelerator='cuda',
 )
