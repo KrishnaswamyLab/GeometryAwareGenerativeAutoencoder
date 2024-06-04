@@ -119,7 +119,13 @@ class Encoder(pl.LightningModule):
         return loss
     
     def loss_function(self, dist_gt_norm, z, mask=None): # assume normalized.
-        dist_emb = torch.nn.functional.pdist(z)
+        if torch.backends.mps.is_available():
+            dist_emb = torch.cdist(z, z, p=2)
+            # take the upper triangular part of the distance matrix
+            dist_emb = dist_emb[np.triu_indices(dist_emb.size(0), k=1)].flatten()
+        else:
+            dist_emb = torch.nn.functional.pdist(z)
+
         if self.hparams.cfg.loss.dist_mse_decay > 0.:
             if mask is None:
                 return (torch.square(dist_emb - dist_gt_norm) * torch.exp(-self.hparams.cfg.loss.dist_mse_decay * dist_gt_norm)).mean()
