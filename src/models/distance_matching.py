@@ -212,7 +212,13 @@ class DistanceMatching(GeometricAE):
 
         model = Autoencoder(cfg, preprocessor=Preprocessor(mean, std, dist_std))
         
-        device_av = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            device_av = "cuda"
+        elif torch.backends.mps.is_available():
+            device_av = "mps"
+        else:
+            device_av = "cpu"
+        #device_av = "cuda" if torch.cuda.is_available() else "cpu"
         if accelerator is None or accelerator == 'auto':
             device = device_av
         else:
@@ -241,6 +247,10 @@ class DistanceMatching(GeometricAE):
                 self.encoder = encoder
                 self.decoder = model.decoder
             
+            # Move to device
+            self.encoder.to(device)
+            self.decoder.to(device)
+
             print(f'Loaded encoder from {model_save_path}, skipping encoder training ...')
             print(f'Loaded decoder from {model_save_path}, skipping decoder training ...')
 
@@ -301,7 +311,7 @@ class DistanceMatching(GeometricAE):
         elif cfg.training.mode == 'decoder':
             model.decoder.load_from_checkpoint(model_save_path + '.ckpt')
         elif cfg.training.mode == 'end2end':
-            model.load_from_checkpoint(model_save_path + '.ckpt')
+            model = Autoencoder.load_from_checkpoint(model_save_path + '.ckpt')
         elif cfg.training.mode == 'separate':
             state_dict = torch.load(model_save_path + '_encoder.ckpt')['state_dict']
             print('Encoder state_dict:', state_dict.keys())
@@ -316,6 +326,9 @@ class DistanceMatching(GeometricAE):
 
         self.encoder = model.encoder
         self.decoder = model.decoder
+
+        self.encoder.to(device)
+        self.decoder.to(device)
 
         print('Done fitting model.')
 
@@ -427,6 +440,8 @@ class DistanceMatching(GeometricAE):
         trainer.fit(wd_model, trainloader, valloader)
 
         self.w_discriminator = wd_model
+
+        self.w_discriminator.to(self.device)
         print('Done fitting Wasserstein Discriminator.')
         
 
@@ -446,10 +461,11 @@ class DistanceMatching(GeometricAE):
 
         with torch.no_grad():
             wd.eval()
-            probab = wd(X).flatten()
+            print(wd.device, X.device)
+            probab = wd(X.to(wd.device)).flatten()
         
-        start_batch = torch.tensor(starts, dtype=X.dtype, device=X.device)
-        end_batch = torch.tensor(ends, dtype=X.dtype, device=X.device)
+        start_batch = torch.tensor(starts, dtype=X.dtype, device=wd.device)
+        end_batch = torch.tensor(ends, dtype=X.dtype, device=wd.device)
         ids = torch.zeros((start_batch.size(0),1))
 
         dataset = TensorDataset(start_batch, end_batch, ids)
@@ -460,6 +476,9 @@ class DistanceMatching(GeometricAE):
         for param in wd.parameters():
             param.requires_grad = False
         
+        # trace
+        #import pdb; pdb.set_trace()
+
         enc_func = lambda x: model.encoder(x)
         disc_func = lambda x: (wd(x).flatten()-probab.min())/(probab.max()-probab.min())
 
@@ -480,7 +499,7 @@ class DistanceMatching(GeometricAE):
             id_emb_dim=1,
             density_weight=0.,
             length_weight=1.,
-        )
+        ).to(wd.device)
 
         gbmodel.train() # Set to train mode
         if self.cfg.logger.use_wandb:
@@ -597,7 +616,7 @@ if __name__ == "__main__":
     mask_x = model.mask_x.flatten()
     wd_x = model.wgan_x
     # wd.eval()
-    probab = wd(torch.Tensor(wd_x)).flatten().detach().cpu().numpy()
+    probab = wd(torch.Tensor(wd_x).to(wd.device)).flatten().detach().cpu().numpy()
     print('WD X:', wd_x.shape, mask_x.shape, probab.shape)
     print(mask_x.dtype, probab.dtype)
 
