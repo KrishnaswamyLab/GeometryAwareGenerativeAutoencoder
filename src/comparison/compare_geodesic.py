@@ -114,57 +114,68 @@ def _djikstra_dist(X, start_points, end_points, k=5, latent_dim=3, seed=42):
 
 
 if __name__ == '__main__':
-    data_root = '../experiment_data' # TODO: change to your correct path
+    data_root = './gt' # TODO: change to your correct path
     data_paths = os.listdir(data_root)
     data_paths.sort()
     dataset_names = [file.split('.npz')[0] for file in data_paths]
     #dataset_name = 'hemisphere_none_0.1'
     methods = 'diffusion_map,djikstra,phate'
+    methods = 'phate'
     methods = methods.split(',')
     k = 5
     latent_dim = 3
-    seed = 42
+    #seeds = [1,2,3,4,5]
+    seeds = [1]
 
     df = pd.DataFrame() # columns: method, pearson_corr, pearson_p, spearman_corr, spearman_p
-    for dataset_name in dataset_names:
-        print(f"Dataset: {dataset_name}")
+    for seed in seeds:
+        print(f"Seed: {seed}")
+        for dataset_name in dataset_names:
+            print(f"Dataset: {dataset_name}")
 
-        # Load data.
-        data_files = np.load(f"{data_root}/{dataset_name}.npz", allow_pickle=True)
-        print(f"Loaded data files: {data_files.files}")
+            # Load data.
+            data_files = np.load(f"{data_root}/{dataset_name}.npz", allow_pickle=True)
+            print(f"Loaded data files: {data_files.files}")
 
-        X = data_files['X']
-        start_points = data_files['start_points']
-        end_points = data_files['end_points']
+            X = data_files['X']
+            start_points = data_files['start_points']
+            end_points = data_files['end_points']
 
-        # Compute geodesic distances.
-        pred_lengths = []
-        for method in methods:
-            mfunc = globals()[f"_{method}_dist"]
-            distances = mfunc(X, start_points, end_points, k=5, latent_dim=latent_dim, seed=seed)
-            pred_lengths.append(distances)
-            print(f"Method: {method}, Geodesic distances: {len(distances)}")
+            # Compute geodesic distances.
+            pred_lengths = []
+            for method in methods:
+                mfunc = globals()[f"_{method}_dist"]
+                distances = mfunc(X, start_points, end_points, k=5, latent_dim=latent_dim, seed=seed)
+                pred_lengths.append(distances)
+                print(f"Method: {method}, Geodesic distances: {len(distances)}")
+            
+            # Compare with ground-truth.
+            gt_geodesic = data_files['geodesic_lengths']
+            print(f"Ground-truth geodesic distances: {gt_geodesic.shape}")
+
+            # correlation between predicted and ground-truth geodesic distances
+            for method in methods:
+                pred_geodesic = np.array(pred_lengths[methods.index(method)])
+                pr, pp = pearsonr(pred_geodesic, gt_geodesic)
+                sr, sp = spearmanr(pred_geodesic, gt_geodesic)
+
+                # MSE
+                print('pred_geodesic: ', pred_geodesic)
+                print('gt_geodesic: ', gt_geodesic)
+                mse = np.mean((pred_geodesic - gt_geodesic) ** 2)
+
+                df = df.append({'data_name': dataset_name, 'method': method, 
+                                'mse': mse,
+                                'pearson_corr': pr, 'pearson_p': pp, 'spearman_corr': sr, 'spearman_p': sp}, ignore_index=True)
+
+                print(f"{method}: Pearson corr: {pr} with prob {pp}, Spearman corr {sr} with {pp}")
+                print(f"{method}: MSE: {mse}")
+
+    # Save to df
+    save_path = "./geodesic_comparison.csv"
+    if os.path.exists(save_path):
+        os.remove(save_path)
         
-        # Compare with ground-truth.
-        gt_geodesic = data_files['geodesic_lengths']
-        print(f"Ground-truth geodesic distances: {gt_geodesic.shape}")
-
-        # correlation between predicted and ground-truth geodesic distances
-        for method in methods:
-            pred_geodesic = np.array(pred_lengths[methods.index(method)])
-            pr, pp = pearsonr(pred_geodesic, gt_geodesic)
-            sr, sp = spearmanr(pred_geodesic, gt_geodesic)
-            df = df.append({'dataset_name': dataset_name, 'method': method, 
-                            'pearson_corr': pr, 'pearson_p': pp, 'spearman_corr': sr, 'spearman_p': sp}, ignore_index=True)
-
-            print(f"{method}: Pearson corr: {pr} with prob {pp}, Spearman corr {sr} with {pp}")
-
-        # Save to df
-        save_path = "./geodesic_comparison.csv"
-        if os.path.exists(save_path):
-            os.remove(save_path)
-        
-        df.to_csv(save_path, index=False)
+    df.to_csv(save_path, index=False)
 
     print('Done.')
-
