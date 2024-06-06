@@ -58,8 +58,8 @@ data:
   name: 'make_mix_surface'
 
 fimm:
-  t: 1.
-  alpha: 1.
+  t: 30
+  alpha: 40
   bandwidth: 1.
   knn: 5
   prob_method: 'gaussian'

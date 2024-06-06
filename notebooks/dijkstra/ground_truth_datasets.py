@@ -17,6 +17,15 @@ def parse_arguments():
 
 if __name__ == "__main__":
     args = parse_arguments()
+    if args.noise == 0.0:
+        args_noise = '0'
+    else:
+        args_noise = args.noise
+    if args.rot_dim is None:
+        args_rot_dim = 'none'
+    else:
+        args_rot_dim = args.rot_dim
+    file_path = f'/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/dmae/data/neurips_results/toy/ae/{args.mfd.lower()}_{args_rot_dim}_{args_noise}.npz'    
     export_dataset(
         foldername=args.foldername,
         num_geodesics=args.num_geodesics,
@@ -26,4 +35,5 @@ if __name__ == "__main__":
         rot_dim=args.rot_dim,
         noise=args.noise,
         mfd=args.mfd,
+        load_file_name=file_path,
     )

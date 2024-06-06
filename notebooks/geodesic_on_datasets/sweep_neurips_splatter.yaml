@@ -1,0 +1,21 @@
+project: dmae
+program: run.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: loss
+  goal: minimize
+parameters:
+  data_name:
+    values: ['noisy_1_groups_17580_3000_1_0.18_0.5_all','noisy_1_groups_17580_3000_1_0.25_0.5_all','noisy_1_groups_17580_3000_1_0.5_0.5_all','noisy_1_groups_17580_3000_1_0_0.5_all','noisy_1_paths_17580_3000_1_0.18_0.5_all','noisy_1_paths_17580_3000_1_0.25_0.5_all','noisy_1_paths_17580_3000_1_0.5_0.5_all','noisy_1_paths_17580_3000_1_0_0.5_all','noisy_2_groups_17580_3000_1_0.18_0.5_all','noisy_2_groups_17580_3000_1_0.25_0.5_all','noisy_2_groups_17580_3000_1_0.5_0.5_all','noisy_2_groups_17580_3000_1_0_0.5_all','noisy_2_paths_17580_3000_1_0.18_0.5_all','noisy_2_paths_17580_3000_1_0.25_0.5_all','noisy_2_paths_17580_3000_1_0.5_0.5_all','noisy_2_paths_17580_3000_1_0_0.5_all','noisy_3_groups_17580_3000_1_0.18_0.5_all','noisy_3_groups_17580_3000_1_0.25_0.5_all','noisy_3_groups_17580_3000_1_0.5_0.5_all','noisy_3_groups_17580_3000_1_0_0.5_all','noisy_3_paths_17580_3000_1_0.18_0.5_all','noisy_3_paths_17580_3000_1_0.25_0.5_all','noisy_3_paths_17580_3000_1_0.5_0.5_all','noisy_3_paths_17580_3000_1_0_0.5_all','noisy_4_groups_17580_3000_1_0.18_0.5_all','noisy_4_groups_17580_3000_1_0.25_0.5_all','noisy_4_groups_17580_3000_1_0.5_0.5_all','noisy_4_groups_17580_3000_1_0_0.5_all','noisy_4_paths_17580_3000_1_0.18_0.5_all','noisy_4_paths_17580_3000_1_0.25_0.5_all','noisy_4_paths_17580_3000_1_0.5_0.5_all','noisy_4_paths_17580_3000_1_0_0.5_all','noisy_5_groups_17580_3000_1_0.18_0.5_all','noisy_5_groups_17580_3000_1_0.25_0.5_all','noisy_5_groups_17580_3000_1_0.5_0.5_all','noisy_5_groups_17580_3000_1_0_0.5_all','noisy_5_paths_17580_3000_1_0.18_0.5_all','noisy_5_paths_17580_3000_1_0.25_0.5_all','noisy_5_paths_17580_3000_1_0.5_0.5_all','noisy_5_paths_17580_3000_1_0_0.5_all']
+  dimensions_latent:
+    values: [3]
+  weights_cycle: 
+    values: [0.]
+  ae_sweep_id: 
+    values: ['ulxztdsf']
+  disc_sweep_id: 
+    values: ['pu8f08s6']

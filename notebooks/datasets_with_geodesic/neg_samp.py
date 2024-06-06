@@ -32,8 +32,9 @@ for key, value in data_dict_raw.items():
         continue
     data_dict0[key] = value
 
-noise_type = 'hi-freq-no-add'
-noise_level = 1.1
+# noise_type = 'hi-freq-no-add'
+noise_type = 'gaussian'
+noise_level = 0.5
 mask_dist = False
 data_dict = add_negative_samples(data_dict0.copy(), subset_rate=1., noise_rate=noise_level, seed=seed, noise=noise_type, mask_dists=mask_dist, shell=True)
 
