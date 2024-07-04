@@ -1,0 +1,9 @@
+training:
+  mode: 'wdiscriminator'
+
+data:
+  name: torus_disc
+
+path:
+  root: './results_wd/'
+  model: wd

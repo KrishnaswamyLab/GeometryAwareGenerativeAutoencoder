@@ -1,0 +1,20 @@
+defaults:
+  - logger: default_logger
+
+# path: '../dm_data/'
+path: '../data/'
+data: 'torus_ae.npz'
+time_embedding_size: 8
+seed: 42
+lr: 1e-4
+layer_widths: [64,64,64]
+weight_decay: 1e-5
+dropout: 0
+batch_norm: true
+activation: 'relu'
+num_steps: 2000
+max_epochs: 100000
+batch_size: 1024
+monitor: 'train_loss'
+patience: 100000
+accelerator: 'cuda'

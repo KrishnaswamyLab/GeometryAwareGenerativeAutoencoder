@@ -1,0 +1,9 @@
+training:
+  mode: 'end2end'
+
+data:
+  name: torus_ae
+
+path:
+  root: './results_ae/'
+  model: ae
