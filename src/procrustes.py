@@ -158,3 +158,14 @@ class Procrustes():
 
     def fit(self, data1, data2):
         self.fit_transform(data1, data2)
+
+def proc_transf_torch(proc, device, dtype): # temp fix for taking jacobian.
+    m = torch.tensor(proc.mean, dtype=dtype, device=device)
+    m1 = torch.tensor(proc.mean1, dtype=dtype, device=device)
+    n1 = torch.tensor(proc.norm1, dtype=dtype, device=device)
+    n = torch.tensor(proc.norm, dtype=dtype, device=device)
+    R = torch.tensor(proc.R, dtype=dtype, device=device)
+    s = torch.tensor(proc.s, dtype=dtype, device=device)
+    def transf(x):
+        return ((x - m) / n @ R.T * s) * n1 + m1
+    return transf
