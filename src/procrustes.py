@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from scipy.linalg import orthogonal_procrustes
 
 class Procrustes():
