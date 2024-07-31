@@ -159,3 +159,19 @@ def offmanifolder5_maker(
     return ofm_
 
 offmanifolder_maker = offmanifolder5_maker
+
+
+def offmanifolder6_maker(
+    encoder_, 
+    discriminator_, 
+    disc_factor = 4,
+    # max_prob=1.
+):
+    def ofm_(x):
+        z = encoder_(x)
+        # weighting_factor1 = (max_prob-discriminator_(x))/max_prob*disc_factor
+        # weighting_factor2 = torch.exp(weighting_factor1)
+        return torch.cat([z, (discriminator_(x) * disc_factor).unsqueeze(1).repeat(1, 1)], dim=1)
+    return ofm_
+
+offmanifolder_maker_new = offmanifolder6_maker
