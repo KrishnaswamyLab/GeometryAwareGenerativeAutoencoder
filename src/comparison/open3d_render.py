@@ -80,6 +80,18 @@ def mesh_from_pc(points, filename = None):
 
     return mesh
 
+# Function to create point clouds from starting and ending points
+def create_point_clouds(start_points, end_points):
+    start_cloud = o3d.geometry.PointCloud()
+    start_cloud.points = o3d.utility.Vector3dVector(start_points)
+    start_cloud.paint_uniform_color([1, 0, 0])  # Red color for starting points
+
+    end_cloud = o3d.geometry.PointCloud()
+    end_cloud.points = o3d.utility.Vector3dVector(end_points)
+    end_cloud.paint_uniform_color([0, 0, 1])  # Blue color for ending points
+
+    return start_cloud, end_cloud
+
 def generate_trajectory(T, offset=0):
     theta = np.linspace(0, 2 * np.pi, T)
     phi = np.linspace(0, 2 * np.pi, T) + offset
@@ -128,7 +140,14 @@ if __name__ == "__main__":
     T = 100  # Number of points in each trajectory
     trajectories = [generate_trajectory(T, offset=2*np.pi*i/N) for i in range(N)]
     all_data = load_trajectory()
-    example = all_data['torus']['ours']['geodesics'] #[T, N, 3]
+
+    data_name = 'torus'
+    method_name = 'gt'
+
+    if method_name == 'gt':
+        example = all_data[data_name]['density']['geodesics'] # [t, n, dim]
+    else:
+        example = all_data[data_name][method_name]['xhat'] # [t, n, dim]
     example = np.transpose(example, (1, 0, 2))
 
     # draw trajectory on the mesh
@@ -154,10 +173,10 @@ if __name__ == "__main__":
     
     #o3d.visualization.draw_geometries([mesh] + linesets, window_name="Torus")
 
-    # save both mesh and lineset
-    #o3d.io.write_triangle_mesh("torus_mesh.ply", mesh)
-    # for i, lineset in enumerate(linesets):
-    #     o3d.io.write_line_set(f"torus_trajectory_{i}.ply", lineset)
+    # Save both mesh and lineset.
+    o3d.io.write_triangle_mesh(f"./pointclouds/{data_name}_mesh.ply", mesh)
+    for i, lineset in enumerate(linesets):
+        o3d.io.write_line_set(f"./pointclouds/{data_name}_{method_name}_traj_{i}.ply", lineset)
 
     # Create a visualizer object
     vis = o3d.visualization.Visualizer()
@@ -165,6 +184,17 @@ if __name__ == "__main__":
 
     # Add the mesh to the visualizer
     vis.add_geometry(mesh)
+
+    # Add x0, x1 points
+    x0 = all_data[data_name]['density']['x0']
+    x1 = all_data[data_name]['density']['x1']
+    start_cloud, end_cloud = create_point_clouds(x0, x1)
+    vis.add_geometry(start_cloud)
+    vis.add_geometry(end_cloud)
+
+    # save x0, x1 points
+    o3d.io.write_point_cloud(f"./pointclouds/{data_name}_x0.ply", start_cloud)
+    o3d.io.write_point_cloud(f"./pointclouds/{data_name}_x1.ply", end_cloud)
 
     # Add each trajectory to the visualizer
     for lineset in linesets:
