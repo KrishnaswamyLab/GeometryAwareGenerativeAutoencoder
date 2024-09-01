@@ -216,12 +216,20 @@ class MLP(nn.Module):
         
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.layers = nn.Sequential(*layers)
+
+        #self.init_layers()
     
     def forward(self, x):
         return self.layers(x)
+    
+    def init_layers(self):
+        for layer in self.layers:
+            if isinstance(layer, nn.Linear):
+                nn.init.kaiming_normal_(layer.weight)
+                nn.init.zeros_(layer.bias)
 
 class CondCurve(nn.Module):
-    def __init__(self, input_dim, hidden_dim, scale_factor, symmetric, num_layers, k=2):
+    def __init__(self, input_dim, hidden_dim, scale_factor, symmetric, num_layers, k=2, embed_t=True):
         super(CondCurve, self).__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
@@ -229,8 +237,13 @@ class CondCurve(nn.Module):
         self.symmetric = symmetric
         self.num_layers = num_layers
         self.k = k
+        self.embed_t = embed_t
         
-        self.mod_x0_x1 = MLP(input_dim=hidden_dim * 2 + 1,
+        if self.embed_t:
+            self.aug_dim = 3 * hidden_dim
+        else:
+            self.aug_dim = 2 * hidden_dim + 1
+        self.mod_x0_x1 = MLP(input_dim=self.aug_dim,
                              hidden_dim=hidden_dim, 
                              output_dim=input_dim, 
                              num_hidden_layers=num_layers)
@@ -244,21 +257,33 @@ class CondCurve(nn.Module):
                           hidden_dim=hidden_dim, 
                           output_dim=hidden_dim, 
                           num_hidden_layers=num_layers)
+        
+        if self.embed_t:
+            self.t_emb = MLP(input_dim=1,
+                            hidden_dim=hidden_dim, 
+                            output_dim=hidden_dim, 
+                            num_hidden_layers=num_layers)
+        
     
     def forward(self, x0, x1, t):
-        t = t.unsqueeze(-1) if t.dim() == 1 else t
+        t = t.unsqueeze(-1) if t.dim() == 1 else t # [T, 1]
         
-        x0_ = x0.repeat(t.size(0), 1)
-        x1_ = x1.repeat(t.size(0), 1)
-        t_ = t.repeat(1, x0.size(0)).view(-1, 1)
+        x0_ = x0.repeat(t.size(0), 1) # [T*B, D]
+        x1_ = x1.repeat(t.size(0), 1) 
+        t_ = t.repeat(1, x0.size(0)).view(-1, 1) # [T*B, 1] 
 
         emb_x0 = self.x0_emb(x0_)
         emb_x1 = self.x1_emb(x1_)
+        if self.embed_t:
+            emb_t = self.t_emb(t_) # [T*B, D]
 
         avg = t_ * x1_ + (1 - t_) * x0_
         enveloppe = self.scale_factor * (1 - (t_ * 2 - 1).pow(self.k))
         
-        aug_state = torch.cat([emb_x0, emb_x1, t_], dim=-1)
+        if self.embed_t:
+            aug_state = torch.cat([emb_x0, emb_x1, emb_t], dim=-1) # [T*B, 3*D]
+        else:
+            aug_state = torch.cat([emb_x0, emb_x1, t_], dim=-1) # [T*B, 2*D+1]
 
         outs = self.mod_x0_x1(aug_state) * enveloppe + avg
 
@@ -330,6 +355,7 @@ class GeodesicBridge(pl.LightningModule):
                 points_penalty_density=False,
                 cc_k=2,
                 ):
+        #super().__init__()
         super(GeodesicBridge, self).__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
@@ -400,6 +426,9 @@ class GeodesicBridge(pl.LightningModule):
         if self.points_penalty is not None and self.points_penalty_density:
             vals = vals.reshape(cc_pts.size(0), -1)
             vals = vals * self.points_penalty.reshape(-1,1)
+        hinge = 0.5
+        vals = vals - hinge
+        vals[vals < 0] = 0 
         return vals.mean()
 
     def step(self, batch, batch_idx):
@@ -747,6 +776,9 @@ class GeodesicBridgeDensityEuc(GeodesicBridgeDensity):
             loss = loss + self.normalize_weight * nloss
         return loss
 
+import plotly.graph_objects as go
+import os
+import moviepy.editor as mpy
 class GeodesicFM(GeodesicBridgeOverfit):
     def __init__(self,
                 func,
@@ -761,6 +793,13 @@ class GeodesicFM(GeodesicBridgeOverfit):
                 weight_decay=1e-3,
                 flow_weight=1.,
                 length_weight=1.,
+                cc_k=2,
+                use_density=False,
+                data_pts=None,
+                density_weight=1.,
+                visualize_training=False,
+                dataloader=None,
+                device=None,
                 ):
             super().__init__(
                 func=func,
@@ -776,12 +815,29 @@ class GeodesicFM(GeodesicBridgeOverfit):
                 discriminator_func_for_grad_weight=0.,
                 id_dim=1,
                 id_emb_dim=1,
-                density_weight=0.,
                 length_weight=length_weight,
+                cc_k=cc_k,
+                data_pts=data_pts,
+                density_weight=density_weight,
             )
             self.encoder = encoder
             self.flow_model = MLP(input_dim=input_dim+1,hidden_dim=hidden_dim,output_dim=input_dim,num_hidden_layers=num_layers)
             self.flow_weight = flow_weight
+            self.use_density = use_density
+            self.visualize_training = visualize_training
+            self.data_pts = data_pts # 1) for density loss. 2) for visualization.
+            self.dataloader = dataloader # for traj visualization along training.
+
+            if self.visualize_training and self.dataloader is not None and self.data_pts is not None:
+                visualize_x0 = []
+                visualize_x1 = []
+                for x0_, x1_ in self.dataloader:
+                    visualize_x0.append(x0_)
+                    visualize_x1.append(x1_)
+                self.visualize_x0 = torch.cat(visualize_x0, dim=0).to(device)
+                self.visualize_x1 = torch.cat(visualize_x1, dim=0).to(device)
+                self.data_pts_encodings = self.encoder(self.data_pts).cpu().numpy()
+
 
     def step(self, batch, batch_idx):
         x0, x1 = batch
@@ -806,6 +862,7 @@ class GeodesicFM(GeodesicBridgeOverfit):
         vectors_flat = vectors.flatten(0,1)
         cc_pts_flat = cc_pts.flatten(0, 1)
         jac_flat = jacobian(self.func, cc_pts_flat)
+
         len_loss = self.length_loss(vectors_flat, jac_flat)
         self.log(f'loss_length', len_loss, prog_bar=True, on_epoch=True)
         loss = self.length_weight * len_loss
@@ -814,6 +871,110 @@ class GeodesicFM(GeodesicBridgeOverfit):
         vt = self.flow_model(torch.cat([cc_pts, ts_expanded], dim=2).flatten(0,1))
         v_loss = ((vt - vectors_flat) ** 2).mean()
         self.log(f'fm_length', v_loss, prog_bar=True, on_epoch=True)
+
         loss = loss + self.flow_weight * v_loss
+        if self.density_weight > 0 and self.data_pts is not None:
+            density_loss = self.density_loss(cc_pts_flat, self.data_pts, cc_pts)
+            self.log(f'density_loss', density_loss, prog_bar=True, on_epoch=True)
+            loss += self.density_weight * density_loss
+            
         self.log(f'loss', loss, prog_bar=True, on_epoch=True)
+        
         return loss
+    
+    def on_train_epoch_start(self):
+        print('=====on_train_epoch_start, self.current_epoch:====== ', self.current_epoch)
+        if self.current_epoch == 0:
+            print("Starting training at epoch 0")
+
+            if self.visualize_training is False or self.dataloader is None or self.data_pts is None:
+                return
+    
+            n_trajectories = 10  # Number of trajectories to sample and visualize
+
+            # Generate trajectories
+            ids = torch.zeros((self.visualize_x0.size(0), 1), device=self.visualize_x0.device, dtype=self.visualize_x0.dtype)
+            print('self.visualize_x0: ', self.visualize_x0.shape, self.visualize_x0.device)
+            with torch.no_grad():
+                trajectories = self.cc(self.visualize_x0, self.visualize_x1, self.ts, ids) # (T, N, d)
+                print('trajectories: ', trajectories.shape)
+                traj_z = self.encoder(trajectories.flatten(0,1))
+                visualize_z0 = self.encoder(self.visualize_x0)
+                visualize_z1 = self.encoder(self.visualize_x1)
+
+            traj_z = traj_z.reshape(len(self.ts), self.visualize_x0.shape[0], -1).cpu().numpy()
+            visualize_z0 = visualize_z0.cpu().numpy()
+            visualize_z1 = visualize_z1.cpu().numpy()
+            print('on_train_epoch_end, traj_z: ', traj_z.shape)
+
+            # Visualize trajectories
+            fig = go.Figure()
+
+            fig.add_trace(go.Scatter3d(x=self.data_pts_encodings[:,0], y=self.data_pts_encodings[:,1], z=self.data_pts_encodings[:,2], 
+                                    mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
+            fig.add_trace(go.Scatter3d(x=visualize_z0[:,0], y=visualize_z0[:,1], z=visualize_z0[:,2],
+                                        mode='markers', marker=dict(size=5, color='blue', opacity=0.8)))
+            fig.add_trace(go.Scatter3d(x=visualize_z1[:,0], y=visualize_z1[:,1], z=visualize_z1[:,2],
+                                        mode='markers', marker=dict(size=5, color='green', opacity=0.8)))
+            
+            for i in range(n_trajectories):
+                fig.add_trace(go.Scatter3d(x=traj_z[:,i,0], y=traj_z[:,i,1], z=traj_z[:,i,2],
+                                        mode='lines', line=dict(width=2, color='blue')))
+
+            # Save the figure to a file
+            os.makedirs('./eb_fm/training/', exist_ok=True)
+            fig.write_image(f'./eb_fm/training/trajs_epoch_{0:04d}.png')
+    
+    def on_train_epoch_end(self):
+        if self.visualize_training is False or self.dataloader is None or self.data_pts is None:
+            return
+        
+        n_trajectories = 10  # Number of trajectories to sample and visualize
+
+        # Generate trajectories
+        ids = torch.zeros((self.visualize_x0.size(0), 1), device=self.visualize_x0.device, dtype=self.visualize_x0.dtype)
+        print('self.visualize_x0: ', self.visualize_x0.shape, self.visualize_x0.device)
+        with torch.no_grad():
+            trajectories = self.cc(self.visualize_x0, self.visualize_x1, self.ts, ids) # (T, N, d)
+            print('trajectories: ', trajectories.shape)
+            traj_z = self.encoder(trajectories.flatten(0,1))
+            visualize_z0 = self.encoder(self.visualize_x0)
+            visualize_z1 = self.encoder(self.visualize_x1)
+
+        traj_z = traj_z.reshape(len(self.ts), self.visualize_x0.shape[0], -1).cpu().numpy()
+        visualize_z0 = visualize_z0.cpu().numpy()
+        visualize_z1 = visualize_z1.cpu().numpy()
+        print('on_train_epoch_end, traj_z: ', traj_z.shape)
+
+        # Visualize trajectories
+        fig = go.Figure()
+
+        fig.add_trace(go.Scatter3d(x=self.data_pts_encodings[:,0], y=self.data_pts_encodings[:,1], z=self.data_pts_encodings[:,2], 
+                                   mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
+        fig.add_trace(go.Scatter3d(x=visualize_z0[:,0], y=visualize_z0[:,1], z=visualize_z0[:,2],
+                                    mode='markers', marker=dict(size=5, color='blue', opacity=0.8)))
+        fig.add_trace(go.Scatter3d(x=visualize_z1[:,0], y=visualize_z1[:,1], z=visualize_z1[:,2],
+                                    mode='markers', marker=dict(size=5, color='green', opacity=0.8)))
+        
+        for i in range(n_trajectories):
+            fig.add_trace(go.Scatter3d(x=traj_z[:,i,0], y=traj_z[:,i,1], z=traj_z[:,i,2],
+                                       mode='lines', line=dict(width=2, color='blue')))
+
+        # Save the figure to a file
+        os.makedirs('./eb_fm/training/', exist_ok=True)
+        fig.write_image(f'./eb_fm/training/trajs_epoch_{self.current_epoch+1:04d}.png')
+    
+    def on_train_end(self):
+        self.frame_dir = './eb_fm/training/'
+        self.video_output_path = './eb_fm/trajs.mp4'
+        # Create video from saved frames
+        frames = [f for f in os.listdir(self.frame_dir) if f.endswith('.png')]
+        frames.sort()
+        
+        clip = mpy.ImageSequenceClip([os.path.join(self.frame_dir, f) for f in frames], fps=2)
+        clip.write_videofile(self.video_output_path, audio=False)
+
+        # Clean up frame directory
+        for f in frames:
+            os.remove(os.path.join(self.frame_dir, f))
+        os.rmdir(self.frame_dir)
