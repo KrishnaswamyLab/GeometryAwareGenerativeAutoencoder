@@ -1,17 +1,19 @@
 import argparse
 import os
 import sys
+from glob import glob
+import plotly.graph_objs as go
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import pytorch_lightning as pl
-from glob import glob
-import plotly.graph_objs as go
 from torch.utils.data import Dataset, DataLoader
 import torchdiffeq
 import torch.optim as optim
 from torch import nn
 import torch.nn.functional as F
 from torch.nn.utils import spectral_norm
+import scipy.spatial as spatial
 
 sys.path.append('../../src/')
 from diffusionmap import DiffusionMap
@@ -66,9 +68,9 @@ class MLP(torch.nn.Module):
         return self.net(x)
 
 class Discriminator(pl.LightningModule):
-    def __init__(self, in_dim, layer_widths=[64, 64, 64], activation='relu', loss_type='bce', normalize=False,
+    def __init__(self, in_dim, layer_widths=[256, 128, 64], activation='relu', loss_type='bce', normalize=False,
                  data_pts=None, k=5,
-                 batch_norm=False, dropout=0.0, use_spectral_norm=False):
+                 batch_norm=False, dropout=0.0, use_spectral_norm=False, lr=1e-4, weight_decay=1e-4):
         super().__init__()
         self.in_dim = in_dim if data_pts is None else in_dim + k
         self.mlp = MLP(self.in_dim, 2, layer_widths, activation, batch_norm, dropout, use_spectral_norm)
@@ -78,12 +80,9 @@ class Discriminator(pl.LightningModule):
         # hyperparameters for augmenting data with density feautres
         self.data_pts = data_pts
         self.k = int(k)
-        
-        self.lr = kwargs.get('lr', 1e-3)
-        self.weight_decay = kwargs.get('weight_decay', 1e-5)
 
-        self.mean = torch.tensor(kwargs.get('mean', np.zeros(in_dim)), dtype=torch.float32)
-        self.std = torch.tensor(kwargs.get('std', np.ones(in_dim)), dtype=torch.float32)
+        self.lr = lr
+        self.weight_decay = weight_decay
         
         self.train_step_outs = []
         self.val_step_outs = []
@@ -94,6 +93,9 @@ class Discriminator(pl.LightningModule):
         
         if self.data_pts is not None:
             assert self.data_pts.shape[1] == self.in_dim
+
+        # Save hyperparameters
+        self.save_hyperparameters()
     
     def augment_data(self, x):
         dists = torch.cdist(x, self.data_pts)
@@ -193,10 +195,11 @@ def train_discriminator(x, x_noisy, encoder, args):
 
     # Model. 
     # NOTE: Normalize is set to False since we assume latent features are already normalized.
-    model = Discriminator(in_dim=x.shape[1], layer_widths=args.disc_hidden_dim, activation='relu', 
+    model = Discriminator(in_dim=x.shape[1], layer_widths=args.disc_layer_widths, activation='relu', 
                             loss_type='bce', normalize=False,
                             data_pts=data_pts, k=args.disc_density_k,
-                            batch_norm=True, dropout=0.5, use_spectral_norm=True)
+                            batch_norm=True, dropout=0.5, use_spectral_norm=True, 
+                            lr=args.disc_lr, weight_decay=args.disc_weight_decay)
     
     # Trainer.
     early_stop = pl.callbacks.EarlyStopping(monitor='val_loss', patience=args.disc_early_stop_patience, mode='min')
@@ -298,9 +301,97 @@ def neg_sample_using_diffusion(x, ts, num_steps, beta_start, beta_end, seed=42):
 
     return x_noisy
 
-def sample_indices_within_range(points, selected_idx=None, range_size=0.1, num_samples=20, seed=23):
-    # Implementation of sample_indices_within_range function
-    # ...
+def sample_indices_within_range(x, encoder, device,labels=None, start_group=None, end_group=None, selected_idx=None, 
+                                range_size=0.1, num_samples=32, seed=23):
+    
+    np.random.seed(seed)
+    points = encode_data(x, encoder, device)
+
+    # Randomly select two points from the array
+    if selected_idx[0] is None or selected_idx[1] is None:
+        assert labels is not None and start_group is not None and end_group is not None
+        start_idxs = np.where(labels == start_group)[0]
+        end_idxs = np.where(labels == end_group)[0]
+        point1_idx, point2_idx = np.random.choice(start_idxs, 1)[0], np.random.choice(end_idxs, 1)[0]
+        point1, point2 = points[point1_idx], points[point2_idx]
+    else:
+        point1_idx, point2_idx = selected_idx
+        point1, point2 = points[point1_idx], points[point2_idx]
+    print('start_idx: ', point1_idx, 'end_idx: ', point2_idx)
+
+    # Function to find indices of points within the range of a given point
+    def _find_indices_within_range(point):
+        distances = np.linalg.norm(points - point, axis=1)
+        within_range_indices = np.where(distances <= range_size)[0]
+        return within_range_indices
+    
+    # Find indices within range of point1 and point2
+    indices_within_range1 = _find_indices_within_range(point1)
+    indices_within_range2 = _find_indices_within_range(point2)
+    
+    # Randomly sample indices within the range
+    if len(indices_within_range1) >= num_samples:
+        sampled_indices_point1 = np.random.choice(indices_within_range1, num_samples, replace=False)
+    else:
+        sampled_indices_point1 = indices_within_range1
+    
+    if len(indices_within_range2) >= num_samples:
+        sampled_indices_point2 = np.random.choice(indices_within_range2, num_samples, replace=False)
+    else:
+        sampled_indices_point2 = indices_within_range2
+    
+    # Visualize start/end points in latent space.
+    fig = go.Figure()
+    fig.add_trace(go.Scatter3d(x=points[:,0], y=points[:,1], z=points[:,2], 
+                               mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
+    fig.add_trace(go.Scatter3d(x=points[sampled_indices_point1,0], y=points[sampled_indices_point1,1], z=points[sampled_indices_point1,2], 
+                               mode='markers', marker=dict(size=5, color='blue', colorscale='Viridis', opacity=0.8)))
+    fig.add_trace(go.Scatter3d(x=points[sampled_indices_point2,0], y=points[sampled_indices_point2,1], z=points[sampled_indices_point2,2], 
+                               mode='markers', marker=dict(size=5, color='red', colorscale='Viridis', opacity=0.8)))
+    fig.show()
+    return point1_idx, sampled_indices_point1, point2_idx, sampled_indices_point2
+
+def compute_kernel(X: np.array, Y: np.array, sigma: float = 1.0):
+    '''
+    Compute the Gaussian kernel between two sets of points.
+    Adapted from
+    https://github.com/professorwug/diffusion_curvature/blob/master/diffusion_curvature/core.py
+    Return:
+        G: (n_samples_X, n_samples_Y)
+    '''
+    # Construct the distance matrix.
+    D = spatial.distance.cdist(X, Y)
+    # Gaussian kernel
+    G = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp((-D**2) / (2 * sigma**2))
+    return G
+
+def sampling_rejection(x, x_noisy, method='density', k=20,threshold=0.01):
+    '''
+    Reject samples that are too close to the original manifold.
+    Return:
+        a boolean array of shape (n_samples_noisy,), indicating whether each sample is rejected.
+    '''
+    if method == 'density':
+        k = k
+        distances = spatial.distance.cdist(x_noisy, x)
+        dist_closest = np.partition(distances, k, axis=1)[:, :k]
+        dist_mean = np.mean(dist_closest, axis=1)
+        return dist_mean <= threshold
+    elif method == 'sugar':
+        # Use reverse-MAGIC/SUGAR: P_{TxN} is the transition matrix from x_noisy to x
+        # 1. P_{TxN}, column normalized, where P_{t,i} is the prob of going from i in x_noisy to j in x.
+        # 2. x_noisey_bar = P_{NxT}(Row normalized) * [P_{TxN} * x_noisy]
+        # 3. Compare the distance between x_noisy_bar and x_noisy, reject samples that did not change much, since they are on-manifold.
+        G_TN = compute_kernel(x, x_noisy)
+        P_TN = G_TN / np.sum(G_TN, axis=0, keepdims=True) # column normalized, (n_samples_x, n_samples_noisy)
+        G_NT = G_TN.T
+        P_NT = G_NT / np.sum(G_NT, axis=1, keepdims=True) # row normalized, (n_samples_noisy, n_samples_x)
+        x_noisy_bar = P_NT @ (P_TN @ x_noisy)
+        change = np.linalg.norm(x_noisy - x_noisy_bar, axis=1) # (n_samples_noisy,)
+        
+        return change <= threshold
+    else:
+        raise ValueError(f"Invalid sampling rejection method: {method}")
 
 class CustomDataset(Dataset):
     def __init__(self, x0, x1):
@@ -329,65 +420,93 @@ def main(args):
 
     # Load models
     ae_model = load_autoencoder(args.ae_run_id, args.root_dir)
-    old_wd_model = load_discriminator(args.wd_run_id, args.root_dir)
 
     # Load data
     x, labels = load_data(args.data_path)
     x_encodings = encode_data(x, ae_model.encoder, device)
+    print('x_encodings: ', x_encodings.shape)
 
     # Negative sampling    
     if args.neg_method == 'add':
-        x_noisy = neg_sample_using_additive(x, args.noise_levels, noise_rate=args.noise_rate, seed=args.seed, noise=args.noise_type)
+        x_noisy = neg_sample_using_additive(x_encodings, args.noise_levels, noise_rate=args.noise_rate, seed=args.seed, noise=args.noise_type)
     elif args.neg_method == 'diffusion':
-        x_noisy = neg_sample_using_diffusion(x, args.t, args.num_steps, args.beta_start, args.beta_end, seed=args.seed)
+        x_noisy = neg_sample_using_diffusion(x_encodings, args.t, args.num_steps, args.beta_start, args.beta_end, seed=args.seed)
     else:
         raise ValueError(f"Invalid negative sampling method: {args.neg_method}")
     assert x_noisy.shape[-1] == x_encodings.shape[-1]
+    # Sampling rejection.
+    if args.sampling_rejection:
+        rejected_idx = sampling_rejection(x_encodings, x_noisy, 
+                                          method=args.sampling_rejection_method, k=args.sampling_rejection_k, threshold=args.sampling_rejection_threshold)
+        all_x_noisy = x_noisy.copy()
+        x_noisy = x_noisy[~rejected_idx]
+        print('Number of samples after sampling rejection: ', len(x_noisy))
 
-    # Train new discriminator if args.train_discriminator is True
-    if args.train_discriminator:
-        print("Training new discriminator...")
-        wd_model = train_discriminator(torch.tensor(x_encodings, dtype=torch.float32),
-                                       torch.tensor(x_noisy, dtype=torch.float32),
-                                       args)
-    else:
-        print("Using pre-trained discriminator...")
+    # Visualize negative samples and positive samples.
+    fig = go.Figure()
+    fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
+                               mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
+    fig.add_trace(go.Scatter3d(x=x_noisy[:,0], y=x_noisy[:,1], z=x_noisy[:,2],
+                               mode='markers', marker=dict(size=2, color='red', colorscale='Viridis', opacity=0.8)))
+    if args.sampling_rejection:
+        fig.add_trace(go.Scatter3d(x=all_x_noisy[rejected_idx,0], y=all_x_noisy[rejected_idx,1], z=all_x_noisy[rejected_idx,2],
+                                   mode='markers', marker=dict(size=2, color='green', colorscale='Viridis', opacity=0.8)))
+    fig.show()
+
+    # Train new discriminator
+    print("Training new discriminator...")
+    wd_model = train_discriminator(torch.tensor(x_encodings, dtype=torch.float32),
+                                   torch.tensor(x_noisy, dtype=torch.float32),
+                                   ae_model.encoder,
+                                   args)
+    
+    # return 
 
     # Select start/end points
     start_idx, sampled_indices_point1, end_idx, sampled_indices_point2 = sample_indices_within_range(
-        encodings, selected_idx=(args.start_idx, args.end_idx), range_size=args.range_size, 
-        seed=args.seed, num_samples=args.num_samples
+        x=x, encoder=ae_model.encoder, device=device, labels=labels, start_group=args.start_group, end_group=args.end_group, 
+        selected_idx=(args.start_idx, args.end_idx), range_size=args.range_size, num_samples=args.num_samples, 
+        seed=args.seed, 
     )
+    start_pt = x[start_idx]
+    end_pt = x[end_idx]
+    start_pts = x[sampled_indices_point1]
+    end_pts = x[sampled_indices_point2]
 
-    # Create dataloader
-    dataset = CustomDataset(x0=torch.tensor(x[sampled_indices_point1], dtype=torch.float32), 
-                            x1=torch.tensor(x[sampled_indices_point2], dtype=torch.float32))
+    # Create dataloader.
+    dataset = CustomDataset(x0=torch.tensor(start_pts, dtype=torch.float32), 
+                            x1=torch.tensor(end_pts, dtype=torch.float32))
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate_fn)
 
-    # Setup models for training
+    # Prepare offmanifolder through encoder and discriminator.
     ae_model = ae_model.to(device)
-    old_wd_model = old_wd_model.to(device)
+    wd_model = wd_model.to(device)
+    ae_model.eval()
+    wd_model.eval()
+    for param in ae_model.encoder.parameters():
+        param.requires_grad = False
+    for param in wd_model.parameters():
+        param.requires_grad = False
 
     enc_func = lambda x: ae_model.encoder(x)
-    disc_func = lambda x: 1 - old_wd_model.positive_proba(enc_func(x))
-
-    # Load or train discriminator
-    if args.train_discriminator:
-        print("Training new discriminator...")
-        wd_model = train_discriminator(torch.tensor(encodings, dtype=torch.float32),
-                                       torch.tensor(x_noisy, dtype=torch.float32),
-                                       args)
-    else:
-        print("Loading pre-trained discriminator...")
-        wd_model = load_discriminator(args.wd_run_id, args.root_dir)
-
-    if args.use_new_discriminator:
-        disc_func = lambda x: 1 - torch.sigmoid(wd_model(enc_func(x)))
-    else:
-        disc_func = lambda x: 1 - old_wd_model.positive_proba(enc_func(x))
+    disc_func = lambda x: 1 - wd_model.positive_prob(enc_func(x))
 
     ofm, extended_dim_func = offmanifolder_maker_new(enc_func, disc_func, disc_factor=args.disc_factor, 
-                                                     data_encodings=torch.tensor(encodings, dtype=torch.float32).to(device))
+                                                     data_encodings=torch.tensor(x_encodings, dtype=torch.float32).to(device))
+
+    # Visualize start/end points in latent space.
+    # start_pts_encodings = enc_func(torch.tensor(start_pts, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    # end_pts_encodings = enc_func(torch.tensor(end_pts, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    start_pts_encodings = encode_data(start_pts, ae_model.encoder, device)
+    end_pts_encodings = encode_data(end_pts, ae_model.encoder, device)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
+                               mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
+    fig.add_trace(go.Scatter3d(x=start_pts_encodings[:,0], y=start_pts_encodings[:,1], z=start_pts_encodings[:,2], 
+                               mode='markers', marker=dict(size=5, color='blue', colorscale='Viridis', opacity=0.8)))
+    fig.add_trace(go.Scatter3d(x=end_pts_encodings[:,0], y=end_pts_encodings[:,1], z=end_pts_encodings[:,2], 
+                               mode='markers', marker=dict(size=5, color='red', colorscale='Viridis', opacity=0.8)))
+    fig.show()
 
     gbmodel = GeodesicFM(
         func=ofm,
@@ -403,8 +522,12 @@ def main(args):
         flow_weight=args.flow_weight,
         length_weight=args.length_weight,
         cc_k=args.cc_k,
-        density_weight=args.density_weight,
+        use_density=args.use_density,
         data_pts=torch.tensor(x, dtype=torch.float32).to(device),
+        density_weight=args.density_weight,
+        visualize_training=args.visualize_training,
+        dataloader=dataloader,
+        device=device,
     )
 
     # Train the model
@@ -420,26 +543,25 @@ def main(args):
 
     trainer.fit(gbmodel, train_dataloaders=dataloader)
 
-    # Generate and visualize trajectories
-    # ... (implement trajectory generation and visualization)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Latent Discriminator Script")
+    parser.add_argument("--seed", type=int, default=2024, help="Random seed")
     parser.add_argument("--root_dir", type=str, default="../../", help="Root directory")
     parser.add_argument("--ae_run_id", type=str, default='pzlwi6t6', help="Autoencoder run ID")
-    parser.add_argument("--wd_run_id", type=str, default='kafcutw4', help="Discriminator run ID")
-    parser.add_argument("--data_path", type=str, required=True, help="Path to data file")
-    parser.add_argument("--noise_levels", type=float, nargs="+", default=[0.2], help="Noise levels for negative sampling")
-    parser.add_argument("--noise_type", type=str, default="gaussian", help="Type of noise for negative sampling")
+    parser.add_argument("--data_path", type=str, default='../../data/eb_subset_all.npz')
+    # Start/End points arguments
+    parser.add_argument("--start_group", type=int, default=None, help="Start group for trajectory")
+    parser.add_argument("--end_group", type=int, default=None, help="End group for trajectory")
     parser.add_argument("--start_idx", type=int, default=736, help="Start index for trajectory")
     parser.add_argument("--end_idx", type=int, default=2543, help="End index for trajectory")
     parser.add_argument("--range_size", type=float, default=0.3, help="Range size for sampling")
-    parser.add_argument("--seed", type=int, default=2024, help="Random seed")
     parser.add_argument("--num_samples", type=int, default=64, help="Number of samples")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
-    parser.add_argument("--disc_factor", type=float, default=5, help="Discriminator factor")
+    # GeodesicFM arguments
+    parser.add_argument("--disc_factor", type=float, default=5, help="Discriminator factor for off-manifolder")
     parser.add_argument("--hidden_dim", type=int, default=64, help="Hidden dimension for GeodesicFM")
-    parser.add_argument("--scale_factor", type=float, default=1, help="Scale factor for GeodesicFM")
+    parser.add_argument("--scale_factor", type=float, default=1, help="Scale factor for CondCurve")
     parser.add_argument("--symmetric", type=bool, default=True, help="Symmetric flag for GeodesicFM")
     parser.add_argument("--num_layers", type=int, default=3, help="Number of layers for GeodesicFM")
     parser.add_argument("--n_tsteps", type=int, default=100, help="Number of time steps for GeodesicFM")
@@ -447,33 +569,42 @@ if __name__ == "__main__":
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
     parser.add_argument("--flow_weight", type=float, default=0, help="Flow weight for GeodesicFM")
     parser.add_argument("--length_weight", type=float, default=1, help="Length weight for GeodesicFM")
-    parser.add_argument("--cc_k", type=int, default=5, help="cc_k parameter for GeodesicFM")
+    parser.add_argument("--cc_k", type=int, default=5, help="cc_k parameter for GeodesicFM CondCurve")
+    parser.add_argument("--use_density", type=bool, default=False, help="Use density for GeodesicFM")
     parser.add_argument("--density_weight", type=float, default=1., help="Density weight for GeodesicFM")
+    parser.add_argument("--visualize_training", type=bool, default=False, help="Visualize training")
     parser.add_argument("--patience", type=int, default=150, help="Patience for early stopping")
     parser.add_argument("--max_epochs", type=int, default=300, help="Maximum number of epochs")
     parser.add_argument("--log_every_n_steps", type=int, default=20, help="Log every n steps")
     parser.add_argument("--checkpoint_dir", type=str, default="./eb_fm/checkpoints", help="Checkpoint directory")
 
     # Add new arguments for discriminator training
-    parser.add_argument("--train_discriminator", action="store_true", help="Train a new discriminator")
-    parser.add_argument("--use_new_discriminator", action="store_true", help="Use the newly trained discriminator")
-    parser.add_argument("--disc_hidden_dim", type=int, default=64, help="Hidden dimension for discriminator")
-    parser.add_argument("--disc_num_layers", type=int, default=3, help="Number of layers for discriminator")
-    parser.add_argument("--disc_lr", type=float, default=1e-4, help="Learning rate for discriminator")
-    parser.add_argument("--disc_epochs", type=int, default=100, help="Number of epochs for discriminator training")
-    parser.add_argument("--disc_critic_iters", type=int, default=5, help="Number of critic iterations per epoch")
+    parser.add_argument("--disc_layer_widths", type=int, nargs="+", default=[256, 128, 64], help="Layer widths for discriminator")
+    parser.add_argument("--disc_lr", type=float, default=1e-3, help="Learning rate for discriminator")
+    parser.add_argument("--disc_weight_decay", type=float, default=1e-4, help="Weight decay for discriminator")
+    parser.add_argument("--disc_early_stop_patience", type=int, default=10, help="Early stop patience for discriminator")
+    parser.add_argument("--disc_max_epochs", type=int, default=100, help="Number of epochs for discriminator training")
+    parser.add_argument("--disc_log_every_n_steps", type=int, default=20, help="Log every n steps for discriminator")
     parser.add_argument("--disc_batch_size", type=int, default=64, help="Batch size for discriminator training")
-    parser.add_argument("--disc_weight_clip", type=float, default=0.01, help="Weight clipping value for discriminator")
+    parser.add_argument("--disc_use_density_features", type=bool, default=False, help="Use density features for discriminator")
+    parser.add_argument("--disc_density_k", type=int, default=5, help="k for density features")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device to use for training")
-
-    # Negative sampling arguments
-    parser.add_argument("--neg_method", type=str, default="additive", help="additive|diffusion")
+    # Negative sampling arguments    
+    parser.add_argument("--neg_method", type=str, default="add", help="add|diffusion")
     parser.add_argument("--noise_rate", type=float, default=1.0, help="std of the additive noise")
-    parser.add_argument("--t", type=int, default=100, help="Number of time steps for forward diffusion")
+    parser.add_argument("--noise_levels", type=float, nargs="+", default=[0.2], help="Noise levels for negative sampling")
+    parser.add_argument("--noise_type", type=str, default="gaussian", help="Type of noise for negative sampling")
+    parser.add_argument("--t", type=int, nargs="+", default=[200], help="Number of time steps for forward diffusion")
     parser.add_argument("--num_steps", type=int, default=1000, help="Number of steps for forward diffusion")
     parser.add_argument("--beta_start", type=float, default=0.0001, help="Start value for beta in forward diffusion")
     parser.add_argument("--beta_end", type=float, default=0.01, help="End value for beta in forward diffusion")
+    parser.add_argument("--sampling_rejection", type=bool, default=False, help="Sampling rejection for negative sampling")
+    parser.add_argument("--sampling_rejection_method", type=str, default="density", help="density|sugar")
+    parser.add_argument("--sampling_rejection_k", type=int, default=20, help="k for sampling rejection")
+    parser.add_argument("--sampling_rejection_threshold", type=float, default=.5, help="Threshold for sampling rejection")
 
 
     args = parser.parse_args()
+    
     main(args)
+
