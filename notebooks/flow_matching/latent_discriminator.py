@@ -452,6 +452,13 @@ def main(args):
         fig.add_trace(go.Scatter3d(x=all_x_noisy[rejected_idx,0], y=all_x_noisy[rejected_idx,1], z=all_x_noisy[rejected_idx,2],
                                    mode='markers', marker=dict(size=2, color='green', colorscale='Viridis', opacity=0.8)))
     fig.show()
+    # 2D
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x_encodings[:,0], y=x_encodings[:,1], mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
+    fig.add_trace(go.Scatter(x=x_noisy[:,0], y=x_noisy[:,1], mode='markers', marker=dict(size=2, color='red', colorscale='Viridis', opacity=0.8)))
+    if args.sampling_rejection:
+        fig.add_trace(go.Scatter(x=all_x_noisy[rejected_idx,0], y=all_x_noisy[rejected_idx,1], mode='markers', marker=dict(size=2, color='green', colorscale='Viridis', opacity=0.8)))
+    fig.show()
 
     # Train new discriminator
     print("Training new discriminator...")
@@ -459,8 +466,21 @@ def main(args):
                                    torch.tensor(x_noisy, dtype=torch.float32),
                                    ae_model.encoder,
                                    args)
+    # Visualize discriminator positive probs prediction on positive and negative samples.
+    wd_model.eval()
+    wd_model.to(device)
+    with torch.no_grad():
+        pos_probs = wd_model.positive_prob(torch.tensor(x_encodings, dtype=torch.float32).to(device)).cpu().detach().numpy()
+        neg_probs = wd_model.positive_prob(torch.tensor(x_noisy, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
+                               mode='markers', marker=dict(size=2, color=pos_probs, colorscale='Viridis', opacity=0.8)))
+    fig.add_trace(go.Scatter3d(x=x_noisy[:,0], y=x_noisy[:,1], z=x_noisy[:,2],
+                               mode='markers', marker=dict(size=2, color=neg_probs, colorscale='Viridis', opacity=0.8)))
+    fig.update_layout(title='Discriminator positive probabilities')
+    fig.show()
     
-    # return 
+    return 
 
     # Select start/end points
     start_idx, sampled_indices_point1, end_idx, sampled_indices_point2 = sample_indices_within_range(
