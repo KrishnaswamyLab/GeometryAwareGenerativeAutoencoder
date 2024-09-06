@@ -170,6 +170,167 @@ class Discriminator(pl.LightningModule):
     def negative_score(self, x):
         return self(x)[:, 0]
 
+class FunctionSpaceRegularizedDiscriminator(pl.LightningModule):
+    def __init__(self, in_dim, layer_widths=[256, 128, 64], activation='relu', loss_type='ce', normalize=False,
+                 batch_norm=False, dropout=0.0, use_spectral_norm=False, lr=1e-4, weight_decay=1e-4, ce_loss_weight=1.0, l2_loss_weight=1.0):
+        super().__init__()
+        self.in_dim = in_dim
+        self.mlp = MLP(self.in_dim, 2, layer_widths, activation, batch_norm, dropout, use_spectral_norm)
+        self.loss_type = loss_type
+        self.normalize = normalize
+
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.ce_loss_weight = ce_loss_weight
+        self.l2_loss_weight = l2_loss_weight
+        
+        self.train_step_outs = []
+        self.val_step_outs = []
+        self.test_step_outs = []
+        self.train_ys = []
+        self.val_ys = []
+        self.test_ys = []
+
+        # Save hyperparameters
+        self.save_hyperparameters()
+
+    def forward(self, x):
+        return self.mlp(x)
+    
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+
+    def step(self, batch, batch_idx):
+        pos_x, pos_y, neg_x = batch
+        #print('pos_y: ', pos_y)
+        # CE Loss on positive samples.
+        pos_logits = self(pos_x)
+        neg_logits = self(neg_x)
+        pos_loss = F.cross_entropy(pos_logits, pos_y)
+        # Regularize using negative samples.
+        L2_norm = torch.norm(neg_x, p=2, dim=1).mean()
+
+        loss = pos_loss * self.ce_loss_weight + L2_norm * self.l2_loss_weight
+        self.log('pos_loss', pos_loss, on_epoch=True)
+        self.log('L2_norm', L2_norm, on_epoch=True)
+        
+        return loss, pos_logits, pos_y
+
+    def training_step(self, batch, batch_idx):
+        loss, logits, y = self.step(batch, batch_idx)
+        self.train_step_outs.append(logits)
+        self.train_ys.append(y)
+        self.log('train_loss', loss, on_epoch=True)
+        return loss
+    
+    def validation_step(self, batch, batch_idx):
+        loss, logits, y = self.step(batch, batch_idx)
+        self.val_step_outs.append(logits)
+        self.val_ys.append(y)
+        self.log('val_loss', loss, on_epoch=True, prog_bar=True)
+        return loss
+    
+    def test_step(self, batch, batch_idx):
+        loss, logits, y = self.step(batch, batch_idx)
+        self.test_step_outs.append(logits)
+        self.test_ys.append(y)
+        self.log('test_loss', loss, on_epoch=True, prog_bar=True)
+        return loss
+    
+    def on_train_epoch_end(self):
+        self._log_accuracy('train')
+
+    def on_validation_epoch_end(self):
+        self._log_accuracy('val')
+
+    def on_test_epoch_end(self):
+        self._log_accuracy('test')
+    
+    def _log_accuracy(self, phase):
+        logits = torch.cat(getattr(self, f'{phase}_step_outs'), dim=0)
+        true_classes = torch.cat(getattr(self, f'{phase}_ys'), dim=0)
+        pred_classes = torch.argmax(logits, dim=1)
+        acc = torch.sum(pred_classes == true_classes) / len(true_classes)
+        self.log(f'{phase}_acc', acc, on_epoch=True, prog_bar=True)
+        getattr(self, f'{phase}_step_outs').clear()
+        getattr(self, f'{phase}_ys').clear()
+    
+    def positive_prob(self, x):
+        '''use uncertainty score as confidence score'''
+        L2_norm = torch.norm(x, p=2, dim=1).mean()
+        return L2_norm
+    
+    def classify(self, x):
+        logits = self(x)
+        return torch.argmax(logits, dim=1)
+
+class FunctionSpaceDataset(Dataset):
+    '''
+        batch:
+        pos_x: (batch_size, latent_dim)
+        pos_y: (batch_size, )
+        neg_x: (batch_size, latent_dim)
+    '''
+    def __init__(self, x, y, range_size=5.0):
+        self.x = x
+        self.y = y
+        self.dim = x.shape[1]
+        self.range_size = range_size
+
+    def __len__(self):
+        return len(self.x)
+
+    def __getitem__(self, idx):
+        # Uniformly sample a point from [-r, r]^{dim}
+        sample = np.random.uniform(-self.range_size, self.range_size, (self.dim,))
+        sample = torch.tensor(sample, dtype=torch.float32)
+        return self.x[idx], self.y[idx], sample
+
+    
+def train_classifier(x, labels, args):
+    # Train a classifier that classifies x into labels + minimize L2 norm of mini-batch negative points uniformly sampled [-r,r]^{latent_dim}
+    # DataLoader.
+    # Split data into train/val/test
+    print('labels: ', labels[:100])
+    train_idx = int(0.8 * len(x))
+    val_idx = int(0.9 * len(x))
+    train_data = x[:train_idx], labels[:train_idx]
+    val_data = x[train_idx:val_idx], labels[train_idx:val_idx]
+    test_data = x[val_idx:], labels[val_idx:]
+
+    train_dataset = FunctionSpaceDataset(train_data[0], train_data[1], range_size=args.disc_fs_uniform_range)
+    val_dataset = FunctionSpaceDataset(val_data[0], val_data[1], range_size=args.disc_fs_uniform_range)
+    test_dataset = FunctionSpaceDataset(test_data[0], test_data[1], range_size=args.disc_fs_uniform_range)
+
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.disc_batch_size, shuffle=True)
+    val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=args.disc_batch_size, shuffle=False)
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=args.disc_batch_size, shuffle=False)
+
+    # Model. 
+    # NOTE: Normalize is set to False since we assume latent features are already normalized.
+    model = FunctionSpaceRegularizedDiscriminator(in_dim=x.shape[1], layer_widths=args.disc_layer_widths, activation='relu', 
+                                                loss_type='ce', normalize=False,
+                                                batch_norm=True, dropout=0.5, use_spectral_norm=True, 
+                                                lr=args.disc_lr, weight_decay=args.disc_weight_decay,
+                                                ce_loss_weight=args.disc_fs_ce_loss_weight, l2_loss_weight=args.disc_fs_l2_loss_weight)
+
+    # Trainer.
+    early_stop = pl.callbacks.EarlyStopping(monitor='val_loss', patience=args.disc_early_stop_patience, mode='min')
+    model_checkpoint = pl.callbacks.ModelCheckpoint(monitor='val_loss', save_top_k=1, mode='min', 
+                                                    dirpath=args.checkpoint_dir, filename='discriminator')
+    
+    trainer = pl.Trainer(max_epochs=args.disc_max_epochs, log_every_n_steps=args.disc_log_every_n_steps, 
+                         callbacks=[early_stop, model_checkpoint])
+    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
+
+    # Test model.
+    trainer.test(ckpt_path="best", dataloaders=test_dataloader)
+
+    # Load best model.
+    best_model = FunctionSpaceRegularizedDiscriminator.load_from_checkpoint(model_checkpoint.best_model_path)
+
+    return best_model
+
 def train_discriminator(x, x_noisy, encoder, args):
     # Dataloader.
     X = torch.cat([x, x_noisy], dim=0)
@@ -348,7 +509,7 @@ def sample_indices_within_range(x, encoder, device,labels=None, start_group=None
                                mode='markers', marker=dict(size=5, color='blue', colorscale='Viridis', opacity=0.8)))
     fig.add_trace(go.Scatter3d(x=points[sampled_indices_point2,0], y=points[sampled_indices_point2,1], z=points[sampled_indices_point2,2], 
                                mode='markers', marker=dict(size=5, color='red', colorscale='Viridis', opacity=0.8)))
-    fig.show()
+    #fig.show()
     return point1_idx, sampled_indices_point1, point2_idx, sampled_indices_point2
 
 def compute_kernel(X: np.array, Y: np.array, sigma: float = 1.0):
@@ -425,6 +586,24 @@ def main(args):
     x, labels = load_data(args.data_path)
     x_encodings = encode_data(x, ae_model.encoder, device)
     print('x_encodings: ', x_encodings.shape)
+    # Merge label 1, 2, 3, 4 into 1
+    labels = np.where(labels == 2, 1, labels)
+    labels = np.where(labels == 3, 1, labels)
+    labels = np.where(labels == 4, 1, labels)
+    print('Unique labels: ', np.unique(labels))
+
+    fig = go.Figure()
+    for (i, label) in enumerate(np.unique(labels)):
+        idx = np.where(labels == label)[0]
+        fig.add_trace(go.Scatter3d(x=x_encodings[idx,0], y=x_encodings[idx,1], z=x_encodings[idx,2], 
+                                   mode='markers', marker=dict(size=2, color=i, colorscale='Viridis', opacity=0.8)))
+    fig.show()
+
+    # Save x as x and x_encodings as y in csv file using numpy array function instead of pandas.
+    # x_y = np.concatenate([x, x_encodings], axis=1)
+    # np.savetxt('EB_x_y.csv', x_y, delimiter=',')
+    # # save as npz file
+    # np.savez('EB_x_y.npz', x=x, y=x_encodings)
 
     # Negative sampling    
     if args.neg_method == 'add':
@@ -458,25 +637,48 @@ def main(args):
     fig.add_trace(go.Scatter(x=x_noisy[:,0], y=x_noisy[:,1], mode='markers', marker=dict(size=2, color='red', colorscale='Viridis', opacity=0.8)))
     if args.sampling_rejection:
         fig.add_trace(go.Scatter(x=all_x_noisy[rejected_idx,0], y=all_x_noisy[rejected_idx,1], mode='markers', marker=dict(size=2, color='green', colorscale='Viridis', opacity=0.8)))
-    fig.show()
-
+    #fig.show()
+    #return 
     # Train new discriminator
     print("Training new discriminator...")
-    wd_model = train_discriminator(torch.tensor(x_encodings, dtype=torch.float32),
+    print('args.disc_use_function_space: ', args.disc_use_function_space)
+    if args.disc_use_function_space == False:
+        print('Training new discriminator using standard CE loss.')
+        wd_model = train_discriminator(torch.tensor(x_encodings, dtype=torch.float32),
                                    torch.tensor(x_noisy, dtype=torch.float32),
                                    ae_model.encoder,
                                    args)
+    else:
+        print('Training new discriminator using function space loss.')
+        wd_model = train_classifier(torch.tensor(x, dtype=torch.float32),
+                                   torch.tensor(labels, dtype=torch.long),
+                                   args)
+
     # Visualize discriminator positive probs prediction on positive and negative samples.
+    # Uniform sample N points from {-r, r} ^ latent_dim.
+    latent_dim = x_encodings.shape[1]
+    r = args.disc_fs_uniform_range
+    uniform_samples = np.random.uniform(-r, r, size=(6000, latent_dim))
     wd_model.eval()
     wd_model.to(device)
     with torch.no_grad():
         pos_probs = wd_model.positive_prob(torch.tensor(x_encodings, dtype=torch.float32).to(device)).cpu().detach().numpy()
         neg_probs = wd_model.positive_prob(torch.tensor(x_noisy, dtype=torch.float32).to(device)).cpu().detach().numpy()
+        uniform_probs = wd_model.positive_prob(torch.tensor(uniform_samples, dtype=torch.float32).to(device)).cpu().detach().numpy()
+        labels_pred = wd_model.classify(torch.tensor(x, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    print('pos_probs: ', pos_probs.mean())
+    print('neg_probs: ', neg_probs.mean())
+    print('uniform_probs: ', uniform_probs.mean())
     fig = go.Figure()
     fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
                                mode='markers', marker=dict(size=2, color=pos_probs, colorscale='Viridis', opacity=0.8)))
     fig.add_trace(go.Scatter3d(x=x_noisy[:,0], y=x_noisy[:,1], z=x_noisy[:,2],
                                mode='markers', marker=dict(size=2, color=neg_probs, colorscale='Viridis', opacity=0.8)))
+    fig.add_trace(go.Scatter3d(x=uniform_samples[:,0], y=uniform_samples[:,1], z=uniform_samples[:,2],
+                               mode='markers', marker=dict(size=2, color=uniform_probs, colorscale='Viridis', opacity=0.8)))
+    fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
+                               mode='markers', marker=dict(size=2, color=labels_pred, colorscale='Viridis', opacity=0.8),
+                               text=labels_pred))
     fig.update_layout(title='Discriminator positive probabilities')
     fig.show()
     
@@ -602,13 +804,19 @@ if __name__ == "__main__":
     parser.add_argument("--disc_layer_widths", type=int, nargs="+", default=[256, 128, 64], help="Layer widths for discriminator")
     parser.add_argument("--disc_lr", type=float, default=1e-3, help="Learning rate for discriminator")
     parser.add_argument("--disc_weight_decay", type=float, default=1e-4, help="Weight decay for discriminator")
-    parser.add_argument("--disc_early_stop_patience", type=int, default=10, help="Early stop patience for discriminator")
+    parser.add_argument("--disc_early_stop_patience", type=int, default=50, help="Early stop patience for discriminator")
     parser.add_argument("--disc_max_epochs", type=int, default=100, help="Number of epochs for discriminator training")
     parser.add_argument("--disc_log_every_n_steps", type=int, default=20, help="Log every n steps for discriminator")
     parser.add_argument("--disc_batch_size", type=int, default=64, help="Batch size for discriminator training")
     parser.add_argument("--disc_use_density_features", type=bool, default=False, help="Use density features for discriminator")
     parser.add_argument("--disc_density_k", type=int, default=5, help="k for density features")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device to use for training")
+    # Function space regularized discriminator arguments
+    parser.add_argument("--disc_use_function_space", type=bool, default=False, help="Use function space for discriminator")
+    parser.add_argument("--disc_fs_uniform_range", type=float, default=5.0, help="Uniform range for function space")
+    parser.add_argument("--disc_fs_ce_loss_weight", type=float, default=1.0, help="CE loss weight for function space")
+    parser.add_argument("--disc_fs_l2_loss_weight", type=float, default=1.0, help="L2 loss weight for function space")
+
     # Negative sampling arguments    
     parser.add_argument("--neg_method", type=str, default="add", help="add|diffusion")
     parser.add_argument("--noise_rate", type=float, default=1.0, help="std of the additive noise")
