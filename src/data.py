@@ -45,13 +45,14 @@ class PointCloudDataset(torch.utils.data.Dataset):
     """
     Point Cloud Dataset
     """
-    def __init__(self, pointcloud, distances, mask_d=None, mask_x=None, batch_size = 64, shuffle=True):
+    def __init__(self, pointcloud, distances, mask_d=None, mask_x=None, batch_size = 64, shuffle=True, pc_recon_weights=None):
         self.pointcloud = torch.tensor(pointcloud, dtype=torch.float32)
         self.distances = torch.tensor(distances, dtype=torch.float32)
         self.mask_d = torch.tensor(mask_d, dtype=torch.float32) if mask_d is not None else None
         self.mask_x = torch.tensor(mask_x, dtype=torch.float32) if mask_x is not None else None
         self.shuffle = shuffle
         self.batch_size = batch_size
+        self.pc_recon_weights = pc_recon_weights
 
     def __len__(self):
         return len(self.pointcloud)
@@ -76,11 +77,12 @@ class PointCloudDataset(torch.utils.data.Dataset):
             batch['md'] = mask_d_mat[np.triu_indices(mask_d_mat.size(0), k=1)]
         if self.mask_x is not None:
             batch['mx'] = self.mask_x[batch_idxs]
-
+        if self.pc_recon_weights is not None:
+            batch['mw'] = self.pc_recon_weights
         return batch
 
-def dataloader_from_pc(pointcloud, distances, batch_size = 64, shuffle=True, mask_d=None, mask_x=None):
-    dataset = PointCloudDataset(pointcloud=pointcloud, distances=distances, mask_d=mask_d, mask_x=mask_x, batch_size=batch_size, shuffle=shuffle)
+def dataloader_from_pc(pointcloud, distances, batch_size = 64, shuffle=True, mask_d=None, mask_x=None, pc_recon_weights=None):
+    dataset = PointCloudDataset(pointcloud=pointcloud, distances=distances, mask_d=mask_d, mask_x=mask_x, batch_size=batch_size, shuffle=shuffle, pc_recon_weights=pc_recon_weights)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=None, shuffle=shuffle)
 
     return dataloader
@@ -95,8 +97,7 @@ def dataloader_from_pc(pointcloud, distances, batch_size = 64, shuffle=True, mas
 def train_valid_loader_from_pc(pointcloud, distances, 
                                batch_size = 64, train_valid_split = 0.8, 
                                shuffle=True, seed=42, return_mean_std=False, componentwise_std=False,
-                               mask_d=None, mask_x=None
-                               ):
+                               mask_d=None, mask_x=None, pc_recon_weights=None):
     X = pointcloud
     D = distances
 
@@ -128,8 +129,8 @@ def train_valid_loader_from_pc(pointcloud, distances,
         mask_x_train = None
         mask_x_test = None
 
-    trainloader = dataloader_from_pc(X_train, D_train, batch_size, mask_d=mask_d_train, mask_x=mask_x_train)
-    testloader = dataloader_from_pc(X_test, D_test, batch_size, mask_d=mask_d_test, mask_x=mask_x_test)
+    trainloader = dataloader_from_pc(X_train, D_train, batch_size, mask_d=mask_d_train, mask_x=mask_x_train, pc_recon_weights=pc_recon_weights)
+    testloader = dataloader_from_pc(X_test, D_test, batch_size, mask_d=mask_d_test, mask_x=mask_x_test, pc_recon_weights=pc_recon_weights)
 
     if return_mean_std:
         if componentwise_std:

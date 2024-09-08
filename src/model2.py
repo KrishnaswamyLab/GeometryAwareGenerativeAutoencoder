@@ -185,16 +185,23 @@ class Decoder(pl.LightningModule):
             x = self.preprocessor.unnormalize(x)
         return x
 
-    def loss_function(self, x_norm, xhat_norm, mask=None): # assume normalized.
-        if mask is None:
-            return torch.nn.functional.mse_loss(x_norm, xhat_norm)
+    def loss_function(self, x_norm, xhat_norm, mask=None, weights=None): # assume normalized.
+        if weights is not None:
+            assert weights.shape[0] == x_norm.shape[1], "Weights shape must match number of columns in x_norm"
+            squared_diff = torch.square(x_norm - xhat_norm) * weights.unsqueeze(0)
         else:
+            squared_diff = torch.square(x_norm - xhat_norm)
+
+        if mask is not None:
             print('mx used')
-            return (torch.square(x_norm - xhat_norm) * mask).sum() / mask.sum()
+            return (squared_diff * mask).sum() / mask.sum()
+        else:
+            return torch.mean(squared_diff)
 
     def step(self, batch, batch_idx, stage):
         x = batch['x']
         mask = batch.get('mx', None)
+        weights = batch.get('mw', None)
         if self.use_encoder:
             assert self.encoder is not None
             with torch.no_grad():
@@ -204,7 +211,7 @@ class Decoder(pl.LightningModule):
             z = batch['z'] # after encoder is trained, do we need to make a new dataset?
         x = self.preprocessor.normalize(x)
         xhat = self.forward(z, unnormalize=False)
-        loss = self.loss_function(x, xhat, mask)
+        loss = self.loss_function(x, xhat, mask, weights)
         self.log(f'{stage}/loss', loss, prog_bar=True, on_epoch=True)
         return loss
 

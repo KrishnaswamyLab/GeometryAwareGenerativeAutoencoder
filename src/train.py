@@ -122,6 +122,7 @@ def load_data(cfg):
             mask_x = mask_x.reshape(-1,1)
     if mask_d is not None:
         mask_d = mask_d[train_mask,:][:,train_mask]
+    pc_recon_weights = data.get('pc_recon_weights', None)
     trainloader, valloader, mean, std = train_valid_loader_from_pc(
         X, # <---- Pointcloud
         dist, # <---- Distance matrix to match
@@ -130,7 +131,7 @@ def load_data(cfg):
         batch_size=cfg.training.batch_size,
         train_valid_split=cfg.training.train_valid_split,
         shuffle=cfg.training.shuffle,
-        seed=cfg.training.seed, return_mean_std=True, componentwise_std=False)
+        seed=cfg.training.seed, return_mean_std=True, componentwise_std=False, pc_recon_weights=pc_recon_weights)
     preprocessor = Preprocessor(mean=mean, std=std, dist_std=dist_std)
     return trainloader, valloader, X, phate_coords, colors, preprocessor
 
