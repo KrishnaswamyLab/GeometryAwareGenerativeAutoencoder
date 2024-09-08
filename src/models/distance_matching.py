@@ -531,10 +531,11 @@ if __name__ == "__main__":
     import argparse
 
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('--data_name', type=str, default='swiss_roll')
+    argparser.add_argument('--data_name', type=str, default='hemisphere')
     argparser.add_argument('--mode', type=str, default='end2end')
     argparser.add_argument('--epoch', type=int, default=1)
     argparser.add_argument('--from_scratch', action='store_true')
+    argparser.add_argument('--wcritic_only', action='store_true')
     argparser.add_argument('--seed', type=int, default=2024)
 
     args = argparser.parse_args()
@@ -598,18 +599,9 @@ if __name__ == "__main__":
 
     print('Fitting on X: ', gt_X.shape, X.shape)
     model = DistanceMatching(**model_hypers)
-    model.fit(X, X_dist=None, train_mask=None, percent_test=0.2, **training_hypers)
-
-    # Fit Wasserstein Discriminator
+    
+    # Fit Wasserstein Discriminator.
     model.fit_wdiscriminator(X, seed=seed)
-
-    X = torch.tensor(X, dtype=torch.float32)
-    Z = model.encode(X)
-    print('Encoded Z:', Z.shape)
-    X_hat = model.decode(Z)
-    print('Decoded X:', X_hat.shape)
-    phate_coords = model.phate_coords
-    print('PHATE Coords:', phate_coords.shape)
 
     # Plotly on wasserstein discriminator prob on X, show bar color
     wd = model.w_discriminator
@@ -620,46 +612,48 @@ if __name__ == "__main__":
     print('WD X:', wd_x.shape, mask_x.shape, probab.shape)
     print(mask_x.dtype, probab.dtype)
 
-    import plotly.graph_objects as go
-    fig = go.Figure()
-    fig.add_trace(go.Scatter3d(x=wd_x[:,0][mask_x], y=wd_x[:,1][mask_x], z=wd_x[:,2][mask_x], mode='markers', marker=dict(size=3, color=probab[mask_x], colorscale='Viridis')))
-    fig.add_trace(go.Scatter3d(x=wd_x[:,0][~mask_x], y=wd_x[:,1][~mask_x], z=wd_x[:,2][~mask_x], mode='markers', marker=dict(size=3, color=probab[~mask_x], colorscale='Viridis')))    
-    fig.write_html(f'{save_folder}/w_critic.html')
+    if args.wcritic_only != True:
+        # Fit Autoencoder.
+        model.fit(X, X_dist=None, train_mask=None, percent_test=0.2, **training_hypers)
+        X = torch.tensor(X, dtype=torch.float32)
+        Z = model.encode(X)
+        print('Encoded Z:', Z.shape)
+        X_hat = model.decode(Z)
+        print('Decoded X:', X_hat.shape)
+        phate_coords = model.phate_coords
+        print('PHATE Coords:', phate_coords.shape)
 
-    # Fit Geodesic
-    num_endpoints = 32
-    starts = X[np.random.randint(0, X.shape[0], num_endpoints), :]
-    ends = X[np.random.randint(0, X.shape[0], num_endpoints), :]
-    ts = torch.linspace(0, 1, 100).reshape(-1, 1)
+        # Fit Geodesic.
+        num_endpoints = 32
+        starts = X[np.random.randint(0, X.shape[0], num_endpoints), :]
+        ends = X[np.random.randint(0, X.shape[0], num_endpoints), :]
+        ts = torch.linspace(0, 1, 100).reshape(-1, 1)
 
-    model.fit_geodesic(X, starts, ends, ts)
-    geo_model = model.geo_model
+        model.fit_geodesic(X, starts, ends, ts)
+        geo_model = model.geo_model
 
-    ids = torch.zeros((starts.shape[0],1))
-    pred_geodesic = geo_model(starts, ends, ts, ids).detach().cpu().numpy()
-    print('Predicated Geodesic:', pred_geodesic.shape)
-    
-    # Plot starts, ends, geodesic
-    fig = go.Figure()
-    fig.add_trace(go.Scatter3d(x=X[:,0], y=X[:,1], z=X[:,2], mode='markers', marker=dict(size=3, color='gray')))
-    fig.add_trace(go.Scatter3d(x=starts[:,0], y=starts[:,1], z=starts[:,2], mode='markers', marker=dict(size=3, color='red')))
-    fig.add_trace(go.Scatter3d(x=ends[:,0], y=ends[:,1], z=ends[:,2], mode='markers', marker=dict(size=3, color='blue')))
-    for i in range(num_endpoints):
-        fig.add_trace(go.Scatter3d(x=pred_geodesic[:,i,0], y=pred_geodesic[:,i,1], z=pred_geodesic[:,i,2], mode='lines', line=dict(width=2)))
-    fig.write_html(f'{save_folder}/geodesic.html')
+        ids = torch.zeros((starts.shape[0],1))
+        pred_geodesic = geo_model(starts, ends, ts, ids).detach().cpu().numpy()
+        print('Predicated Geodesic:', pred_geodesic.shape)
+        
+        # Plot starts, ends, geodesic
+        fig = go.Figure()
+        fig.add_trace(go.Scatter3d(x=X[:,0], y=X[:,1], z=X[:,2], mode='markers', marker=dict(size=3, color='gray')))
+        fig.add_trace(go.Scatter3d(x=starts[:,0], y=starts[:,1], z=starts[:,2], mode='markers', marker=dict(size=3, color='red')))
+        fig.add_trace(go.Scatter3d(x=ends[:,0], y=ends[:,1], z=ends[:,2], mode='markers', marker=dict(size=3, color='blue')))
+        for i in range(num_endpoints):
+            fig.add_trace(go.Scatter3d(x=pred_geodesic[:,i,0], y=pred_geodesic[:,i,1], z=pred_geodesic[:,i,2], mode='lines', line=dict(width=2)))
+        fig.write_html(f'{save_folder}/geodesic.html')
 
-    # Plot
-    fig = plt.figure(figsize=(24, 8))
-    ax = fig.add_subplot(141, projection='3d')
-    scprep.plot.scatter3d(X.detach().cpu().numpy(), c=colors, ax=ax, title='X')
+        # Plot
+        fig = plt.figure(figsize=(24, 8))
+        ax = fig.add_subplot(141, projection='3d')
+        scprep.plot.scatter3d(X.detach().cpu().numpy(), c=colors, ax=ax, title='X')
+        ax = fig.add_subplot(142, projection='3d')
+        scprep.plot.scatter3d(Z.detach().cpu().numpy(), c=colors, ax=ax, title='Z')
+        ax = fig.add_subplot(143, projection='3d')
+        scprep.plot.scatter3d(phate_coords, c=colors, ax=ax, title='Phate')
+        ax = fig.add_subplot(144, projection='3d')
+        scprep.plot.scatter3d(X_hat.detach().cpu().numpy(), c=colors, ax=ax, title='X_hat')
 
-    ax = fig.add_subplot(142, projection='3d')
-    scprep.plot.scatter3d(Z.detach().cpu().numpy(), c=colors, ax=ax, title='Z')
-
-    ax = fig.add_subplot(143, projection='3d')
-    scprep.plot.scatter3d(phate_coords, c=colors, ax=ax, title='Phate')
-
-    ax = fig.add_subplot(144, projection='3d')
-    scprep.plot.scatter3d(X_hat.detach().cpu().numpy(), c=colors, ax=ax, title='X_hat')
-
-    plt.savefig(f'{save_folder}/plot.png')
+        plt.savefig(f'{save_folder}/plot.png')

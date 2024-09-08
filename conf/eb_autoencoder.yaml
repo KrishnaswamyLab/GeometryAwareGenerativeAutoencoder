@@ -1,0 +1,42 @@
+data:
+  root: '../data/'
+  filetype: '.npz'
+  name: 'EB_phate' #'tree' #'s_curve' #'swiss_roll' # 'myeloid'
+logger:
+  entity: danqiliao
+  project: dmae
+  tags: ['eb']
+  use_wandb: true
+dimensions:
+  latent: 2
+encoder:
+  layer_widths:
+  - 256
+  - 128
+  - 64
+  batch_norm: true
+  dropout: 0.0
+decoder:
+  layer_widths:
+  - 64
+  - 128
+  - 256
+  batch_norm: true
+  dropout: 0.0
+training:
+  mode: 'end2end'
+  accelerator: 'mps'
+  max_epochs: 50
+loss:
+  dist_mse_decay: 0.2
+  weights.dist: 77.4
+  weights.reconstr: 0.01
+  weights.cycle: 0.0
+  weights.cycle_dist: 0
+
+# hydra:
+#   mode: MULTIRUN
+#   sweeper:
+#     params:
+#       ++model.prob_method: gaussian
+#       ++data.knn: 5
