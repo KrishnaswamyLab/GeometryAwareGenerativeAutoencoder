@@ -13,6 +13,8 @@ import torch.optim as optim
 from torch import nn
 import torch.nn.functional as F
 from torch.nn.utils import spectral_norm
+import gpytorch
+from gpytorch.kernels import RBFKernel, MaternKernel, PolynomialKernel, LinearKernel, ScaleKernel, AdditiveKernel
 import scipy.spatial as spatial
 
 sys.path.append('../../src/')
@@ -286,6 +288,49 @@ class FunctionSpaceDataset(Dataset):
         sample = torch.tensor(sample, dtype=torch.float32)
         return self.x[idx], self.y[idx], sample
 
+# Define a simple GP model
+class GPModel(gpytorch.models.ExactGP):
+    def __init__(self, train_x, train_y, likelihood):
+        super(GPModel, self).__init__(train_x, train_y, likelihood)
+        self.mean_module = gpytorch.means.ZeroMean()
+        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+    
+    def forward(self, x):
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x)
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+    
+    def predict_uncertainty(self, x):
+        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+            posterior = self(x)
+        return posterior.variance
+    
+    def positive_prob(self, x):
+        '''to be compatible with other discriminators'''
+        return -self.predict_uncertainty(x)
+
+def init_gp(x, y) -> GPModel:
+    '''
+    x: (n_samples, latent_dim)
+    y: (n_samples, )
+    Compute the GP posterior for test points conditioned on (x, y).
+    '''
+    #import pdb; pdb.set_trace()
+
+    # Assert x and y are torch tensors.
+    assert isinstance(x, torch.Tensor)
+    assert isinstance(y, torch.Tensor)
+
+    # Fit GP model.
+    likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    
+    model = GPModel(x, y, likelihood)
+
+    # Switch to evaluation mode for posterior computation
+    model.eval()
+    likelihood.eval()
+
+    return model
     
 def train_classifier(x, labels, args):
     # Train a classifier that classifies x into labels + minimize L2 norm of mini-batch negative points uniformly sampled [-r,r]^{latent_dim}
@@ -597,13 +642,8 @@ def main(args):
         idx = np.where(labels == label)[0]
         fig.add_trace(go.Scatter3d(x=x_encodings[idx,0], y=x_encodings[idx,1], z=x_encodings[idx,2], 
                                    mode='markers', marker=dict(size=2, color=i, colorscale='Viridis', opacity=0.8)))
-    fig.show()
-
-    # Save x as x and x_encodings as y in csv file using numpy array function instead of pandas.
-    # x_y = np.concatenate([x, x_encodings], axis=1)
-    # np.savetxt('EB_x_y.csv', x_y, delimiter=',')
-    # # save as npz file
-    # np.savez('EB_x_y.npz', x=x, y=x_encodings)
+    if args.show_plot:
+        fig.show()
 
     # Negative sampling    
     if args.neg_method == 'add':
@@ -630,29 +670,37 @@ def main(args):
     if args.sampling_rejection:
         fig.add_trace(go.Scatter3d(x=all_x_noisy[rejected_idx,0], y=all_x_noisy[rejected_idx,1], z=all_x_noisy[rejected_idx,2],
                                    mode='markers', marker=dict(size=2, color='green', colorscale='Viridis', opacity=0.8)))
-    fig.show()
+    if args.show_plot:
+        fig.show()
     # 2D
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=x_encodings[:,0], y=x_encodings[:,1], mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
     fig.add_trace(go.Scatter(x=x_noisy[:,0], y=x_noisy[:,1], mode='markers', marker=dict(size=2, color='red', colorscale='Viridis', opacity=0.8)))
     if args.sampling_rejection:
         fig.add_trace(go.Scatter(x=all_x_noisy[rejected_idx,0], y=all_x_noisy[rejected_idx,1], mode='markers', marker=dict(size=2, color='green', colorscale='Viridis', opacity=0.8)))
-    #fig.show()
+    if args.show_plot:
+        fig.show()
     #return 
+    
     # Train new discriminator
-    print("Training new discriminator...")
-    print('args.disc_use_function_space: ', args.disc_use_function_space)
-    if args.disc_use_function_space == False:
-        print('Training new discriminator using standard CE loss.')
-        wd_model = train_discriminator(torch.tensor(x_encodings, dtype=torch.float32),
-                                   torch.tensor(x_noisy, dtype=torch.float32),
-                                   ae_model.encoder,
-                                   args)
+    if args.disc_use_gp:
+        print('Initializing new GP discriminator... (no training needed)')
+        wd_model = init_gp(torch.tensor(x_encodings, dtype=torch.float32), torch.ones(len(x_encodings), dtype=torch.float32).to(device))
     else:
-        print('Training new discriminator using function space loss.')
-        wd_model = train_classifier(torch.tensor(x, dtype=torch.float32),
-                                   torch.tensor(labels, dtype=torch.long),
-                                   args)
+        print("Training new discriminator...")
+        print('args.disc_use_function_space: ', args.disc_use_function_space)
+        if args.disc_use_function_space == False:
+            print('Training new discriminator using standard CE loss.')
+            wd_model = train_discriminator(torch.tensor(x_encodings, dtype=torch.float32),
+                                    torch.tensor(x_noisy, dtype=torch.float32),
+                                    ae_model.encoder,
+                                    args)
+        else:
+            print('Training new discriminator using function space loss.')
+            wd_model = train_classifier(torch.tensor(x, dtype=torch.float32),
+                                    torch.tensor(labels, dtype=torch.long),
+                                    args)
+    
 
     # Visualize discriminator positive probs prediction on positive and negative samples.
     # Uniform sample N points from {-r, r} ^ latent_dim.
@@ -665,10 +713,12 @@ def main(args):
         pos_probs = wd_model.positive_prob(torch.tensor(x_encodings, dtype=torch.float32).to(device)).cpu().detach().numpy()
         neg_probs = wd_model.positive_prob(torch.tensor(x_noisy, dtype=torch.float32).to(device)).cpu().detach().numpy()
         uniform_probs = wd_model.positive_prob(torch.tensor(uniform_samples, dtype=torch.float32).to(device)).cpu().detach().numpy()
-        labels_pred = wd_model.classify(torch.tensor(x, dtype=torch.float32).to(device)).cpu().detach().numpy()
+        if hasattr(wd_model, 'classify'):
+            labels_pred = wd_model.classify(torch.tensor(x, dtype=torch.float32).to(device)).cpu().detach().numpy()
     print('pos_probs: ', pos_probs.mean())
     print('neg_probs: ', neg_probs.mean())
     print('uniform_probs: ', uniform_probs.mean())
+    
     fig = go.Figure()
     fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
                                mode='markers', marker=dict(size=2, color=pos_probs, colorscale='Viridis', opacity=0.8)))
@@ -676,13 +726,13 @@ def main(args):
                                mode='markers', marker=dict(size=2, color=neg_probs, colorscale='Viridis', opacity=0.8)))
     fig.add_trace(go.Scatter3d(x=uniform_samples[:,0], y=uniform_samples[:,1], z=uniform_samples[:,2],
                                mode='markers', marker=dict(size=2, color=uniform_probs, colorscale='Viridis', opacity=0.8)))
-    fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
-                               mode='markers', marker=dict(size=2, color=labels_pred, colorscale='Viridis', opacity=0.8),
-                               text=labels_pred))
+    if hasattr(wd_model, 'classify'):
+        fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
+                                mode='markers', marker=dict(size=2, color=labels_pred, colorscale='Viridis', opacity=0.8),
+                                text=labels_pred))
     fig.update_layout(title='Discriminator positive probabilities')
-    fig.show()
-    
-    return 
+    if args.show_plot:
+        fig.show()
 
     # Select start/end points
     start_idx, sampled_indices_point1, end_idx, sampled_indices_point2 = sample_indices_within_range(
@@ -728,7 +778,8 @@ def main(args):
                                mode='markers', marker=dict(size=5, color='blue', colorscale='Viridis', opacity=0.8)))
     fig.add_trace(go.Scatter3d(x=end_pts_encodings[:,0], y=end_pts_encodings[:,1], z=end_pts_encodings[:,2], 
                                mode='markers', marker=dict(size=5, color='red', colorscale='Viridis', opacity=0.8)))
-    fig.show()
+    if args.show_plot:
+        fig.show()
 
     gbmodel = GeodesicFM(
         func=ofm,
@@ -789,9 +840,9 @@ if __name__ == "__main__":
     parser.add_argument("--n_tsteps", type=int, default=100, help="Number of time steps for GeodesicFM")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
-    parser.add_argument("--flow_weight", type=float, default=0, help="Flow weight for GeodesicFM")
+    parser.add_argument("--flow_weight", type=float, default=1, help="Flow weight for GeodesicFM")
     parser.add_argument("--length_weight", type=float, default=1, help="Length weight for GeodesicFM")
-    parser.add_argument("--cc_k", type=int, default=5, help="cc_k parameter for GeodesicFM CondCurve")
+    parser.add_argument("--cc_k", type=int, default=2, help="cc_k parameter for GeodesicFM CondCurve")
     parser.add_argument("--use_density", type=bool, default=False, help="Use density for GeodesicFM")
     parser.add_argument("--density_weight", type=float, default=1., help="Density weight for GeodesicFM")
     parser.add_argument("--visualize_training", type=bool, default=False, help="Visualize training")
@@ -799,6 +850,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_epochs", type=int, default=300, help="Maximum number of epochs")
     parser.add_argument("--log_every_n_steps", type=int, default=20, help="Log every n steps")
     parser.add_argument("--checkpoint_dir", type=str, default="./eb_fm/checkpoints", help="Checkpoint directory")
+    parser.add_argument("--show_plot", type=bool, default=False, help="Show plot")
 
     # Add new arguments for discriminator training
     parser.add_argument("--disc_layer_widths", type=int, nargs="+", default=[256, 128, 64], help="Layer widths for discriminator")
@@ -816,6 +868,8 @@ if __name__ == "__main__":
     parser.add_argument("--disc_fs_uniform_range", type=float, default=5.0, help="Uniform range for function space")
     parser.add_argument("--disc_fs_ce_loss_weight", type=float, default=1.0, help="CE loss weight for function space")
     parser.add_argument("--disc_fs_l2_loss_weight", type=float, default=1.0, help="L2 loss weight for function space")
+    # GP arguments
+    parser.add_argument("--disc_use_gp", type=bool, default=False, help="Use GP for discriminator")
 
     # Negative sampling arguments    
     parser.add_argument("--neg_method", type=str, default="add", help="add|diffusion")
