@@ -479,7 +479,7 @@ def neg_sample_using_additive(x, noise_levels, noise_rate=1, seed=42, noise='gau
 
 
 def neg_sample_using_diffusion(x, ts, num_steps, beta_start, beta_end, seed=42):
-    def _forward_diffusion(x0, t, num_steps, beta_start, beta_end):
+    def _forward_diffusion(x0, t, num_steps, beta_start, beta_end, seed=42):
         '''
         Forward diffusion. q(x_t | x_(t-1)) = N(x_t | sqrt(1-beta_t) * x_(t-1), beta_t * I);
         With alpha_bar_t = cumprod(1-beta_t), 
@@ -619,7 +619,7 @@ def custom_collate_fn(batch):
     x1_batch = x1_batch[perm_x1]
     return x0_batch, x1_batch
 
-def main(args):
+def main(args):    
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if torch.backends.mps.is_available():
         device = 'mps'
@@ -637,13 +637,15 @@ def main(args):
     labels = np.where(labels == 4, 1, labels)
     print('Unique labels: ', np.unique(labels))
 
-    fig = go.Figure()
+
+    os.makedirs(args.plots_save_dir, exist_ok=True)
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111, projection='3d')
     for (i, label) in enumerate(np.unique(labels)):
         idx = np.where(labels == label)[0]
-        fig.add_trace(go.Scatter3d(x=x_encodings[idx,0], y=x_encodings[idx,1], z=x_encodings[idx,2], 
-                                   mode='markers', marker=dict(size=2, color=i, colorscale='Viridis', opacity=0.8)))
-    if args.show_plot:
-        fig.show()
+        ax.scatter(x_encodings[idx,0], x_encodings[idx,1], x_encodings[idx,2], c=[i]*len(idx), cmap='viridis', alpha=0.8, s=1)
+    ax.set_title('Latent space')
+    plt.savefig(os.path.join(args.plots_save_dir, 'latent_space.png'))
 
     # Negative sampling    
     if args.neg_method == 'add':
@@ -662,24 +664,33 @@ def main(args):
         print('Number of samples after sampling rejection: ', len(x_noisy))
 
     # Visualize negative samples and positive samples.
-    fig = go.Figure()
-    fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
-                               mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
-    fig.add_trace(go.Scatter3d(x=x_noisy[:,0], y=x_noisy[:,1], z=x_noisy[:,2],
-                               mode='markers', marker=dict(size=2, color='red', colorscale='Viridis', opacity=0.8)))
+    # fig = go.Figure()
+    # fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
+    #                            mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
+    # fig.add_trace(go.Scatter3d(x=x_noisy[:,0], y=x_noisy[:,1], z=x_noisy[:,2],
+    #                            mode='markers', marker=dict(size=2, color='red', colorscale='Viridis', opacity=0.8)))
+    # if args.sampling_rejection:
+    #     fig.add_trace(go.Scatter3d(x=all_x_noisy[rejected_idx,0], y=all_x_noisy[rejected_idx,1], z=all_x_noisy[rejected_idx,2],
+    #                                mode='markers', marker=dict(size=2, color='green', colorscale='Viridis', opacity=0.8)))
+    # if args.show_plot:
+    #     fig.show()
+    # draw in plt
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c='gray', cmap='viridis', alpha=0.8)
+    ax.scatter(x_noisy[:,0], x_noisy[:,1], x_noisy[:,2], c='red', cmap='viridis', alpha=0.6)
     if args.sampling_rejection:
-        fig.add_trace(go.Scatter3d(x=all_x_noisy[rejected_idx,0], y=all_x_noisy[rejected_idx,1], z=all_x_noisy[rejected_idx,2],
-                                   mode='markers', marker=dict(size=2, color='green', colorscale='Viridis', opacity=0.8)))
-    if args.show_plot:
-        fig.show()
+        ax.scatter(all_x_noisy[rejected_idx,0], all_x_noisy[rejected_idx,1], all_x_noisy[rejected_idx,2], c='green', cmap='viridis', alpha=0.4)
+    ax.set_title('Positive and negative samples, and rejected samples')
+    plt.savefig(os.path.join(args.plots_save_dir, 'pos_neg_rejected.png'))
     # 2D
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=x_encodings[:,0], y=x_encodings[:,1], mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
-    fig.add_trace(go.Scatter(x=x_noisy[:,0], y=x_noisy[:,1], mode='markers', marker=dict(size=2, color='red', colorscale='Viridis', opacity=0.8)))
-    if args.sampling_rejection:
-        fig.add_trace(go.Scatter(x=all_x_noisy[rejected_idx,0], y=all_x_noisy[rejected_idx,1], mode='markers', marker=dict(size=2, color='green', colorscale='Viridis', opacity=0.8)))
-    if args.show_plot:
-        fig.show()
+    # fig = go.Figure()
+    # fig.add_trace(go.Scatter(x=x_encodings[:,0], y=x_encodings[:,1], mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
+    # fig.add_trace(go.Scatter(x=x_noisy[:,0], y=x_noisy[:,1], mode='markers', marker=dict(size=2, color='red', colorscale='Viridis', opacity=0.8)))
+    # if args.sampling_rejection:
+    #     fig.add_trace(go.Scatter(x=all_x_noisy[rejected_idx,0], y=all_x_noisy[rejected_idx,1], mode='markers', marker=dict(size=2, color='green', colorscale='Viridis', opacity=0.8)))
+    # if args.show_plot:
+    #     fig.show()
     #return 
     
     # Train new discriminator
@@ -706,7 +717,7 @@ def main(args):
     # Uniform sample N points from {-r, r} ^ latent_dim.
     latent_dim = x_encodings.shape[1]
     r = args.disc_fs_uniform_range
-    uniform_samples = np.random.uniform(-r, r, size=(6000, latent_dim))
+    uniform_samples = np.random.uniform(-r, r, size=(1000, latent_dim))
     wd_model.eval()
     wd_model.to(device)
     with torch.no_grad():
@@ -718,21 +729,30 @@ def main(args):
     print('pos_probs: ', pos_probs.mean())
     print('neg_probs: ', neg_probs.mean())
     print('uniform_probs: ', uniform_probs.mean())
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
-                               mode='markers', marker=dict(size=2, color=pos_probs, colorscale='Viridis', opacity=0.8)))
-    fig.add_trace(go.Scatter3d(x=x_noisy[:,0], y=x_noisy[:,1], z=x_noisy[:,2],
-                               mode='markers', marker=dict(size=2, color=neg_probs, colorscale='Viridis', opacity=0.8)))
-    fig.add_trace(go.Scatter3d(x=uniform_samples[:,0], y=uniform_samples[:,1], z=uniform_samples[:,2],
-                               mode='markers', marker=dict(size=2, color=uniform_probs, colorscale='Viridis', opacity=0.8)))
+    # fig = go.Figure()
+    # fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
+    #                            mode='markers', marker=dict(size=2, color=pos_probs, colorscale='Viridis', opacity=0.8)))
+    # fig.add_trace(go.Scatter3d(x=x_noisy[:,0], y=x_noisy[:,1], z=x_noisy[:,2],
+    #                            mode='markers', marker=dict(size=2, color=neg_probs, colorscale='Viridis', opacity=0.8)))
+    # fig.add_trace(go.Scatter3d(x=uniform_samples[:,0], y=uniform_samples[:,1], z=uniform_samples[:,2],
+    #                            mode='markers', marker=dict(size=2, color=uniform_probs, colorscale='Viridis', opacity=0.8)))
+    # if hasattr(wd_model, 'classify'):
+    #     fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
+    #                             mode='markers', marker=dict(size=2, color=labels_pred, colorscale='Viridis', opacity=0.8),
+    #                             text=labels_pred))
+    # fig.update_layout(title='Discriminator positive probabilities')
+    # if args.show_plot:
+    #     fig.show()
+    # draw in plt
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c=pos_probs, cmap='viridis', alpha=0.8)
+    ax.scatter(x_noisy[:,0], x_noisy[:,1], x_noisy[:,2], c=neg_probs, cmap='viridis', alpha=0.6)
+    ax.scatter(uniform_samples[:,0], uniform_samples[:,1], uniform_samples[:,2], c=uniform_probs, cmap='viridis', alpha=0.4)
     if hasattr(wd_model, 'classify'):
-        fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
-                                mode='markers', marker=dict(size=2, color=labels_pred, colorscale='Viridis', opacity=0.8),
-                                text=labels_pred))
-    fig.update_layout(title='Discriminator positive probabilities')
-    if args.show_plot:
-        fig.show()
+        ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c=labels_pred, cmap='viridis', alpha=0.8)
+    ax.set_title('Discriminator positive probabilities')
+    plt.savefig(os.path.join(args.plots_save_dir, 'disc_pos_probs.png'))
 
     # Select start/end points
     start_idx, sampled_indices_point1, end_idx, sampled_indices_point2 = sample_indices_within_range(
@@ -746,6 +766,10 @@ def main(args):
     end_pts = x[sampled_indices_point2]
 
     # Create dataloader.
+    print('===========================================')
+    print('start_indices:', sampled_indices_point1, '\n', 'end_indices:', sampled_indices_point2)
+    print('===========================================')
+
     dataset = CustomDataset(x0=torch.tensor(start_pts, dtype=torch.float32), 
                             x1=torch.tensor(end_pts, dtype=torch.float32))
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate_fn)
@@ -761,25 +785,62 @@ def main(args):
         param.requires_grad = False
 
     enc_func = lambda x: ae_model.encoder(x)
-    disc_func = lambda x: 1 - wd_model.positive_prob(enc_func(x))
+    alpha = args.alpha
+    disc_func = lambda x: torch.exp(alpha * (1 - (wd_model.positive_prob(enc_func(x)))))
+    distance_func_in_latent = lambda z: torch.exp(alpha * (1 - wd_model.positive_prob(z)))
 
-    ofm, extended_dim_func = offmanifolder_maker_new(enc_func, disc_func, disc_factor=args.disc_factor, 
-                                                     data_encodings=torch.tensor(x_encodings, dtype=torch.float32).to(device))
+    ofm = offmanifolder_maker_new(enc_func, disc_func, 
+                                  disc_factor=args.disc_factor, 
+                                  data_encodings=torch.tensor(x_encodings, dtype=torch.float32).to(device))
+    # Visualize offmanifolder.
+    ofm_scores = distance_func_in_latent(torch.tensor(x_encodings, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    ofm_scores_noisy = distance_func_in_latent(torch.tensor(x_noisy, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    ofm_scores_uniform = distance_func_in_latent(torch.tensor(uniform_samples, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    # fig = go.Figure()
+    # fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
+    #                            mode='markers', marker=dict(size=2, color=ofm_scores, colorscale='Viridis', opacity=0.8, colorbar=dict(title='Distance')),
+    #                            hoverinfo='text',
+    #                            text=ofm_scores))
+    # fig.add_trace(go.Scatter3d(x=x_noisy[:,0], y=x_noisy[:,1], z=x_noisy[:,2],
+    #                            mode='markers', marker=dict(size=2, color=ofm_scores_noisy, colorscale='Viridis', opacity=0.8, colorbar=dict(title='Distance')),
+    #                            hovertext=ofm_scores_noisy))
+    # fig.add_trace(go.Scatter3d(x=uniform_samples[:,0], y=uniform_samples[:,1], z=uniform_samples[:,2],
+    #                            mode='markers', marker=dict(size=2, color=ofm_scores_uniform, colorscale='Viridis', opacity=0.8, colorbar=dict(title='Distance')),
+    #                            hovertext=ofm_scores_uniform))
+    # fig.update_layout(title='Distance to the manifold (extended dim) with alpha = %f' % alpha)
+    # if args.show_plot:
+    #     fig.show()
+    # draw in plt
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    sc1 = ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c=ofm_scores, cmap='viridis', alpha=0.8)
+    sc2 = ax.scatter(x_noisy[:,0], x_noisy[:,1], x_noisy[:,2], c=ofm_scores_noisy, cmap='viridis', alpha=0.6)
+    sc3 = ax.scatter(uniform_samples[:,0], uniform_samples[:,1], uniform_samples[:,2], c=ofm_scores_uniform, cmap='viridis', alpha=0.4)
+    # add colorbar for all scatter plots
+    cbar = fig.colorbar(sc3, ax=ax)
+    cbar.set_label('Distance')
+
+    ax.set_title('Distance to the manifold (extended dim) with alpha = %f' % alpha)
+    plt.savefig(os.path.join(args.plots_save_dir, 'extended_dim_ofm.png'))
+    
+    print('Mean ext-dim true data: ', ofm_scores.mean(), 
+          '\nMean ext-dim negative data: ', ofm_scores_noisy.mean(), 
+          '\nMean ext-dim uniform data: ', ofm_scores_uniform.mean())
 
     # Visualize start/end points in latent space.
     # start_pts_encodings = enc_func(torch.tensor(start_pts, dtype=torch.float32).to(device)).cpu().detach().numpy()
     # end_pts_encodings = enc_func(torch.tensor(end_pts, dtype=torch.float32).to(device)).cpu().detach().numpy()
-    start_pts_encodings = encode_data(start_pts, ae_model.encoder, device)
-    end_pts_encodings = encode_data(end_pts, ae_model.encoder, device)
-    fig = go.Figure()
-    fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
-                               mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
-    fig.add_trace(go.Scatter3d(x=start_pts_encodings[:,0], y=start_pts_encodings[:,1], z=start_pts_encodings[:,2], 
-                               mode='markers', marker=dict(size=5, color='blue', colorscale='Viridis', opacity=0.8)))
-    fig.add_trace(go.Scatter3d(x=end_pts_encodings[:,0], y=end_pts_encodings[:,1], z=end_pts_encodings[:,2], 
-                               mode='markers', marker=dict(size=5, color='red', colorscale='Viridis', opacity=0.8)))
-    if args.show_plot:
-        fig.show()
+    # start_pts_encodings = encode_data(start_pts, ae_model.encoder, device)
+    # end_pts_encodings = encode_data(end_pts, ae_model.encoder, device)
+    # fig = go.Figure()
+    # fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
+    #                            mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
+    # fig.add_trace(go.Scatter3d(x=start_pts_encodings[:,0], y=start_pts_encodings[:,1], z=start_pts_encodings[:,2], 
+    #                            mode='markers', marker=dict(size=5, color='blue', colorscale='Viridis', opacity=0.8)))
+    # fig.add_trace(go.Scatter3d(x=end_pts_encodings[:,0], y=end_pts_encodings[:,1], z=end_pts_encodings[:,2], 
+    #                            mode='markers', marker=dict(size=5, color='red', colorscale='Viridis', opacity=0.8)))
+    # if args.show_plot:
+    #     fig.show()
 
     gbmodel = GeodesicFM(
         func=ofm,
@@ -788,6 +849,7 @@ def main(args):
         hidden_dim=args.hidden_dim, 
         scale_factor=args.scale_factor, 
         symmetric=args.symmetric, 
+        embed_t=args.embed_t,
         num_layers=args.num_layers, 
         n_tsteps=args.n_tsteps, 
         lr=args.lr,
@@ -795,9 +857,12 @@ def main(args):
         flow_weight=args.flow_weight,
         length_weight=args.length_weight,
         cc_k=args.cc_k,
+        init_method=args.init_method,
+        data_pts_encodings=torch.tensor(x_encodings, dtype=torch.float32).to(device),
         use_density=args.use_density,
         data_pts=torch.tensor(x, dtype=torch.float32).to(device),
         density_weight=args.density_weight,
+        fixed_pot=args.fixed_pot,
         visualize_training=args.visualize_training,
         dataloader=dataloader,
         device=device,
@@ -816,6 +881,8 @@ def main(args):
 
     trainer.fit(gbmodel, train_dataloaders=dataloader)
 
+    # Use Neural ODE to integrate the learned flow/vector field.
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Latent Discriminator Script")
@@ -832,10 +899,14 @@ if __name__ == "__main__":
     parser.add_argument("--num_samples", type=int, default=64, help="Number of samples")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     # GeodesicFM arguments
+    parser.add_argument("--alpha", type=float, default=10, help="Alpha for off-manifolder proxy")
     parser.add_argument("--disc_factor", type=float, default=5, help="Discriminator factor for off-manifolder")
     parser.add_argument("--hidden_dim", type=int, default=64, help="Hidden dimension for GeodesicFM")
     parser.add_argument("--scale_factor", type=float, default=1, help="Scale factor for CondCurve")
-    parser.add_argument("--symmetric", type=bool, default=True, help="Symmetric flag for GeodesicFM")
+    parser.add_argument("--symmetric", action='store_true', help="Symmetric flag for GeodesicFM")
+    parser.add_argument("--fixed_pot", action='store_true', help="Fixed x1,x0 pairs for GeodesicFM")
+    parser.add_argument("--embed_t", action='store_true', help="Embed t for GeodesicFM")
+    parser.add_argument("--init_method", type=str, default='line', help="Init method for GeodesicFM")
     parser.add_argument("--num_layers", type=int, default=3, help="Number of layers for GeodesicFM")
     parser.add_argument("--n_tsteps", type=int, default=100, help="Number of time steps for GeodesicFM")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
@@ -843,14 +914,15 @@ if __name__ == "__main__":
     parser.add_argument("--flow_weight", type=float, default=1, help="Flow weight for GeodesicFM")
     parser.add_argument("--length_weight", type=float, default=1, help="Length weight for GeodesicFM")
     parser.add_argument("--cc_k", type=int, default=2, help="cc_k parameter for GeodesicFM CondCurve")
-    parser.add_argument("--use_density", type=bool, default=False, help="Use density for GeodesicFM")
+    parser.add_argument("--use_density", action='store_true', help="Use density for GeodesicFM")
     parser.add_argument("--density_weight", type=float, default=1., help="Density weight for GeodesicFM")
-    parser.add_argument("--visualize_training", type=bool, default=False, help="Visualize training")
+    parser.add_argument("--visualize_training", action='store_true', help="Visualize training")
     parser.add_argument("--patience", type=int, default=150, help="Patience for early stopping")
     parser.add_argument("--max_epochs", type=int, default=300, help="Maximum number of epochs")
     parser.add_argument("--log_every_n_steps", type=int, default=20, help="Log every n steps")
     parser.add_argument("--checkpoint_dir", type=str, default="./eb_fm/checkpoints", help="Checkpoint directory")
-    parser.add_argument("--show_plot", type=bool, default=False, help="Show plot")
+    parser.add_argument("--plots_save_dir", type=str, default="./eb_fm/plots", help="Save directory")
+    parser.add_argument("--show_plot", action='store_true', help="Show plot")
 
     # Add new arguments for discriminator training
     parser.add_argument("--disc_layer_widths", type=int, nargs="+", default=[256, 128, 64], help="Layer widths for discriminator")
@@ -860,16 +932,16 @@ if __name__ == "__main__":
     parser.add_argument("--disc_max_epochs", type=int, default=100, help="Number of epochs for discriminator training")
     parser.add_argument("--disc_log_every_n_steps", type=int, default=20, help="Log every n steps for discriminator")
     parser.add_argument("--disc_batch_size", type=int, default=64, help="Batch size for discriminator training")
-    parser.add_argument("--disc_use_density_features", type=bool, default=False, help="Use density features for discriminator")
+    parser.add_argument("--disc_use_density_features", action='store_true', help="Use density features for discriminator")
     parser.add_argument("--disc_density_k", type=int, default=5, help="k for density features")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device to use for training")
     # Function space regularized discriminator arguments
-    parser.add_argument("--disc_use_function_space", type=bool, default=False, help="Use function space for discriminator")
+    parser.add_argument("--disc_use_function_space", action='store_true', help="Use function space for discriminator")
     parser.add_argument("--disc_fs_uniform_range", type=float, default=5.0, help="Uniform range for function space")
     parser.add_argument("--disc_fs_ce_loss_weight", type=float, default=1.0, help="CE loss weight for function space")
     parser.add_argument("--disc_fs_l2_loss_weight", type=float, default=1.0, help="L2 loss weight for function space")
     # GP arguments
-    parser.add_argument("--disc_use_gp", type=bool, default=False, help="Use GP for discriminator")
+    parser.add_argument("--disc_use_gp", action='store_true', help="Use GP for discriminator")
 
     # Negative sampling arguments    
     parser.add_argument("--neg_method", type=str, default="add", help="add|diffusion")
@@ -880,13 +952,14 @@ if __name__ == "__main__":
     parser.add_argument("--num_steps", type=int, default=1000, help="Number of steps for forward diffusion")
     parser.add_argument("--beta_start", type=float, default=0.0001, help="Start value for beta in forward diffusion")
     parser.add_argument("--beta_end", type=float, default=0.01, help="End value for beta in forward diffusion")
-    parser.add_argument("--sampling_rejection", type=bool, default=False, help="Sampling rejection for negative sampling")
+    parser.add_argument("--sampling_rejection", action='store_true', help="Sampling rejection for negative sampling")
     parser.add_argument("--sampling_rejection_method", type=str, default="density", help="density|sugar")
     parser.add_argument("--sampling_rejection_k", type=int, default=20, help="k for sampling rejection")
     parser.add_argument("--sampling_rejection_threshold", type=float, default=.5, help="Threshold for sampling rejection")
 
 
     args = parser.parse_args()
-    
+
+    print('args: ', args)
     main(args)
 
