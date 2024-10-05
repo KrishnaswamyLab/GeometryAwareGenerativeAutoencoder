@@ -975,6 +975,7 @@ def eval(args):
         test_end_pts = test_x[test_sampled_indices_point2]
 
     # Split into train/val/test.
+    print('[Total] All Points: ', x.shape)
     print('[Train] Start/End Points: ', train_start_pts.shape, train_end_pts.shape)
     print('[Val] Start/End Points: ', val_start_pts.shape, val_end_pts.shape)
     print('[Test] Start/End Points: ', test_start_pts.shape, test_end_pts.shape)
@@ -1028,26 +1029,35 @@ def eval(args):
         device=device,
         training_save_dir=args.training_save_dir,
     )
+
+    ''' Visualize the learned Geodesic Paths. '''
+    print('=========== Visualizing GeodesicBridge Paths ==========')
     # TODO: this start/ends is ALL pts, may want to use test set here.
     # NOTE: use test set here.
     start_pts = test_start_pts
     end_pts = test_end_pts
 
-    ''' Visualize the learned Geodesic Paths. '''
     n_samples = min(start_pts.shape[0], end_pts.shape[0])
+    #n_samples = 100
+    n_samples = start_pts.shape[0]
+
     start_pts = start_pts[:n_samples]
     end_pts = end_pts[:n_samples]
+    print('[Eval] Start/End Points: ', start_pts.shape, end_pts.shape)
+
     dummy_ids = torch.zeros((start_pts.shape[0], 1), dtype=torch.float32)
 
     gbmodel.to(device)
+    n_tsteps = args.n_tsteps
+    n_tsteps = 100
     gb_trajs = gbmodel.cc(torch.tensor(start_pts, dtype=torch.float32).to(device), 
                            torch.tensor(end_pts, dtype=torch.float32).to(device), 
-                           torch.tensor(np.linspace(0, 1, args.n_tsteps), dtype=torch.float32).to(device),
+                           torch.tensor(np.linspace(0, 0.5, n_tsteps), dtype=torch.float32).to(device),
                            dummy_ids.to(device))  
          
     start_pts_encodings = encode_data(start_pts, ae_model.encoder, device)
     end_pts_encodings = encode_data(end_pts, ae_model.encoder, device)                
-    gb_trajs_encodings = encode_data(gb_trajs.flatten(0,1), ae_model.encoder, device).reshape(args.n_tsteps, -1, x_encodings.shape[1]) # [n_tsteps, n_samples, latent_dim]
+    gb_trajs_encodings = encode_data(gb_trajs.flatten(0,1), ae_model.encoder, device).reshape(n_tsteps, -1, x_encodings.shape[1]) # [n_tsteps, n_samples, latent_dim]
 
     visualize_trajectory(gb_trajs_encodings, x_encodings, labels,
                          save_path=os.path.join(args.plots_save_dir, f'eval_geodesic_paths_latent.png'), 
@@ -1061,12 +1071,12 @@ def eval(args):
     flow_ode = ODEFuncWrapper(gbmodel.flow_model).to('cpu')
     sampled_starts = torch.tensor(start_pts[:n_samples], dtype=torch.float32).to('cpu')
     with torch.no_grad():
-        ts = torch.linspace(0, 1, args.n_tsteps).to('cpu')
+        ts = torch.linspace(0, 1, n_tsteps).to('cpu')
         # traj = odeint(flow_ode, sampled_starts, ts) # [n_tsteps, n_samples, ambient_dim]
         traj = odeint(flow_ode, torch.tensor(start_pts, dtype=torch.float32).to('cpu'), ts)
         
     print('Flow Matching ODE Trajectory shape: ', traj.shape)
-    encoded_traj = encode_data(traj.flatten(0,1), ae_model.encoder, 'cpu').reshape(args.n_tsteps, -1, start_pts_encodings.shape[1]) # [n_tsteps, n_samples, latent_dim]
+    encoded_traj = encode_data(traj.flatten(0,1), ae_model.encoder, 'cpu').reshape(n_tsteps, -1, start_pts_encodings.shape[1]) # [n_tsteps, n_samples, latent_dim]
     print('Encoded Trajectory shape: ', encoded_traj.shape)
 
     # Visualize the ODE trajectory in latent space.
@@ -1079,8 +1089,8 @@ def eval(args):
     print('====== Evaluating Wasserstein 1 distance between generated and gt ======')
     test_group = args.test_group
     # TODO: which samples to use for real data/generated data.
-    real_idx = np.where(labels == test_group)[0]
-    real_data = x[real_idx]
+    real_idx = np.where(test_labels == test_group)[0]
+    real_data = test_x[real_idx]
     generated_data = traj.flatten(0,1) # [n_tsteps*n_samples, ambient_dim]
     print('[Eval] Real data shape: ', real_data.shape, 'Generated data shape: ', generated_data.shape)
     # TODO: do we need to have the same number of samples for real and generated data?
@@ -1091,8 +1101,7 @@ def eval(args):
     # real_data = real_data[real_samples_idx]
     
     wasserstein_distance = eval_distributions(generated_data, real_data, cost_metric='euclidean', use_pca=False)
-    print('[Eval] Wasserstein 1 distance: ', wasserstein_distance)
-
+    print('[Eval] Wasserstein-1 distance: ', wasserstein_distance.item())
     # Plot the generated and real data in latent space.
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection='3d')
@@ -1127,7 +1136,8 @@ def eval_distributions(generated_data, real_data, cost_metric='euclidean', use_p
     if not isinstance(real_data, torch.Tensor):
         real_data = torch.tensor(real_data, dtype=torch.float32)
     if cost_metric == 'euclidean':
-        cost_matrix = torch.cdist(generated_data, real_data)
+        # cost_matrix = torch.cdist(generated_data, real_data)
+        cost_matrix = ot.dist(generated_data, real_data, metric='euclidean')
     elif cost_metric == 'cosine':
         cost_matrix = 1 - F.cosine_similarity(generated_data, real_data)
     else:
@@ -1135,8 +1145,13 @@ def eval_distributions(generated_data, real_data, cost_metric='euclidean', use_p
     
     # Compute the Wasserstein 1 distance
     print('Wasserstein distance Cost Matrix shape: ', cost_matrix.shape)
-    generated_distribution = torch.tensor([1 / generated_data.shape[0]] * generated_data.shape[0], dtype=torch.float32)
-    real_distribution = torch.tensor([1 / real_data.shape[0]] * real_data.shape[0], dtype=torch.float32)
+    # generated_distribution = torch.tensor([1 / generated_data.shape[0]] * generated_data.shape[0], dtype=torch.float32)
+    # real_distribution = torch.tensor([1 / real_data.shape[0]] * real_data.shape[0], dtype=torch.float32)
+    generated_distribution = torch.tensor(np.ones(generated_data.shape[0]) / generated_data.shape[0], dtype=torch.float32)
+    real_distribution = torch.tensor(np.ones(real_data.shape[0]) / real_data.shape[0], dtype=torch.float32)
+
+    print('Generated distribution: ', generated_distribution.shape)
+    print('Real distribution: ', real_distribution.shape)
 
     wasserstein_distance = ot.emd2(generated_distribution, real_distribution, cost_matrix)
 
