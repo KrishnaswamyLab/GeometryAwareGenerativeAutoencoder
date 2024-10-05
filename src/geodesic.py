@@ -16,6 +16,9 @@ import warnings
 import ot as pot
 import networkx as nx
 import matplotlib.pyplot as plt
+from lightning.pytorch.utilities import grad_norm
+import shutil
+import os
 
 def compute_jacobian_function(f, x, create_graph=True, retain_graph=True):
     """
@@ -231,7 +234,8 @@ class MLP(nn.Module):
 
 class CondCurve(nn.Module):
     def __init__(self, input_dim, hidden_dim, scale_factor, symmetric, num_layers, k=2, embed_t=True,
-                 init_method='line', graph_pts=None, graph_pts_encodings=None, encoder=None):
+                 init_method='line', graph_pts=None, graph_pts_encodings=None, encoder=None, 
+                 diff_op=None, diff_t=1):
         super(CondCurve, self).__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
@@ -269,37 +273,81 @@ class CondCurve(nn.Module):
                             hidden_dim=hidden_dim, 
                             output_dim=hidden_dim, 
                             num_hidden_layers=num_layers)
-        if self.init_method == 'djikstra':
+        self.diff_op = diff_op
+        self.diff_t = diff_t
+        if self.init_method == 'djikstra' or self.init_method == 'diffusion':
             self.graph_pts = graph_pts
             self.graph_pts_encodings = graph_pts_encodings
-            self.G = self._construct_graph(self.graph_pts_encodings)
+            self.G = self._construct_graph(self.graph_pts_encodings, method=self.init_method, knn=None,
+                                           diff_op=self.diff_op, diff_t=self.diff_t)
             print("Graph constructed with", self.G.number_of_nodes(), "nodes and", self.G.number_of_edges(), "edges")
             #print(list(self.G.nodes))
+    def _random_walk(self, diff_op, source_idx, target_idx, topk=1):
+        '''
+        Perform random walk from source to target.
+        diff_op: torch.Tensor, [N, N], normalized transition probabilities per row.
+        source_idx: int, index of the source node
+        target_idx: int, index of the target node
+        topk: int, number of candidates to consider at each step
+        '''
+        G = self.G
+        path = []
+        current_idx = source_idx
+        path.append(current_idx)
+        while current_idx != target_idx:
+            if topk is not None:
+                candidates = np.argsort(-diff_op[current_idx])[:topk]
+                cand_probs = diff_op[current_idx][candidates]
+                cand_probs = cand_probs / cand_probs.sum()
+            else:
+                candidates = np.arange(diff_op.shape[1])
+                cand_probs = diff_op[current_idx]
+            # choose a random candidate according to the diffusion probabilities.
+            candidate = np.random.choice(candidates, p=cand_probs, size=1)
+            current_idx = candidate[0]
+            path.append(current_idx)
+        return path
     
-    def _construct_graph(self, graph_pts, knn=10):
+    def _construct_graph(self, graph_pts, method='djikstra', knn=5, diff_op=None, diff_t=1):
             # construct a graph with nodes at graph_pts of [N, D]
             N = graph_pts.shape[0]
             G = nx.Graph()
             for i in range(N):
                 G.add_node(int(i))
-            #print("Graph nodes:", list(G.nodes))
-            dist_mat = torch.cdist(graph_pts, graph_pts) # [N, N]
+            
+            # Edges
+            if method == 'djikstra':
+                dist_mat = torch.cdist(graph_pts, graph_pts) # [N, N]
+            elif method == 'diffusion':
+                assert diff_op is not None, "Diffusion operator is not provided."
+                diff_op = torch.tensor(diff_op)
+                if diff_t > 1:
+                    powered_diff_op = torch.matrix_power(diff_op, torch.tensor(diff_t, dtype=torch.int32))
+                else:
+                    powered_diff_op = diff_op
+                dist_mat = 1 - powered_diff_op
+            print("Graph method:", method, "knn:", knn, "dist_mat.shape:", dist_mat.shape,
+                  "diff_t:", diff_t)
             if knn is not None:
                 vals, inds = torch.topk(dist_mat, k=knn, dim=-1, largest=False, sorted=False) # [N, knn]
                 # Add topknn edges
                 for i in range(N):
                     for j in inds[i]:
                         if i != j:
-                            G.add_edge(int(i), int(j))
+                            G.add_edge(int(i), int(j), weight=float(dist_mat[i,j].cpu().numpy()))
             else: # add all edges
                 for i in range(N):
+                    avg_dist = dist_mat[i].mean()
                     for j in range(N):
                         if i != j:
-                            G.add_edge(int(i), int(j), weight=float(dist_mat[i,j].cpu().numpy()))
+                            if dist_mat[i,j] <= 0.99:
+                                #G.add_edge(int(i), int(j), weight=float(dist_mat[i,j].cpu().numpy()))
+                                G.add_edge(int(i), int(j), weight=-1)
 
+            print("Graph is fully connected? ", nx.is_connected(G))
             return G
     
-    def init_curve(self, x0, x1, t, num_steps, method='line', graph_pts=None, graph_pts_encodings=None):
+    def init_curve(self, x0, x1, t, num_steps, method='line', graph_pts=None, graph_pts_encodings=None, diff_op=None):
         '''
         Initialize the curve using the method.
         Args:
@@ -316,8 +364,8 @@ class CondCurve(nn.Module):
         if method == 'line':
             print("Using straight line to initialize the curve...")
             return (1-t) * x0 + t * x1
-        elif method == 'djikstra' and graph_pts is not None:
-            print("Using Dijkstra's algorithm to initialize the curve...")
+        elif method == 'djikstra' or method == 'diffusion' and graph_pts is not None:
+            print(f"Using {method} to initialize the curve...")
             # Find shortest paths from x0 to x1 using Dijkstra's algorithm
             G = self.G
             #print("Graph nodes:", list(G.nodes))
@@ -327,35 +375,23 @@ class CondCurve(nn.Module):
             _z0 = self.encoder(_x0)
             _z1 = self.encoder(_x1)
             # Find the index of the closest point in graph_pts to x0 and x1
-            _x0_idx = torch.argmin(torch.cdist(_z0, graph_pts_encodings), dim=-1).cpu().numpy().astype(int) # [B]
-            _x1_idx = torch.argmin(torch.cdist(_z1, graph_pts_encodings), dim=-1).cpu().numpy().astype(int) # [B]
+            _x0_idx = torch.argmin(torch.cdist(_x0, graph_pts), dim=-1).cpu().numpy().astype(int) # [B]
+            _x1_idx = torch.argmin(torch.cdist(_x1, graph_pts), dim=-1).cpu().numpy().astype(int) # [B]
             shortest_paths = [[] for _ in range(_x0.shape[0])]
 
-            #print("x0 indices:", _x0_idx.shape, "x1 indices:", _x1_idx.shape)
-            # Assume _x0[i] and _x1[i] are the start and end points for the i-th curve in the batch
-            # !TODO: this is not correct, need to get the actual pair of points from x0 and x1.
+            path_method = 'random_walk'
             for i in range(_x0_idx.shape[0]):
-                print("Finding shortest path for curve", i, "from", int(_x0_idx[i]), "to", int(_x1_idx[i]))
-                shortest_path = nx.shortest_path(G, source=int(_x0_idx[i]), target=int(_x1_idx[i]), weight='weight')
+                if path_method == 'random_walk':
+                    shortest_path = self._random_walk(diff_op, int(_x0_idx[i]), int(_x1_idx[i]), topk=40)
+                else:
+                    shortest_path = nx.shortest_path(G, source=int(_x0_idx[i]), target=int(_x1_idx[i]), weight='weight')                
                 shortest_paths[i] = shortest_path
-                print("Shortest path for curve", i, "is", len(shortest_path), "points")
-            
-            # Visualize the shortest paths
-            for i in range(_x0.shape[0]):
-                if i == 0:
-                    print("Shortest path for curve", i, "is", shortest_paths[i])
-                    plt.figure()
-                    G_sub = G.subgraph(shortest_paths[i])
-                    pos = nx.spring_layout(G_sub)
-                    nx.draw(G_sub, pos, with_labels=True, node_size=300, node_color='lightblue')
-            
-            plt.show()
-            
+
             # Take num_steps points from the shortest path
             curve_pts = []
             print('x0.shape[0]:', _x0.shape[0])
             for i in range(_x0.shape[0]):
-                print("Shortest path for curve", i, "is", shortest_paths[i])
+                print(f"Shortest path for curve {i}: Length {len(shortest_paths[i])}")
                 if num_steps > len(shortest_paths[i]):
                     raise ValueError(f"num_steps is larger than the shortest path length: {num_steps} > {len(shortest_paths[i])}")
                 t_idxs = torch.linspace(0, len(shortest_paths[i])-1, num_steps)  # [num_steps]
@@ -367,9 +403,55 @@ class CondCurve(nn.Module):
             #import pdb; pdb.set_trace();
             curve_pts = torch.stack(curve_pts) # [B, num_steps, D]
             curve_pts = torch.transpose(curve_pts, 0, 1) # [num_steps, B, D]
+
+            # Visualize matched x1, x0 and the curve
+            ax = plt.axes(projection='3d')
+            ax.scatter(graph_pts_encodings[:,0].cpu().numpy(), graph_pts_encodings[:,1].cpu().numpy(), graph_pts_encodings[:,2].cpu().numpy(), c='gray', label='graph_pts', alpha=0.8)
+            ax.scatter(graph_pts_encodings[_x0_idx][:,0].cpu().numpy(), graph_pts_encodings[_x0_idx][:,1].cpu().numpy(), graph_pts_encodings[_x0_idx][:,2].cpu().numpy(), c='blue', label='x0')
+            ax.scatter(graph_pts_encodings[_x1_idx][:,0].cpu().numpy(), graph_pts_encodings[_x1_idx][:,1].cpu().numpy(), graph_pts_encodings[_x1_idx][:,2].cpu().numpy(), c='red', label='x1')
+            curve_pts_flat = curve_pts.flatten(0,1)
+            curve_pts_flat_enc = self.encoder(curve_pts_flat)
+            ax.scatter(curve_pts_flat_enc[:,0].cpu().numpy(), curve_pts_flat_enc[:,1].cpu().numpy(), curve_pts_flat_enc[:,2].cpu().numpy(), c='green', label='curve')
+            ax.legend()
+            plt.savefig("./curve_init.png")
+
+            # plotly
+            import plotly.graph_objects as go
+            curve_pts_enc = curve_pts_flat_enc.view(num_steps, -1, graph_pts_encodings.shape[-1])
+            fig = go.Figure()
+            encoded_graph_pts = self.encoder(graph_pts)
+            fig.add_trace(go.Scatter3d(x=encoded_graph_pts[:,0].cpu().numpy(), y=encoded_graph_pts[:,1].cpu().numpy(), z=encoded_graph_pts[:,2].cpu().numpy(), mode='markers', name='graph_pts', marker=dict(color='gray')))
+            fig.add_trace(go.Scatter3d(x=encoded_graph_pts[_x0_idx][:,0].cpu().numpy(), y=encoded_graph_pts[_x0_idx][:,1].cpu().numpy(), z=encoded_graph_pts[_x0_idx][:,2].cpu().numpy(), mode='markers', name='x0', marker=dict(color='blue')))
+            fig.add_trace(go.Scatter3d(x=encoded_graph_pts[_x1_idx][:,0].cpu().numpy(), y=encoded_graph_pts[_x1_idx][:,1].cpu().numpy(), z=encoded_graph_pts[_x1_idx][:,2].cpu().numpy(), mode='markers', name='x1', marker=dict(color='red')))
+            for i in range(10):
+                fig.add_trace(go.Scatter3d(x=curve_pts_enc[:,i,0].cpu().numpy(), y=curve_pts_enc[:,i,1].cpu().numpy(), z=curve_pts_enc[:,i,2].cpu().numpy(), mode='markers', name='curve'+str(i), marker=dict(color='green', size=5)))
+                fig.add_trace(go.Scatter3d(x=curve_pts_enc[:,i,0].cpu().numpy(), y=curve_pts_enc[:,i,1].cpu().numpy(), z=curve_pts_enc[:,i,2].cpu().numpy(), mode='lines', name='curve'+str(i), marker=dict(color='green')))
+            fig.write_html("./curve_init.html")
+
+            # Visualize the diffusion operator on the encodings.
+            fig = plt.figure(figsize=(8,8))
+            ax = fig.add_subplot(111, projection='3d')
+            diff_op = diff_op
+            color = diff_op[_x0_idx[0]]
+            pc = ax.scatter(graph_pts_encodings[:,0].cpu().numpy(), graph_pts_encodings[:,1].cpu().numpy(), graph_pts_encodings[:,2].cpu().numpy(), 
+                       c=color, cmap='viridis')
+            plt.colorbar(pc, label=f'Diffusion Prob at pt at idx {_x0_idx[0]}')
+            plt.savefig("./diffusion_operator.png")
+
+            # plotly
+            fig = go.Figure()
+            fig.add_trace(go.Scatter3d(x=encoded_graph_pts[_x0_idx][:,0].cpu().numpy(), y=encoded_graph_pts[_x0_idx][:,1].cpu().numpy(), z=encoded_graph_pts[_x0_idx][:,2].cpu().numpy(), 
+                                       mode='markers', name='x0', marker=dict(color='gray', line=dict(color='black', width=2)), opacity=1.0))
+            fig.add_trace(go.Scatter3d(x=encoded_graph_pts[:,0].cpu().numpy(), y=encoded_graph_pts[:,1].cpu().numpy(), z=encoded_graph_pts[:,2].cpu().numpy(), 
+                                       mode='markers', name='graph_pts', marker=dict(color=color), opacity=0.8,
+                                       hovertext=color))
+            fig.write_html("./diffusion_operator.html")
+
             return curve_pts.flatten(0,1) # [num_steps*B, D]
         else:
             raise ValueError(f"Unknown initialization method: {method}")
+        
+
     
     def forward(self, x0, x1, t):
         '''
@@ -395,7 +477,7 @@ class CondCurve(nn.Module):
         # if self.initial_curve is None:
         #     print("Initializing the curve...", 'x0', x0_.shape, 'x1', x1_.shape, 't', t_.shape, 'num_steps', num_steps)
         #     self.initial_curve = self.init_curve(x0_, x1_, t_, num_steps, self.init_method, self.graph_pts, self.graph_pts_encodings)
-        self.initial_curve = self.init_curve(x0_, x1_, t_, num_steps, self.init_method, self.graph_pts)
+        self.initial_curve = self.init_curve(x0_, x1_, t_, num_steps, self.init_method, self.graph_pts, self.graph_pts_encodings, self.diff_op)
 
         enveloppe = self.scale_factor * (1 - (t_ * 2 - 1).pow(self.k)) # [T*B, 1]
         
@@ -410,9 +492,11 @@ class CondCurve(nn.Module):
 
 class CondCurveOverfit(CondCurve):
     def __init__(self, input_dim, hidden_dim, scale_factor, symmetric, num_layers, id_dim, id_emb_dim, k=2, embed_t=False,
-                 init_method='line', graph_pts=None, graph_pts_encodings=None, encoder=None):
+                 init_method='line', graph_pts=None, graph_pts_encodings=None, encoder=None,
+                 diff_op=None, diff_t=1.0):
         super(CondCurveOverfit, self).__init__(input_dim, hidden_dim, scale_factor, symmetric, num_layers, k, embed_t,
-                                               init_method, graph_pts, graph_pts_encodings, encoder)
+                                               init_method, graph_pts, graph_pts_encodings, encoder,
+                                               diff_op, diff_t)
         self.id_net = MLP(input_dim=id_dim,
                           hidden_dim=id_emb_dim,
                           output_dim=id_emb_dim,
@@ -446,7 +530,8 @@ class CondCurveOverfit(CondCurve):
         #     print("Initializing the curve...", 'x0', x0_.shape, 'x1', x1_.shape, 't', t_.shape, 'num_steps', num_steps)
         #     self.initial_curve = self.init_curve(x0_, x1_, t_, num_steps, self.init_method, self.graph_pts, self.graph_pts_encodings)
         self.initial_curve = self.init_curve(x0_, x1_, t_, num_steps, 
-                                             self.init_method, self.graph_pts, self.graph_pts_encodings)
+                                             self.init_method, self.graph_pts, self.graph_pts_encodings, self.diff_op)
+
         enveloppe = self.scale_factor * (1 - (t_ * 2 - 1).pow(self.k))
         
         ids_emb = self.id_net(ids_)
@@ -494,6 +579,8 @@ class GeodesicBridge(pl.LightningModule):
                 graph_pts=None,
                 graph_pts_encodings=None,
                 encoder=None,
+                diff_op=None,
+                diff_t=1.0,
                 ):
         #super().__init__()
         super(GeodesicBridge, self).__init__()
@@ -550,6 +637,8 @@ class GeodesicBridge(pl.LightningModule):
                     graph_pts=graph_pts,
                     graph_pts_encodings=graph_pts_encodings,
                     encoder=encoder,
+                    diff_op=diff_op,
+                    diff_t=diff_t,
                 )
 
     def forward(self, x0, x1, t):
@@ -697,6 +786,8 @@ class GeodesicBridgeOverfit(GeodesicBridge):
                 graph_pts=None,
                 graph_pts_encodings=None,
                 encoder=None,
+                diff_op=None,
+                diff_t=1.0,
                 ):
         super().__init__(
             func=func,
@@ -732,6 +823,8 @@ class GeodesicBridgeOverfit(GeodesicBridge):
             graph_pts=graph_pts,
             graph_pts_encodings=graph_pts_encodings,
             encoder=encoder,
+            diff_op=diff_op,
+            diff_t=diff_t,
         )
         assert id_dim>0 and id_emb_dim>0
         self.cc = CondCurveOverfit(input_dim=input_dim,
@@ -747,6 +840,8 @@ class GeodesicBridgeOverfit(GeodesicBridge):
                             graph_pts=graph_pts,
                             graph_pts_encodings=graph_pts_encodings,
                             encoder=encoder,
+                            diff_op=diff_op,
+                            diff_t=diff_t,
                         )
     def forward(self, x0, x1, t, ids):
         return self.cc(x0, x1, t, ids)
@@ -958,12 +1053,15 @@ class GeodesicFM(GeodesicBridgeOverfit):
                 use_density=False,
                 data_pts=None,
                 data_pts_encodings=None,
+                diff_op=None,
+                diff_t=1.0,
                 density_weight=1.,
                 fixed_pot=False, # Whether to fix the OT plan or resample each forward pass.
                 init_method='line',
                 visualize_training=False,
                 dataloader=None,
                 device=None,
+                training_save_dir='./eb_fm/training/',
                 ):
             super().__init__(
                 func=func,
@@ -983,6 +1081,8 @@ class GeodesicFM(GeodesicBridgeOverfit):
                 init_method=init_method,
                 graph_pts=data_pts,
                 graph_pts_encodings=data_pts_encodings,
+                diff_op=diff_op,
+                diff_t=diff_t,
                 length_weight=length_weight,
                 cc_k=cc_k,
                 data_pts=data_pts,
@@ -994,6 +1094,7 @@ class GeodesicFM(GeodesicBridgeOverfit):
             self.flow_weight = flow_weight
             self.use_density = use_density
             self.visualize_training = visualize_training
+            self.training_save_dir = training_save_dir
             self.data_pts = data_pts # 1) for density loss. 2) for visualization.
             self.dataloader = dataloader # for traj visualization along training.
             self.fixed_pot = fixed_pot
@@ -1010,6 +1111,11 @@ class GeodesicFM(GeodesicBridgeOverfit):
             
             if self.fixed_pot:
                 self.fixed_pairs = None # Tuple of (i,j), each of shape [B].
+            
+            # remove old grad norms.
+            if os.path.exists('./eb_fm/grad_norms'):
+                shutil.rmtree('./eb_fm/grad_norms')
+            os.makedirs('./eb_fm/grad_norms')
     
     def sample_optimal_pairs(self, x0, x1, encoder):
         # Optimal transport pair based on latent encodings.
@@ -1036,9 +1142,9 @@ class GeodesicFM(GeodesicBridgeOverfit):
         #         self.fixed_pairs = (i, j)
         #     else:
         #         i, j = self.fixed_pairs
-
         # x0 = x0[i]
         # x1 = x1[j]
+
         def cc_func(x0, x1, t):
             return self.cc(x0, x1, t, ids)
         vectors = velocity(cc_func, self.ts, x0, x1)
@@ -1065,6 +1171,25 @@ class GeodesicFM(GeodesicBridgeOverfit):
         self.log(f'loss', loss, prog_bar=True, on_epoch=True)
         
         return loss
+
+    def on_before_optimizer_step(self, optimizer):
+        # check the gradient norm dl/dparams
+        flow_model_norms = grad_norm(self.flow_model, norm_type=2)
+        cc_norms = grad_norm(self.cc, norm_type=2)
+        # import pdb; pdb.set_trace()
+        # Plot the gradient norms as bar chart.
+
+        flow_model_norms_arr = [norm.item() for (_, norm) in flow_model_norms.items()]
+        cc_norms_arr = [norm.item() for (_, norm) in cc_norms.items()]
+        fig = plt.figure()
+        fig.add_subplot(1,2,1)
+        plt.bar(range(len(flow_model_norms_arr)), flow_model_norms_arr)
+        plt.title('Flow Model Grad Norms')
+        fig.add_subplot(1,2,2)
+        plt.bar(range(len(cc_norms_arr)), cc_norms_arr)
+        plt.title('CondCurve Grad Norms')
+        plt.savefig(f'./eb_fm/grad_norms/grad_norms_epoch_{self.current_epoch+1:04d}.png')
+        
     
     def on_train_epoch_start(self):
         if self.current_epoch == 0:
@@ -1105,8 +1230,8 @@ class GeodesicFM(GeodesicBridgeOverfit):
                                         mode='lines', line=dict(width=2, color='blue')))
 
             # Save the figure to a file
-            os.makedirs('./eb_fm/training/', exist_ok=True)
-            fig.write_image(f'./eb_fm/training/trajs_epoch_{0:04d}.png')
+            os.makedirs(self.training_save_dir, exist_ok=True)
+            fig.write_image(f'{self.training_save_dir}/trajs_epoch_{0:04d}.png')
     
     def on_train_epoch_end(self):
         if self.visualize_training is False or self.dataloader is None or self.data_pts is None:
@@ -1140,14 +1265,14 @@ class GeodesicFM(GeodesicBridgeOverfit):
                                        mode='lines', line=dict(width=2, color='blue')))
 
         # Save the figure to a file
-        os.makedirs('./eb_fm/training/', exist_ok=True)
-        fig.write_image(f'./eb_fm/training/trajs_epoch_{self.current_epoch+1:04d}.png')
+        os.makedirs(self.training_save_dir, exist_ok=True)
+        fig.write_image(f'{self.training_save_dir}/trajs_epoch_{self.current_epoch+1:04d}.png')
     
     def on_train_end(self):
         if self.visualize_training is False:
             return
-        self.frame_dir = './eb_fm/training/'
-        self.video_output_path = './eb_fm/trajs.mp4'
+        self.frame_dir = self.training_save_dir
+        self.video_output_path = f'{self.training_save_dir}/../trajs.mp4'
         # Create video from saved frames
         frames = [f for f in os.listdir(self.frame_dir) if f.endswith('.png')]
         frames.sort()
