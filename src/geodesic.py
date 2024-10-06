@@ -362,7 +362,7 @@ class CondCurve(nn.Module):
             curve: torch.Tensor, [T*B, D]
         '''
         if method == 'line':
-            print("Using straight line to initialize the curve...")
+            #print("Using straight line to initialize the curve...")
             return (1-t) * x0 + t * x1
         elif method == 'djikstra' or method == 'diffusion' and graph_pts is not None:
             print(f"Using {method} to initialize the curve...")
@@ -1172,24 +1172,24 @@ class GeodesicFM(GeodesicBridgeOverfit):
         
         return loss
 
-    def on_before_optimizer_step(self, optimizer):
-        # check the gradient norm dl/dparams
-        flow_model_norms = grad_norm(self.flow_model, norm_type=2)
-        cc_norms = grad_norm(self.cc, norm_type=2)
-        # import pdb; pdb.set_trace()
-        # Plot the gradient norms as bar chart.
+    # def on_before_optimizer_step(self, optimizer):
+    #     # check the gradient norm dl/dparams
+    #     flow_model_norms = grad_norm(self.flow_model, norm_type=2)
+    #     cc_norms = grad_norm(self.cc, norm_type=2)
+    #     # import pdb; pdb.set_trace()
+    #     # Plot the gradient norms as bar chart.
 
-        flow_model_norms_arr = [norm.item() for (_, norm) in flow_model_norms.items()]
-        cc_norms_arr = [norm.item() for (_, norm) in cc_norms.items()]
-        fig = plt.figure()
-        fig.add_subplot(1,2,1)
-        plt.bar(range(len(flow_model_norms_arr)), flow_model_norms_arr)
-        plt.title('Flow Model Grad Norms')
-        fig.add_subplot(1,2,2)
-        plt.bar(range(len(cc_norms_arr)), cc_norms_arr)
-        plt.title('CondCurve Grad Norms')
-        plt.savefig(f'./eb_fm/grad_norms/grad_norms_epoch_{self.current_epoch+1:04d}.png')
-        
+    #     flow_model_norms_arr = [norm.item() for (_, norm) in flow_model_norms.items()]
+    #     cc_norms_arr = [norm.item() for (_, norm) in cc_norms.items()]
+    #     fig = plt.figure()
+    #     fig.add_subplot(1,2,1)
+    #     plt.bar(range(len(flow_model_norms_arr)), flow_model_norms_arr)
+    #     plt.title('Flow Model Grad Norms')
+    #     fig.add_subplot(1,2,2)
+    #     plt.bar(range(len(cc_norms_arr)), cc_norms_arr)
+    #     plt.title('CondCurve Grad Norms')
+    #     plt.savefig(f'./eb_fm/grad_norms/grad_norms_epoch_{self.current_epoch+1:04d}.png')
+
     
     def on_train_epoch_start(self):
         if self.current_epoch == 0:

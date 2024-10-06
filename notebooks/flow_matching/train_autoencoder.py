@@ -126,55 +126,9 @@ def make_custom_collate_fn(dataset):
     
     return custom_collate_fn
 
-# class PointCloudDataset(torch.utils.data.Dataset):
-#     """
-#     Point Cloud Dataset
-#     """
-#     def __init__(self, pointcloud, distances, batch_size=64, shuffle=True):
-#         self.pointcloud = torch.tensor(pointcloud, dtype=torch.float32)
-#         self.distances = torch.tensor(distances, dtype=torch.float32)
-#         self.shuffle = shuffle
-#         self.batch_size = batch_size
-
-#         if shuffle:
-#             self.idxs = torch.randperm(len(self.pointcloud))
-#         else:
-#             self.idxs = torch.arange(len(self.pointcloud))
-
-#     def __len__(self):
-#         return len(self.pointcloud)
-    
-#     def __getitem__(self, idx):
-#         '''
-#             Returns a batch of pointclouds and their distances
-#             batch['x'] = [B, D]
-#             batch['d'] = [B, B(B-1)/2] (upper triangular), assuming symmetric distance matrix
-#         '''
-#         if self.shuffle:
-#             batch_idxs = self.idxs[:self.batch_size]
-#         else:
-#             batch_idxs = torch.arange(idx, idx+self.batch_size) % len(self.pointcloud)
-#         batch = {}
-#         batch['x'] = self.pointcloud[batch_idxs]
-#         dist_mat = self.distances[batch_idxs][:,batch_idxs]
-#         batch['d'] = dist_mat[np.triu_indices(dist_mat.size(0), k=1)]
-
-#         return batch
-
-
 class MLP(torch.nn.Module):
     def __init__(self, in_dim, out_dim, layer_widths=[256, 128, 64], activation='relu', batch_norm=False, dropout=0.0, use_spectral_norm=False):
         super().__init__()
-
-
-        # layer_widths = cfg.get("layer_widths", [64, 64, 64])
-        # assert len(layer_widths) >= 2, "layer_widths list must contain at least 2 elements"
-        # activation = cfg.get("activation", "relu")
-        # assert activation in activation_dict.keys(), f"activation must be one of {list(activation_dict.keys())}"
-        # batch_norm = cfg.get("batch_norm", False)
-        # dropout = cfg.get("dropout", 0.0)
-        # use_spectral_norm = cfg.get("spectral_norm", False)  # Configuration for using spectral normalization
-
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.layer_widths = layer_widths
@@ -422,14 +376,20 @@ def load_data(data_path):
     data = np.load(data_path)
     return data['data'], data['dist'], data['colors'], data['phate']
 
-def split_pointcloud(pointcloud, distances, labels, train_ratio=0.9):
-    # Split the data into training and test sets
-    train_val_indices = np.random.choice(len(pointcloud), size=int(len(pointcloud) * train_ratio), replace=False)
-    test_indices = np.setdiff1d(np.arange(len(pointcloud)), train_val_indices)
+def split_train_val_test(x, test_size=0.1, val_size=0.1):
+    '''
+        Return train, val, test indices, given x.
+    '''
+    perm = np.random.permutation(len(x))
+    test_size = int(len(x) * test_size)
+    val_size = int(len(x) * val_size)
+    test_idx = perm[:test_size]
+    val_idx = perm[test_size:test_size+val_size]
+    train_idx = perm[test_size+val_size:]
+    return train_idx, val_idx, test_idx
 
-    # Split the data into training and validation sets
-    train_indices = np.random.choice(train_val_indices, size=int(len(train_val_indices) * 0.85), replace=False)
-    val_indices = np.setdiff1d(train_val_indices, train_indices)
+def split_pointcloud(pointcloud, distances, labels, test_size=0.1, val_size=0.1):
+    train_indices, val_indices, test_indices = split_train_val_test(pointcloud, test_size=test_size, val_size=val_size)
 
     train_pointcloud = pointcloud[train_indices]
     val_pointcloud = pointcloud[val_indices]
@@ -453,7 +413,7 @@ def split_pointcloud(pointcloud, distances, labels, train_ratio=0.9):
     return train_pointcloud, train_distances, train_labels, val_pointcloud, val_distances, val_labels, test_pointcloud, test_distances, test_labels
     
 
-def main(args):
+def main(args, run=None):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if torch.backends.mps.is_available():
         device = 'mps'
@@ -485,9 +445,9 @@ def main(args):
         # axs[i, 1].scatter(phate_coords[:, 0], phate_coords[:, 1], phate_coords[:, 2], c=labels, cmap='viridis')
         axs[i, 0].set_title(f'Pointcloud {i+1} Colored by Labels')
         # axs[i, 1].set_title(f'Phate Coords Colored by Labels')
-        #axs[i].axis('off')
+        # axs[i].axis('off')
     plt.tight_layout()
-    plt.savefig('./pointcloud_splits.png')
+    plt.savefig(f'{args.plots_save_dir}/pointcloud_splits.png')
     #plt.show()
 
     # mean, std, dist_std
@@ -537,7 +497,7 @@ def main(args):
         axs[i, 2].scatter(data[:, 0], data[:, 1], data[:, 2], c=labels, cmap='viridis')
         axs[i, 2].set_title(f'Ground Truth of Pointcloud {i+1}')
     plt.tight_layout()
-    plt.savefig('./latent_space_reconstruction.png')
+    plt.savefig(f'{args.plots_save_dir}/latent_space_reconstruction.png')
 
     # plotly visualization
     fig = go.Figure()
@@ -549,7 +509,7 @@ def main(args):
         fig.add_trace(go.Scatter3d(x=z[:, 0], y=z[:, 1], z=z[:, 2], mode='markers', marker=dict(size=2, color=labels, colorscale='viridis'), name=f'Latent Space of {i}'))
     fig.show()
 
-def evaluate(args):
+def evaluate(args, run=None):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if torch.backends.mps.is_available():
         device = 'mps'
@@ -588,6 +548,7 @@ if __name__ == "__main__":
     parser.add_argument("--ae_max_epochs", type=int, default=50, help="Maximum number of epochs for training")
     parser.add_argument("--ae_early_stop_patience", type=int, default=5, help="Patience for early stopping")
     parser.add_argument("--ae_log_every_n_steps", type=int, default=100, help="Log every n steps")
+    parser.add_argument("--plots_save_dir", type=str, default='./ae_plots', help="Directory to save plots")
     parser.add_argument("--checkpoint_dir", type=str, default='./ae_checkpoints', help="Directory to save checkpoints")
     parser.add_argument("--latent_dim", type=int, default=3, help="Latent dimension")
     parser.add_argument("--encoder_layer_width", type=int, nargs='+', default=[256, 128, 64], help="Encoder layer widths")
@@ -610,9 +571,18 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.wandb:
-        wandb.init(project=args.wandb_project, entity=args.wandb_entity)
-        wandb.config.update(args)
+    data_filename = os.path.basename(args.data_path)
+    data_name = data_filename.split('.')[0]
+    args.checkpoint_dir = f"{data_name}_{os.path.basename(args.checkpoint_dir)}"
+    args.plots_save_dir = f"{data_name}_{os.path.basename(args.plots_save_dir)}"
+    os.makedirs(args.checkpoint_dir, exist_ok=True)
+    os.makedirs(args.plots_save_dir, exist_ok=True)
+
+    # if args.wandb:
+    #     run = wandb.init(project=args.wandb_project, 
+    #                entity=args.wandb_entity, 
+    #                name=f"{data_name}_ae",
+    #                config=args)
 
     if args.mode == 'train':
         main(args)

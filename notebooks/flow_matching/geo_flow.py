@@ -181,6 +181,8 @@ def train_discriminator(x, x_noisy, encoder, args):
     # Dataloader.
     X = torch.cat([x, x_noisy], dim=0)
     Y = torch.cat([torch.ones(x.shape[0]), torch.zeros(x_noisy.shape[0])], dim=0)
+    # Convert Y to LongTensor
+    Y = Y.long()
     # Split data into train/val/test
     train_idx = int(0.8 * len(X))
     val_idx = int(0.9 * len(X))
@@ -202,6 +204,7 @@ def train_discriminator(x, x_noisy, encoder, args):
 
     # Model. 
     # NOTE: Normalize is set to False since we assume latent features are already normalized.
+    # TODO: Use density or not.
     model = Discriminator(in_dim=x.shape[1], layer_widths=args.disc_layer_widths, activation='relu', 
                             loss_type='bce', normalize=False,
                             data_pts=data_pts, k=args.disc_density_k,
@@ -500,8 +503,9 @@ def visualize_trajectory(traj, x_encodings, labels, save_path, title, start_pts=
                                        mode='markers', marker=dict(size=5, color='red', colorscale='Viridis', opacity=0.8)))
         fig.update_layout(title=title)
         file_basename = os.path.basename(save_path).split('.')[0]
-        print('[Visualization] Saving plotly plot to ', os.path.join(args.plots_save_dir, f'{file_basename}.html'))
-        fig.write_html(os.path.join(args.plots_save_dir, f'{file_basename}.html'))
+        file_dir = os.path.dirname(save_path)
+        print('[Visualization] Saving plotly plot to ', f'{file_dir}/{file_basename}.html')
+        fig.write_html(f'{file_dir}/{file_basename}.html')
 
 def visualize_generated(generated_data, real_data, x_encodings, labels, save_path, title, plotly=False):
     '''
@@ -516,7 +520,7 @@ def visualize_generated(generated_data, real_data, x_encodings, labels, save_pat
     '''
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c=labels, cmap='viridis', alpha=0.8)
+    ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c='gray', cmap='viridis', alpha=0.8)
     ax.scatter(generated_data[:,0], generated_data[:,1], generated_data[:,2], c='blue', alpha=0.8)
     ax.scatter(real_data[:,0], real_data[:,1], real_data[:,2], c='red', alpha=0.8)
     print('[Visualization] Saving plot to ', save_path)
@@ -525,15 +529,60 @@ def visualize_generated(generated_data, real_data, x_encodings, labels, save_pat
     if plotly:
         fig = go.Figure()
         fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
-                                   mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
+                                   mode='markers', marker=dict(size=2, color=labels, colorscale='Viridis', opacity=0.8)))
         fig.add_trace(go.Scatter3d(x=generated_data[:,0], y=generated_data[:,1], z=generated_data[:,2], 
                                    mode='markers', marker=dict(size=2, color='blue', colorscale='Viridis', opacity=0.8)))
         fig.add_trace(go.Scatter3d(x=real_data[:,0], y=real_data[:,1], z=real_data[:,2], 
                                    mode='markers', marker=dict(size=2, color='red', colorscale='Viridis', opacity=0.8)))
         fig.update_layout(title=title)
         file_basename = os.path.basename(save_path).split('.')[0]
-        print('[Visualization] Saving plotly plot to ', os.path.join(args.plots_save_dir, f'{file_basename}.html'))
-        fig.write_html(os.path.join(args.plots_save_dir, f'{file_basename}.html'))
+        file_dir = os.path.dirname(save_path)
+        print('[Visualization] Saving plotly plot to ', f'{file_dir}/{file_basename}.html')
+        fig.write_html(f'{file_dir}/{file_basename}.html')
+
+def eval_distributions(generated_data, real_data, cost_metric='euclidean', use_pca=True):
+    """
+        Compute the Wasserstein 1 distancebetween the generated and real data.
+        generated_data: [N, latent_dim]
+        real_data: [N, latent_dim]
+    """
+    print('Computing Wasserstein 1 distance... generated: ', generated_data.shape, 'real: ', real_data.shape)
+    if use_pca:
+        pca_op = PCA(n_components=5)
+        generated_data = pca_op.fit_transform(generated_data)
+        real_data = pca_op.fit_transform(real_data)
+
+    if not isinstance(generated_data, torch.Tensor):
+        generated_data = torch.tensor(generated_data, dtype=torch.float32)
+    if not isinstance(real_data, torch.Tensor):
+        real_data = torch.tensor(real_data, dtype=torch.float32)
+    if cost_metric == 'euclidean':
+        # cost_matrix = torch.cdist(generated_data, real_data)
+        cost_matrix = ot.dist(generated_data, real_data, metric='euclidean')
+    elif cost_metric == 'cosine':
+        cost_matrix = 1 - F.cosine_similarity(generated_data, real_data)
+    else:
+        raise ValueError(f"Unknown cost metric: {cost_metric}")
+    
+    # Compute the Wasserstein 1 distance
+    print('Wasserstein distance Cost Matrix shape: ', cost_matrix.shape)
+    # generated_distribution = torch.tensor([1 / generated_data.shape[0]] * generated_data.shape[0], dtype=torch.float32)
+    # real_distribution = torch.tensor([1 / real_data.shape[0]] * real_data.shape[0], dtype=torch.float32)
+    generated_distribution = torch.tensor(np.ones(generated_data.shape[0]) / generated_data.shape[0], dtype=torch.float32)
+    real_distribution = torch.tensor(np.ones(real_data.shape[0]) / real_data.shape[0], dtype=torch.float32)
+
+    print('Generated distribution: ', generated_distribution.shape)
+    print('Real distribution: ', real_distribution.shape)
+
+    wasserstein_distance = ot.emd2(generated_distribution, real_distribution, cost_matrix)
+
+    return wasserstein_distance
+
+def log(msg: str, file_path: str, to_console: bool = False):
+    if to_console:
+        print(msg)
+    with open(file_path, 'a') as f:
+        f.write(msg + '\n')
 
 def main(args):    
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -554,7 +603,15 @@ def main(args):
     print(f'[Data Loaded] x: {x.shape}, x_encodings: {x_encodings.shape}')
     print(f'[Data Loaded] Unique labels: {np.unique(labels)}')
 
-    os.makedirs(args.plots_save_dir, exist_ok=True)
+    # Split into train/val/test.
+    train_idx, val_idx, test_idx = split_train_val_test(x, test_size=args.test_size, val_size=args.val_size)
+    train_x, train_x_encodings, train_labels = x[train_idx], x_encodings[train_idx], labels[train_idx]
+    val_x, val_x_encodings, val_labels = x[val_idx], x_encodings[val_idx], labels[val_idx]
+    test_x, test_x_encodings, test_labels = x[test_idx], x_encodings[test_idx], labels[test_idx]
+    print(f'[Train] train_x: {train_x.shape}, train_x_encodings: {train_x_encodings.shape}, train_labels: {train_labels.shape}')
+    print(f'[Val] val_x: {val_x.shape}, val_x_encodings: {val_x_encodings.shape}, val_labels: {val_labels.shape}')
+    print(f'[Test] test_x: {test_x.shape}, test_x_encodings: {test_x_encodings.shape}, test_labels: {test_labels.shape}')
+
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection='3d')
     for (i, label) in enumerate(np.unique(labels)):
@@ -591,23 +648,20 @@ def main(args):
     ax.set_title('Positive and negative samples, and rejected samples')
     plt.savefig(os.path.join(args.plots_save_dir, 'pos_neg_rejected.png'))
     
-    # Train new discriminator.
+    ''' Train new discriminator. '''
     if args.disc_use_gp:
         raise NotImplementedError('GP not implemented.')
     else:
-        print("Training new discriminator...")
-        if args.disc_use_function_space == False:
-            print('Training new discriminator using standard CE loss.')
-            wd_model = train_discriminator(torch.tensor(x_encodings, dtype=torch.float32),
-                                           torch.tensor(x_noisy, dtype=torch.float32),
-                                           ae_model.encoder,
-                                           args) # TODO: we may want to use the same split on x here for geodesicFM?
-
+        print('Training new discriminator using standard CE loss.')
+        wd_model = train_discriminator(torch.tensor(x_encodings, dtype=torch.float32),
+                                        torch.tensor(x_noisy, dtype=torch.float32),
+                                        ae_model.encoder,
+                                        args) # TODO: we may want to use the same split on x here for geodesicFM?
     
     # Visualize discriminator positive probs prediction on positive and negative samples.
     # Uniform sample N points from {-r, r} ^ latent_dim.
     latent_dim = x_encodings.shape[1]
-    r = args.disc_fs_uniform_range
+    r = 5.0
     uniform_samples = np.random.uniform(-r, r, size=(1000, latent_dim))
     wd_model.eval()
     wd_model.to(device)
@@ -620,52 +674,59 @@ def main(args):
     print('pos_probs: ', pos_probs.mean())
     print('neg_probs: ', neg_probs.mean())
     print('uniform_probs: ', uniform_probs.mean())
-
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c=pos_probs, cmap='viridis', alpha=0.8)
     ax.scatter(x_noisy[:,0], x_noisy[:,1], x_noisy[:,2], c=neg_probs, cmap='viridis', alpha=0.6)
     ax.scatter(uniform_samples[:,0], uniform_samples[:,1], uniform_samples[:,2], c=uniform_probs, cmap='viridis', alpha=0.4)
-    if hasattr(wd_model, 'classify'):
-        ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c=labels_pred, cmap='viridis', alpha=0.8)
     ax.set_title('Discriminator positive probabilities')
     plt.savefig(os.path.join(args.plots_save_dir, 'disc_pos_probs.png'))
 
 
     ''' ====== Train GeodesicFM ====== '''
-    # Sample start and end points.
     if args.use_all_group_points: # Use all points in the start/end group.
-        start_pts = x[labels == args.start_group]
-        end_pts = x[labels == args.end_group]
-    else: # Sample start/end points from within a range.
-        start_idx, sampled_indices_point1, end_idx, sampled_indices_point2 = sample_indices_within_range(
-            x=x, encoder=ae_model.encoder, device=device, labels=labels, start_group=args.start_group, end_group=args.end_group, 
+        train_start_pts = train_x[train_labels == args.start_group]
+        train_end_pts = train_x[train_labels == args.end_group]
+        val_start_pts = val_x[val_labels == args.start_group]
+        val_end_pts = val_x[val_labels == args.end_group]
+        test_start_pts = test_x[test_labels == args.start_group]
+        test_end_pts = test_x[test_labels == args.end_group]
+    else: # Sample start/end points in start/end groups.
+        train_start_idx, train_sampled_indices_point1, train_end_idx, train_sampled_indices_point2 = sample_indices_within_range(
+            x=train_x, encoder=ae_model.encoder, device=device, labels=train_labels, start_group=args.start_group, end_group=args.end_group, 
             selected_idx=(args.start_idx, args.end_idx), range_size=args.range_size, num_samples=args.num_samples, 
             seed=args.seed, 
         )
-        start_pts = x[sampled_indices_point1]
-        end_pts = x[sampled_indices_point2]
+        val_start_idx, val_sampled_indices_point1, val_end_idx, val_sampled_indices_point2 = sample_indices_within_range(
+            x=val_x, encoder=ae_model.encoder, device=device, labels=val_labels, start_group=args.start_group, end_group=args.end_group, 
+            selected_idx=(args.start_idx, args.end_idx), range_size=args.range_size, num_samples=args.num_samples, 
+            seed=args.seed, 
+        )
+        test_start_idx, test_sampled_indices_point1, test_end_idx, test_sampled_indices_point2 = sample_indices_within_range(
+            x=test_x, encoder=ae_model.encoder, device=device, labels=test_labels, start_group=args.start_group, end_group=args.end_group, 
+            selected_idx=(args.start_idx, args.end_idx), range_size=args.range_size, num_samples=args.num_samples, 
+            seed=args.seed, 
+        )
+        train_start_pts = train_x[train_sampled_indices_point1]
+        train_end_pts = train_x[train_sampled_indices_point2]
+        val_start_pts = val_x[val_sampled_indices_point1]
+        val_end_pts = val_x[val_sampled_indices_point2]
+        test_start_pts = test_x[test_sampled_indices_point1]
+        test_end_pts = test_x[test_sampled_indices_point2]
 
     # Create dataloader.
-    print('[Start/End Points] start_pts: ', start_pts.shape, 'end_pts: ', end_pts.shape)
+    print('[Training] Start/End Points: ', train_start_pts.shape, train_end_pts.shape)
+    print('[Val] Start/End Points: ', val_start_pts.shape, val_end_pts.shape)
+    print('[Test] Start/End Points: ', test_start_pts.shape, test_end_pts.shape)
 
-    # Split into train/test.
-    train_idx, val_idx, test_idx = split_train_val_test(x, test_size=args.test_size, val_size=args.val_size)
-    start_pts_train = start_pts[train_idx]
-    end_pts_train = end_pts[train_idx]
-    start_pts_val = start_pts[val_idx]
-    end_pts_val = end_pts[val_idx]
-    start_pts_test = start_pts[test_idx]
-    end_pts_test = end_pts[test_idx]
-    
-    dataset = CustomDataset(x0=torch.tensor(start_pts_train, dtype=torch.float32), 
-                            x1=torch.tensor(end_pts_train, dtype=torch.float32))
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate_fn)
-    val_dataset = CustomDataset(x0=torch.tensor(start_pts_val, dtype=torch.float32), 
-                                x1=torch.tensor(end_pts_val, dtype=torch.float32))
+    train_dataset = CustomDataset(x0=torch.tensor(train_start_pts, dtype=torch.float32), 
+                                  x1=torch.tensor(train_end_pts, dtype=torch.float32))
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate_fn)
+    val_dataset = CustomDataset(x0=torch.tensor(val_start_pts, dtype=torch.float32), 
+                                x1=torch.tensor(val_end_pts, dtype=torch.float32))
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=custom_collate_fn)
-    test_dataset = CustomDataset(x0=torch.tensor(start_pts_test, dtype=torch.float32), 
-                                 x1=torch.tensor(end_pts_test, dtype=torch.float32))
+    test_dataset = CustomDataset(x0=torch.tensor(test_start_pts, dtype=torch.float32), 
+                                 x1=torch.tensor(test_end_pts, dtype=torch.float32))
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=custom_collate_fn)
 
     # Prepare offmanifolder through encoder and discriminator.
@@ -702,6 +763,7 @@ def main(args):
     print('Mean ext-dim true data: ', ofm_scores.mean(), 
           '\nMean ext-dim negative data: ', ofm_scores_noisy.mean(), 
           '\nMean ext-dim uniform data: ', ofm_scores_uniform.mean())
+    
 
     diff_op = None
     diff_t = 3
@@ -737,7 +799,7 @@ def main(args):
         density_weight=args.density_weight,
         fixed_pot=args.fixed_pot,
         visualize_training=args.visualize_training,
-        dataloader=dataloader,
+        dataloader=train_dataloader, # for visualization, not used for training.
         device=device,
         training_save_dir=args.training_save_dir,
     )
@@ -754,146 +816,90 @@ def main(args):
         callbacks=[early_stopping, model_checkpoint]
     )
 
-    trainer.fit(gbmodel, train_dataloaders=dataloader, val_dataloaders=val_dataloader)
+    trainer.fit(gbmodel, train_dataloaders=train_dataloader)
 
 
     ''' Visualization and Evaluation '''
-    # Visualize the learned Geodesic Paths.
-    print(f'[Visualization] Visualizing learned Geodesic Paths with {args.n_tsteps} steps...')
-    n_samples = min(start_pts.shape[0], end_pts.shape[0])
+    print('=========== Visualizing GeodesicBridge Paths ==========')
+    log('[Visualization] Visualizing GeodesicBridge Paths ...', os.path.join(args.plots_save_dir, 'eval.log'))
+    # NOTE: use test set here.
+    start_pts = test_start_pts
+    end_pts = test_end_pts
+    
+    # n_samples = min(start_pts.shape[0], end_pts.shape[0])
+    #n_samples = 100
+    n_samples = start_pts.shape[0]
+
     start_pts = start_pts[:n_samples]
     end_pts = end_pts[:n_samples]
+    log(f'[Visualization & Evaluation] start_pts: {start_pts.shape}, end_pts: {end_pts.shape}', os.path.join(args.plots_save_dir, 'eval.log'))
+    start_pts_encodings = encode_data(start_pts, ae_model.encoder, device)
+    end_pts_encodings = encode_data(end_pts, ae_model.encoder, device)
+
     dummy_ids = torch.zeros((start_pts.shape[0], 1), dtype=torch.float32)
     gbmodel.to(device)
     gb_trajs = gbmodel.cc(torch.tensor(start_pts, dtype=torch.float32).to(device), 
                            torch.tensor(end_pts, dtype=torch.float32).to(device), 
                            torch.tensor(np.linspace(0, 1, args.n_tsteps), dtype=torch.float32).to(device),
                            dummy_ids.to(device)) # [n_tsteps, n_samples, ambient_dim]
-    gb_trajs_encodings = encode_data(gb_trajs.flatten(0,1), ae_model.encoder, device).reshape(args.n_tsteps, -1, args.latent_dim) # [n_tsteps, n_samples, latent_dim]
-    start_pts_encodings = encode_data(start_pts, ae_model.encoder, device)
-    end_pts_encodings = encode_data(end_pts, ae_model.encoder, device)
+    gb_trajs_encodings = encode_data(gb_trajs.flatten(0,1), ae_model.encoder, device).reshape(args.n_tsteps, -1, x_encodings.shape[1]) # [n_tsteps, n_samples, latent_dim]
     visualize_trajectory(traj=gb_trajs_encodings, x_encodings=x_encodings, labels=labels,
                          save_path=os.path.join(args.plots_save_dir, 'geodesic_paths_latent.png'), title='geodesic_paths_latent', 
                          start_pts=start_pts_encodings, end_pts=end_pts_encodings, plotly=args.plotly)
 
-    # gb_trajs_encodings = encode_data(gb_trajs.flatten(0,1), ae_model.encoder, device) # [n_tsteps*n_samples, latent_dim]
-    # start_pts_encodings = encode_data(start_pts, ae_model.encoder, device)
-    # end_pts_encodings = encode_data(end_pts, ae_model.encoder, device)
-    # fig = plt.figure(figsize=(10, 10))
-    # ax = fig.add_subplot(111, projection='3d')
-    # ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c='gray', alpha=0.8)
-    # ax.scatter(start_pts_encodings[:,0], start_pts_encodings[:,1], start_pts_encodings[:,2], c='blue', alpha=0.8)
-    # ax.scatter(end_pts_encodings[:,0], end_pts_encodings[:,1], end_pts_encodings[:,2], c='red', alpha=0.8)
-    # ax.scatter(gb_trajs_encodings[:,0], gb_trajs_encodings[:,1], gb_trajs_encodings[:,2], c='blue', alpha=0.8)
-    # ax.set_title('Geodesic Paths in Latent Space')
-    # plt.savefig(os.path.join(args.plots_save_dir, 'geodesic_paths_latent.png'))
-
-    # plotly
-    # fig = go.Figure()
-    # n_samples = min(10, start_pts.shape[0])
-    # fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
-    #                            mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
-    # fig.add_trace(go.Scatter3d(x=start_pts_encodings[:,0], y=start_pts_encodings[:,1], z=start_pts_encodings[:,2], 
-    #                            mode='markers', marker=dict(size=5, color='blue', colorscale='Viridis', opacity=0.8)))
-    # fig.add_trace(go.Scatter3d(x=end_pts_encodings[:,0], y=end_pts_encodings[:,1], z=end_pts_encodings[:,2], 
-    #                            mode='markers', marker=dict(size=5, color='red', colorscale='Viridis', opacity=0.8)))
-    # gb_trajs_encodings_unflat = gb_trajs_encodings.reshape(-1, start_pts.shape[0], start_pts_encodings.shape[1]) # [n_tsteps, n_samples, latent_dim]
-    # print('gb_trajs_encodings_unflat: ', gb_trajs_encodings_unflat.shape)
-    # for i in range(n_samples):
-    #     fig.add_trace(go.Scatter3d(x=gb_trajs_encodings_unflat[:,i,0], y=gb_trajs_encodings_unflat[:,i,1], z=gb_trajs_encodings_unflat[:,i,2], 
-    #                                mode='lines', line=dict(width=2, color='blue')))
-    # fig.update_layout(title='Geodesic Paths in Latent Space')
-    # fig.write_html(os.path.join(args.plots_save_dir, 'geodesic_paths_latent.html'))
-
     # Use Neural ODE to integrate the learned flow/vector field.
     print('=========== Running ODE on learned vector field ==========')
-    flow_ode = ODEFuncWrapper(gbmodel.flow_model).to('cpu')
+    n_tsteps = args.n_tsteps
+    n_tsteps = 100
+    t_start = 0
+    t_end = 1
 
-    n_samples = min(100, start_pts.shape[0])
-    sampled_starts = torch.tensor(start_pts[:n_samples], dtype=torch.float32).to('cpu')
+    flow_ode = ODEFuncWrapper(gbmodel.flow_model).to('cpu')
     with torch.no_grad():
-        traj = odeint(flow_ode, sampled_starts, gbmodel.ts.to('cpu')) # [n_tsteps, n_samples, ambient_dim]
-    print('Flow Matching ODE Trajectory shape: ', traj.shape)
-    encoded_traj = encode_data(traj.flatten(0,1), ae_model.encoder, 'cpu').reshape(args.n_tsteps, -1, args.latent_dim) # [n_tsteps*n_samples, latent_dim]
+        ts = torch.linspace(t_start, t_end, n_tsteps).to('cpu')
+        traj = odeint(flow_ode, torch.tensor(start_pts, dtype=torch.float32).to('cpu'), ts)
+        
+    print('ODE Trajectory shape: ', traj.shape)
+    encoded_traj = encode_data(traj.flatten(0,1), ae_model.encoder, 'cpu').reshape(n_tsteps, -1, x_encodings.shape[1]) # [n_tsteps, n_samples, latent_dim]
     print('Encoded Trajectory shape: ', encoded_traj.shape)
 
-    # Visualize the trajectory in latent space.
-    start_pts_encodings = encode_data(start_pts, ae_model.encoder, device)
-    end_pts_encodings = encode_data(end_pts, ae_model.encoder, device)
-    visualize_trajectory(traj=encoded_traj, x_encodings=x_encodings, labels=labels,
-                         save_path=os.path.join(args.plots_save_dir, 'ODE_latent_traj.png'), title='ODE_latent_traj', 
+    # Visualize the ODE trajectory in latent space.
+    visualize_trajectory(encoded_traj, x_encodings, labels,
+                         save_path=os.path.join(args.plots_save_dir, f'eval_ode_latent_traj.png'), 
+                         title=f'[eval] ODE Trajectory in Latent Space', 
                          start_pts=start_pts_encodings, end_pts=end_pts_encodings, plotly=args.plotly)
-    # fig = plt.figure(figsize=(10, 10))
-    # ax = fig.add_subplot(111, projection='3d')
-    # ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c='gray', alpha=0.8)
-    # ax.scatter(start_pts_encodings[:,0], start_pts_encodings[:,1], start_pts_encodings[:,2], c='blue', alpha=0.8)
-    # ax.scatter(end_pts_encodings[:,0], end_pts_encodings[:,1], end_pts_encodings[:,2], c='red', alpha=0.8)
-    # ax.scatter(encoded_traj[:,0], encoded_traj[:,1], encoded_traj[:,2], c='blue', alpha=0.8)
-    # ax.set_title('ODE Trajectory in Latent Space')
-    # plt.savefig(os.path.join(args.plots_save_dir, 'ODE_latent_traj.png'))
 
-    # # plotly
-    # fig = go.Figure()
-    # fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
-    #                            mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
-    # fig.add_trace(go.Scatter3d(x=start_pts_encodings[:,0], y=start_pts_encodings[:,1], z=start_pts_encodings[:,2], 
-    #                            mode='markers', marker=dict(size=5, color='blue', colorscale='Viridis', opacity=0.8)))
-    # fig.add_trace(go.Scatter3d(x=end_pts_encodings[:,0], y=end_pts_encodings[:,1], z=end_pts_encodings[:,2], 
-    #                            mode='markers', marker=dict(size=5, color='red', colorscale='Viridis', opacity=0.8)))
-    # encoded_traj_unflat = encoded_traj.reshape(-1, n_samples, start_pts_encodings.shape[1]) # [n_tsteps, n_samples, latent_dim]
-    # print('encoded_traj_unflat: ', encoded_traj_unflat.shape)
-    # for i in range(n_samples):
-    #     fig.add_trace(go.Scatter3d(x=encoded_traj_unflat[:,i,0], y=encoded_traj_unflat[:,i,1], z=encoded_traj_unflat[:,i,2], 
-    #                                mode='lines', line=dict(width=2, color='blue')))
-    # fig.update_layout(title='ODE Trajectory in Latent Space')
-    # fig.write_html(os.path.join(args.plots_save_dir, 'ODE_latent_traj.html'))
-
-    ''' Compute the Wasserstein 1 distance between the generated and real data. '''
+    ''' Wasserstein 1 distance between generated and real data. '''
+    print('====== Evaluating Wasserstein 1 distance between generated and gt ======')
     test_group = args.test_group
-    # TODO: do we need to have the same number of samples for real and generated data?
-    # TODO: decide which samples to use for real data/generated data.
-    real_idx, real_labels = np.where(labels == test_group)[0], labels[labels == test_group]
-    real_data = x[real_idx]
-    print('[Eval] Real data shape: ', real_data.shape, 'Real labels: ', np.unique(real_labels))
-    
+    # TODO: which samples to use for real data/generated data.
+    real_idx = np.where(test_labels == test_group)[0]
+    real_data = test_x[real_idx]
+    # traj = traj[10:-10, : , :]
     generated_data = traj.flatten(0,1) # [n_tsteps*n_samples, ambient_dim]
-    samples_num = min(generated_data.shape[0], real_data.shape[0])
+    print('[Eval] Real data shape: ', real_data.shape, 'Generated data shape: ', generated_data.shape)
+    # TODO: do we need to have the same number of samples for real and generated data?
+    # num_samples = min(real_idx.shape[0], generated_data.shape[0])
+    # generated_data_idx = np.random.choice(np.arange(generated_data.shape[0]), size=num_samples, replace=False)
+    # generated_data = generated_data[generated_data_idx]
+    # real_samples_idx = np.random.choice(np.arange(real_data.shape[0]), size=num_samples, replace=False)
+    # real_data = real_data[real_samples_idx]
     
-    real_samples_idx = np.random.choice(real_data.shape[0], samples_num, replace=False)
-    real_data = real_data[real_samples_idx]
-    generated_samples_idx = np.random.choice(generated_data.shape[0], samples_num, replace=False)
-    generated_data = generated_data[generated_samples_idx]
-
-    wasserstein_distance = eval_distributions(generated_data, real_data, cost_metric='euclidean')
-    print('[Eval] Wasserstein 1 distance: ', wasserstein_distance)
-
-    real_data_encodings = x_encodings[real_idx]
-    generated_data_encodings = encoded_traj
-    visualize_generated(generated_data=generated_data_encodings, real_data=real_data_encodings, x_encodings=x_encodings, labels=labels, 
-                       save_path=os.path.join(args.plots_save_dir, f'generated_real_latent_t{test_group}.png'), 
-                       title=f'Generated and Real Data at t={test_group} in Latent Space', plotly=args.plotly)
+    wasserstein_distance = eval_distributions(generated_data, real_data, cost_metric='euclidean', use_pca=False)
+    print('[Eval] Wasserstein-1 distance: ', wasserstein_distance.item())
+    log(f'[Eval] Wasserstein-1 distance with target test group {test_group}: {wasserstein_distance.item()}', os.path.join(args.plots_save_dir, 'eval.log'))
 
     # Plot the generated and real data in latent space.
-    # fig = plt.figure(figsize=(10, 10))
-    # ax = fig.add_subplot(111, projection='3d')
-    # real_data_encodings = x_encodings[real_idx]
-    # generated_data_encodings = encoded_traj
-    # ax.scatter(real_data_encodings[:,0], real_data_encodings[:,1], real_data_encodings[:,2], c='green', alpha=0.8)
-    # ax.scatter(generated_data_encodings[:,0], generated_data_encodings[:,1], generated_data_encodings[:,2], c='blue', alpha=0.8)
-    # ax.legend(['Real Data', 'Generated Data'])
-    # ax.set_title(f'Generated and Real Data at t={test_group} in Latent Space')
-    # plt.savefig(os.path.join(args.plots_save_dir, f'generated_real_latent_t{test_group}.png'))
+    real_data_encodings = test_x_encodings[real_idx]
+    generated_data_encodings = encoded_traj # [n_tsteps*n_samples, latent_dim]
+    visualize_generated(generated_data_encodings, real_data_encodings, x_encodings, labels,
+                        save_path=os.path.join(args.plots_save_dir, f'generated_real_latent_t{test_group}.png'), 
+                        title=f'[eval] Generated and Real Data at t={test_group} in Latent Space', 
+                        plotly=args.plotly)
 
-    # # Plotly
-    # fig = go.Figure()
-    # fig.add_trace(go.Scatter3d(x=x_encodings[:,0], y=x_encodings[:,1], z=x_encodings[:,2], 
-    #                            mode='markers', marker=dict(size=2, color='gray', colorscale='Viridis', opacity=0.8)))
-    # fig.add_trace(go.Scatter3d(x=real_data_encodings[:,0], y=real_data_encodings[:,1], z=real_data_encodings[:,2], 
-    #                            mode='markers', marker=dict(size=2, color='green', colorscale='Viridis', opacity=0.8)))
-    # fig.add_trace(go.Scatter3d(x=generated_data_encodings[:,0], y=generated_data_encodings[:,1], z=generated_data_encodings[:,2], 
-    #                            mode='markers', marker=dict(size=2, color='blue', colorscale='Viridis', opacity=0.8)))
-    # fig.update_layout(title=f'Generated and Real Data at t={test_group} in Latent Space')
-    # fig.write_html(os.path.join(args.plots_save_dir, f'generated_real_latent_t{test_group}.html'))
+
+    print('Evaluation finished.')
+
 
 def eval(args):
     """
@@ -1032,10 +1038,12 @@ def eval(args):
 
     ''' Visualize the learned Geodesic Paths. '''
     print('=========== Visualizing GeodesicBridge Paths ==========')
+    log('[Visualization] Visualizing GeodesicBridge Paths ...', os.path.join(args.plots_save_dir, 'eval.log'))
+
     # TODO: this start/ends is ALL pts, may want to use test set here.
     # NOTE: use test set here.
     start_pts = test_start_pts
-    end_pts = test_end_pts
+    end_pts = test_start_pts
 
     n_samples = min(start_pts.shape[0], end_pts.shape[0])
     #n_samples = 100
@@ -1044,15 +1052,17 @@ def eval(args):
     start_pts = start_pts[:n_samples]
     end_pts = end_pts[:n_samples]
     print('[Eval] Start/End Points: ', start_pts.shape, end_pts.shape)
-
+    log(f'[Eval] Start/End Points: {start_pts.shape}, {end_pts.shape}', os.path.join(args.plots_save_dir, 'eval.log'))
     dummy_ids = torch.zeros((start_pts.shape[0], 1), dtype=torch.float32)
 
     gbmodel.to(device)
     n_tsteps = args.n_tsteps
-    n_tsteps = 100
+    n_tsteps = 70
+    t_start = 0
+    t_end = 1.0
     gb_trajs = gbmodel.cc(torch.tensor(start_pts, dtype=torch.float32).to(device), 
                            torch.tensor(end_pts, dtype=torch.float32).to(device), 
-                           torch.tensor(np.linspace(0, 0.5, n_tsteps), dtype=torch.float32).to(device),
+                           torch.tensor(np.linspace(t_start, t_end, n_tsteps), dtype=torch.float32).to(device),
                            dummy_ids.to(device))  
          
     start_pts_encodings = encode_data(start_pts, ae_model.encoder, device)
@@ -1069,7 +1079,11 @@ def eval(args):
     print('=========== Running ODE on learned vector field ==========')
     n_samples = min(100, start_pts.shape[0])
     flow_ode = ODEFuncWrapper(gbmodel.flow_model).to('cpu')
-    sampled_starts = torch.tensor(start_pts[:n_samples], dtype=torch.float32).to('cpu')
+    log(f'[Eval] Running ODE on learned vector field ...', os.path.join(args.plots_save_dir, 'eval.log'))
+    log(f'[Eval] Start Group: {args.start_group}, End Group: {args.end_group}, Test Group: {args.test_group}', os.path.join(args.plots_save_dir, 'eval.log'))
+    log(f'[Eval] Number of time steps: {n_tsteps}', os.path.join(args.plots_save_dir, 'eval.log'))
+    log(f'[Eval] Start time: {t_start}', os.path.join(args.plots_save_dir, 'eval.log'))
+    log(f'[Eval] End time: {t_end}', os.path.join(args.plots_save_dir, 'eval.log'))
     with torch.no_grad():
         ts = torch.linspace(0, 1, n_tsteps).to('cpu')
         # traj = odeint(flow_ode, sampled_starts, ts) # [n_tsteps, n_samples, ambient_dim]
@@ -1091,8 +1105,12 @@ def eval(args):
     # TODO: which samples to use for real data/generated data.
     real_idx = np.where(test_labels == test_group)[0]
     real_data = test_x[real_idx]
-    generated_data = traj.flatten(0,1) # [n_tsteps*n_samples, ambient_dim]
+    #traj = traj[5:-5, : , :]
+    # sampled_ts = [int(n_tsteps * 0.2), int(n_tsteps * 0.9)]
+    # traj = traj[sampled_ts[0]:sampled_ts[1], :, :] # [sampled_n_tsteps, n_samples, ambient_dim]
+    generated_data = traj.flatten(0,1) # [sampled_n_tsteps*n_samples, ambient_dim]
     print('[Eval] Real data shape: ', real_data.shape, 'Generated data shape: ', generated_data.shape)
+    log(f'[Eval] Real data shape: {real_data.shape}, Generated data shape: {generated_data.shape}', os.path.join(args.plots_save_dir, 'eval.log'))
     # TODO: do we need to have the same number of samples for real and generated data?
     # num_samples = min(real_idx.shape[0], generated_data.shape[0])
     # generated_data_idx = np.random.choice(np.arange(generated_data.shape[0]), size=num_samples, replace=False)
@@ -1102,61 +1120,17 @@ def eval(args):
     
     wasserstein_distance = eval_distributions(generated_data, real_data, cost_metric='euclidean', use_pca=False)
     print('[Eval] Wasserstein-1 distance: ', wasserstein_distance.item())
+    log(f'[Eval] W1 distance with target group {test_group}: {wasserstein_distance.item()}', os.path.join(args.plots_save_dir, 'eval.log'))
     # Plot the generated and real data in latent space.
-    fig = plt.figure(figsize=(10, 10))
-    ax = fig.add_subplot(111, projection='3d')
-    x_encodings = encode_data(x, ae_model.encoder, device)
-    real_data_encodings = x_encodings[real_idx]
+    real_data_encodings = test_x_encodings[real_idx]
     generated_data_encodings = encoded_traj # [n_tsteps*n_samples, latent_dim]
     visualize_generated(generated_data_encodings, real_data_encodings, x_encodings, labels,
-                        save_path=os.path.join(args.plots_save_dir, f'generated_real_latent_t{test_group}.png'), 
+                        save_path=os.path.join(args.plots_save_dir, f'eval_generated_real_latent_t{test_group}.png'), 
                         title=f'[eval] Generated and Real Data at t={test_group} in Latent Space', 
                         plotly=args.plotly)
 
 
-    print('Evaluation finished.')
-
-
-
-from sklearn.decomposition import PCA
-def eval_distributions(generated_data, real_data, cost_metric='euclidean', use_pca=True):
-    """
-        Compute the Wasserstein 1 distancebetween the generated and real data.
-        generated_data: [N, latent_dim]
-        real_data: [N, latent_dim]
-    """
-    print('Computing Wasserstein 1 distance... generated: ', generated_data.shape, 'real: ', real_data.shape)
-    if use_pca:
-        pca_op = PCA(n_components=5)
-        generated_data = pca_op.fit_transform(generated_data)
-        real_data = pca_op.fit_transform(real_data)
-
-    if not isinstance(generated_data, torch.Tensor):
-        generated_data = torch.tensor(generated_data, dtype=torch.float32)
-    if not isinstance(real_data, torch.Tensor):
-        real_data = torch.tensor(real_data, dtype=torch.float32)
-    if cost_metric == 'euclidean':
-        # cost_matrix = torch.cdist(generated_data, real_data)
-        cost_matrix = ot.dist(generated_data, real_data, metric='euclidean')
-    elif cost_metric == 'cosine':
-        cost_matrix = 1 - F.cosine_similarity(generated_data, real_data)
-    else:
-        raise ValueError(f"Unknown cost metric: {cost_metric}")
-    
-    # Compute the Wasserstein 1 distance
-    print('Wasserstein distance Cost Matrix shape: ', cost_matrix.shape)
-    # generated_distribution = torch.tensor([1 / generated_data.shape[0]] * generated_data.shape[0], dtype=torch.float32)
-    # real_distribution = torch.tensor([1 / real_data.shape[0]] * real_data.shape[0], dtype=torch.float32)
-    generated_distribution = torch.tensor(np.ones(generated_data.shape[0]) / generated_data.shape[0], dtype=torch.float32)
-    real_distribution = torch.tensor(np.ones(real_data.shape[0]) / real_data.shape[0], dtype=torch.float32)
-
-    print('Generated distribution: ', generated_distribution.shape)
-    print('Real distribution: ', real_distribution.shape)
-
-    wasserstein_distance = ot.emd2(generated_distribution, real_distribution, cost_matrix)
-
-    return wasserstein_distance
-
+    log('[Eval] Evaluation finished.\n', os.path.join(args.plots_save_dir, 'eval.log'), to_console=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Latent Discriminator Script")
