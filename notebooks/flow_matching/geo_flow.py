@@ -592,7 +592,8 @@ def main(args):
     # Load models.
     if args.use_local_ae:
         print('Loading local autoencoder...')
-        ae_model = load_local_autoencoder(args.ae_checkpoint_path)
+        #ae_model = load_local_autoencoder(args.ae_checkpoint_path)
+        ae_model = load_local_autoencoder(f'{args.ae_checkpoint_dir}/{args.autoencoder_ckptname}')
     else:
         print('Loading autoencoder from wandb...')
         ae_model = load_autoencoder(args.ae_run_id, args.root_dir)
@@ -625,15 +626,19 @@ def main(args):
 
     # Negative sampling.
     if args.neg_method == 'add':
-        x_noisy = neg_sample_using_additive(x_encodings, args.noise_levels, noise_rate=args.noise_rate, seed=args.seed, noise=args.noise_type)
+        #x_noisy = neg_sample_using_additive(x_encodings, args.noise_levels, noise_rate=args.noise_rate, seed=args.seed, noise=args.noise_type)
+        x_noisy = neg_sample_using_additive(train_x_encodings, args.noise_levels, noise_rate=args.noise_rate, seed=args.seed, noise=args.noise_type)
     elif args.neg_method == 'diffusion':
-        x_noisy = neg_sample_using_diffusion(x_encodings, args.t, args.num_steps, args.beta_start, args.beta_end, seed=args.seed)
+        #x_noisy = neg_sample_using_diffusion(x_encodings, args.t, args.num_steps, args.beta_start, args.beta_end, seed=args.seed)
+        x_noisy = neg_sample_using_diffusion(train_x_encodings, args.t, args.num_steps, args.beta_start, args.beta_end, seed=args.seed)
     else:
         raise ValueError(f"Invalid negative sampling method: {args.neg_method}")
     assert x_noisy.shape[-1] == x_encodings.shape[-1]
     # Sampling rejection.
     if args.sampling_rejection:
-        rejected_idx = sampling_rejection(x_encodings, x_noisy, 
+        #rejected_idx = sampling_rejection(x_encodings, x_noisy, 
+        #                                  method=args.sampling_rejection_method, k=args.sampling_rejection_k, threshold=args.sampling_rejection_threshold)
+        rejected_idx = sampling_rejection(train_x_encodings, x_noisy, 
                                           method=args.sampling_rejection_method, k=args.sampling_rejection_k, threshold=args.sampling_rejection_threshold)
         all_x_noisy = x_noisy.copy()
         x_noisy = x_noisy[~rejected_idx]
@@ -653,7 +658,7 @@ def main(args):
         raise NotImplementedError('GP not implemented.')
     else:
         print('Training new discriminator using standard CE loss.')
-        wd_model = train_discriminator(torch.tensor(x_encodings, dtype=torch.float32),
+        wd_model = train_discriminator(torch.tensor(train_x_encodings, dtype=torch.float32), # NOTE: x_encodings vs train_x_encodings.
                                         torch.tensor(x_noisy, dtype=torch.float32),
                                         ae_model.encoder,
                                         args) # TODO: we may want to use the same split on x here for geodesicFM?
@@ -662,25 +667,25 @@ def main(args):
     # Uniform sample N points from {-r, r} ^ latent_dim.
     latent_dim = x_encodings.shape[1]
     r = 5.0
-    uniform_samples = np.random.uniform(-r, r, size=(1000, latent_dim))
-    wd_model.eval()
-    wd_model.to(device)
-    with torch.no_grad():
-        pos_probs = wd_model.positive_prob(torch.tensor(x_encodings, dtype=torch.float32).to(device)).cpu().detach().numpy()
-        neg_probs = wd_model.positive_prob(torch.tensor(x_noisy, dtype=torch.float32).to(device)).cpu().detach().numpy()
-        uniform_probs = wd_model.positive_prob(torch.tensor(uniform_samples, dtype=torch.float32).to(device)).cpu().detach().numpy()
-        if hasattr(wd_model, 'classify'):
-            labels_pred = wd_model.classify(torch.tensor(x, dtype=torch.float32).to(device)).cpu().detach().numpy()
-    print('pos_probs: ', pos_probs.mean())
-    print('neg_probs: ', neg_probs.mean())
-    print('uniform_probs: ', uniform_probs.mean())
-    fig = plt.figure(figsize=(10, 10))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c=pos_probs, cmap='viridis', alpha=0.8)
-    ax.scatter(x_noisy[:,0], x_noisy[:,1], x_noisy[:,2], c=neg_probs, cmap='viridis', alpha=0.6)
-    ax.scatter(uniform_samples[:,0], uniform_samples[:,1], uniform_samples[:,2], c=uniform_probs, cmap='viridis', alpha=0.4)
-    ax.set_title('Discriminator positive probabilities')
-    plt.savefig(os.path.join(args.plots_save_dir, 'disc_pos_probs.png'))
+    # uniform_samples = np.random.uniform(-r, r, size=(1000, latent_dim))
+    # wd_model.eval()
+    # wd_model.to(device)
+    # with torch.no_grad():
+    #     pos_probs = wd_model.positive_prob(torch.tensor(x_encodings, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    #     neg_probs = wd_model.positive_prob(torch.tensor(x_noisy, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    #     uniform_probs = wd_model.positive_prob(torch.tensor(uniform_samples, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    #     if hasattr(wd_model, 'classify'):
+    #         labels_pred = wd_model.classify(torch.tensor(x, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    # print('pos_probs: ', pos_probs.mean())
+    # print('neg_probs: ', neg_probs.mean())
+    # print('uniform_probs: ', uniform_probs.mean())
+    # fig = plt.figure(figsize=(10, 10))
+    # ax = fig.add_subplot(111, projection='3d')
+    # ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c=pos_probs, cmap='viridis', alpha=0.8)
+    # ax.scatter(x_noisy[:,0], x_noisy[:,1], x_noisy[:,2], c=neg_probs, cmap='viridis', alpha=0.6)
+    # ax.scatter(uniform_samples[:,0], uniform_samples[:,1], uniform_samples[:,2], c=uniform_probs, cmap='viridis', alpha=0.4)
+    # ax.set_title('Discriminator positive probabilities')
+    # plt.savefig(os.path.join(args.plots_save_dir, 'disc_pos_probs.png'))
 
 
     ''' ====== Train GeodesicFM ====== '''
@@ -747,22 +752,22 @@ def main(args):
                                   disc_factor=args.disc_factor, 
                                   data_encodings=torch.tensor(x_encodings, dtype=torch.float32).to(device))
     # Visualize offmanifolder.
-    ofm_scores = distance_func_in_latent(torch.tensor(x_encodings, dtype=torch.float32).to(device)).cpu().detach().numpy()
-    ofm_scores_noisy = distance_func_in_latent(torch.tensor(x_noisy, dtype=torch.float32).to(device)).cpu().detach().numpy()
-    ofm_scores_uniform = distance_func_in_latent(torch.tensor(uniform_samples, dtype=torch.float32).to(device)).cpu().detach().numpy()
-    fig = plt.figure(figsize=(10, 10))
-    ax = fig.add_subplot(111, projection='3d')
-    pc = ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c=ofm_scores, cmap='viridis', alpha=0.8)
-    pc = ax.scatter(x_noisy[:,0], x_noisy[:,1], x_noisy[:,2], c=ofm_scores_noisy, cmap='viridis', alpha=0.6)
-    pc = ax.scatter(uniform_samples[:,0], uniform_samples[:,1], uniform_samples[:,2], c=ofm_scores_uniform, cmap='viridis', alpha=0.4)
-    # add colorbar for all scatter plots
-    cbar = fig.colorbar(pc, ax=ax)
-    cbar.set_label('Distance')
-    ax.set_title('Distance to the manifold (extended dim) with alpha = %f' % alpha)
-    plt.savefig(os.path.join(args.plots_save_dir, 'extended_dim_ofm.png'))
-    print('Mean ext-dim true data: ', ofm_scores.mean(), 
-          '\nMean ext-dim negative data: ', ofm_scores_noisy.mean(), 
-          '\nMean ext-dim uniform data: ', ofm_scores_uniform.mean())
+    # ofm_scores = distance_func_in_latent(torch.tensor(x_encodings, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    # ofm_scores_noisy = distance_func_in_latent(torch.tensor(x_noisy, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    # ofm_scores_uniform = distance_func_in_latent(torch.tensor(uniform_samples, dtype=torch.float32).to(device)).cpu().detach().numpy()
+    # fig = plt.figure(figsize=(10, 10))
+    # ax = fig.add_subplot(111, projection='3d')
+    # pc = ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c=ofm_scores, cmap='viridis', alpha=0.8)
+    # pc = ax.scatter(x_noisy[:,0], x_noisy[:,1], x_noisy[:,2], c=ofm_scores_noisy, cmap='viridis', alpha=0.6)
+    # pc = ax.scatter(uniform_samples[:,0], uniform_samples[:,1], uniform_samples[:,2], c=ofm_scores_uniform, cmap='viridis', alpha=0.4)
+    # # add colorbar for all scatter plots
+    # cbar = fig.colorbar(pc, ax=ax)
+    # cbar.set_label('Distance')
+    # ax.set_title('Distance to the manifold (extended dim) with alpha = %f' % alpha)
+    # plt.savefig(os.path.join(args.plots_save_dir, 'extended_dim_ofm.png'))
+    # print('Mean ext-dim true data: ', ofm_scores.mean(), 
+    #       '\nMean ext-dim negative data: ', ofm_scores_noisy.mean(), 
+    #       '\nMean ext-dim uniform data: ', ofm_scores_uniform.mean())
     
 
     diff_op = None
@@ -791,9 +796,9 @@ def main(args):
         length_weight=args.length_weight,
         cc_k=args.cc_k,
         init_method=args.init_method,
-        data_pts_encodings=torch.tensor(x_encodings, dtype=torch.float32).to(device),
+        # data_pts_encodings=torch.tensor(x_encodings, dtype=torch.float32).to(device),
         use_density=args.use_density,
-        data_pts=torch.tensor(x, dtype=torch.float32).to(device),
+        # data_pts=torch.tensor(x, dtype=torch.float32).to(device),
         diff_op=diff_op,
         diff_t=diff_t,
         density_weight=args.density_weight,
@@ -817,6 +822,7 @@ def main(args):
     )
 
     trainer.fit(gbmodel, train_dataloaders=train_dataloader)
+    #trainer.fit(gbmodel, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
 
 
     ''' Visualization and Evaluation '''
@@ -913,11 +919,13 @@ def eval(args):
     # Load models
     if args.use_local_ae:
         print('Loading local autoencoder...')
-        ae_model = load_local_autoencoder(args.ae_checkpoint_path)
+        #ae_model = load_local_autoencoder(args.ae_checkpoint_path)
+        ae_model = load_local_autoencoder(f'{args.ae_checkpoint_dir}/{args.autoencoder_ckptname}')
     else:
         print('Loading autoencoder from wandb...')
         ae_model = load_autoencoder(args.ae_run_id, args.root_dir)
-    wd_model = Discriminator.load_from_checkpoint(f'{args.checkpoint_dir}/discriminator-v3.ckpt')
+    # wd_model = Discriminator.load_from_checkpoint(f'{args.checkpoint_dir}/discriminator-v3.ckpt')
+    wd_model = Discriminator.load_from_checkpoint(f'{args.checkpoint_dir}/{args.discriminator_ckptname}')
 
     # Load data
     x, labels = load_data(args.data_path)
@@ -1007,7 +1015,7 @@ def eval(args):
         diff_op = phate_op.diff_op
         print('[PHATE] diff_op: ', diff_op.shape)
     gbmodel = GeodesicFM.load_from_checkpoint(
-        f'{args.checkpoint_dir}/gbmodel-v3.ckpt', 
+        f'{args.checkpoint_dir}/{args.gbmodel_ckptname}', 
         func=ofm,
         encoder=enc_func,
         input_dim=x.shape[1],
@@ -1023,9 +1031,9 @@ def eval(args):
         length_weight=args.length_weight,
         cc_k=args.cc_k,
         init_method=args.init_method,
-        data_pts_encodings=torch.tensor(x_encodings, dtype=torch.float32).to(device),
+        #data_pts_encodings=torch.tensor(x_encodings, dtype=torch.float32).to(device),
         use_density=args.use_density,
-        data_pts=torch.tensor(x, dtype=torch.float32).to(device),
+        #data_pts=torch.tensor(x, dtype=torch.float32).to(device),
         diff_op=diff_op,
         diff_t=diff_t,
         density_weight=args.density_weight,
@@ -1109,14 +1117,15 @@ def eval(args):
     # sampled_ts = [int(n_tsteps * 0.2), int(n_tsteps * 0.9)]
     # traj = traj[sampled_ts[0]:sampled_ts[1], :, :] # [sampled_n_tsteps, n_samples, ambient_dim]
     generated_data = traj.flatten(0,1) # [sampled_n_tsteps*n_samples, ambient_dim]
-    print('[Eval] Real data shape: ', real_data.shape, 'Generated data shape: ', generated_data.shape)
-    log(f'[Eval] Real data shape: {real_data.shape}, Generated data shape: {generated_data.shape}', os.path.join(args.plots_save_dir, 'eval.log'))
+
     # TODO: do we need to have the same number of samples for real and generated data?
     # num_samples = min(real_idx.shape[0], generated_data.shape[0])
     # generated_data_idx = np.random.choice(np.arange(generated_data.shape[0]), size=num_samples, replace=False)
     # generated_data = generated_data[generated_data_idx]
     # real_samples_idx = np.random.choice(np.arange(real_data.shape[0]), size=num_samples, replace=False)
     # real_data = real_data[real_samples_idx]
+    print('[Eval] Real data shape: ', real_data.shape, 'Generated data shape: ', generated_data.shape)
+    log(f'[Eval] Real data shape: {real_data.shape}, Generated data shape: {generated_data.shape}', os.path.join(args.plots_save_dir, 'eval.log'))
     
     wasserstein_distance = eval_distributions(generated_data, real_data, cost_metric='euclidean', use_pca=False)
     print('[Eval] Wasserstein-1 distance: ', wasserstein_distance.item())
@@ -1138,8 +1147,13 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=2024, help="Random seed")
     parser.add_argument("--root_dir", type=str, default="../../", help="Root directory")
     parser.add_argument("--use_local_ae", action='store_true', help="Use locally trained autoencoder")
-    parser.add_argument("--ae_checkpoint_path", type=str, default='./ae_checkpoints/autoencoder.ckpt', help="Path to the (locally) trained autoencoder checkpoint")
+    parser.add_argument("--ae_checkpoint_dir", type=str, default='./ae_checkpoints', help="Path to the (locally) trained autoencoder checkpoint")
     parser.add_argument("--ae_run_id", type=str, default='pzlwi6t6', help="Autoencoder run ID")
+    parser.add_argument("--discriminator_ckptname", type=str, default='discriminator-v3.ckpt', help="Discriminator checkpoint name")
+    parser.add_argument("--autoencoder_ckptname", type=str, default='autoencoder-v17.ckpt', help="Autoencoder checkpoint name")
+    parser.add_argument("--gbmodel_ckptname", type=str, default='gbmodel-v3.ckpt', help="GeodesicFM checkpoint name")
+    parser.add_argument("--checkpoint_dir", type=str, default="./checkpoints", help="Checkpoint directory")
+    parser.add_argument("--plots_save_dir", type=str, default="./plots", help="Save directory")
     parser.add_argument("--data_path", type=str, default='../../data/eb_subset_all.npz')
     # Start/End points arguments
     parser.add_argument("--plotly", action='store_true', help="Use plotly for visualization")
@@ -1178,8 +1192,6 @@ if __name__ == "__main__":
     parser.add_argument("--patience", type=int, default=150, help="Patience for early stopping")
     parser.add_argument("--max_epochs", type=int, default=300, help="Maximum number of epochs")
     parser.add_argument("--log_every_n_steps", type=int, default=20, help="Log every n steps")
-    parser.add_argument("--checkpoint_dir", type=str, default="./eb_fm/checkpoints", help="Checkpoint directory")
-    parser.add_argument("--plots_save_dir", type=str, default="./eb_fm/plots", help="Save directory")
     parser.add_argument("--show_plot", action='store_true', help="Show plot")
     # Add new arguments for discriminator training
     parser.add_argument("--disc_layer_widths", type=int, nargs="+", default=[256, 128, 64], help="Layer widths for discriminator")
@@ -1215,6 +1227,10 @@ if __name__ == "__main__":
     data_name = data_filename.split('.')[0]
     args.plots_save_dir = f"{data_name}_alpha-{args.alpha}_factor-{args.disc_factor}_{os.path.basename(args.plots_save_dir)}"
     args.checkpoint_dir = f"{data_name}_alpha-{args.alpha}_factor-{args.disc_factor}_{os.path.basename(args.checkpoint_dir)}"
+    args.ae_checkpoint_dir = f"{data_name}_{os.path.basename(args.ae_checkpoint_dir)}"
+    print('args.plots_save_dir: ', args.plots_save_dir)
+    print('args.checkpoint_dir: ', args.checkpoint_dir)
+    print('args.ae_checkpoint_dir: ', args.ae_checkpoint_dir)
 
     os.makedirs(args.plots_save_dir, exist_ok=True)
     os.makedirs(args.checkpoint_dir, exist_ok=True)
