@@ -1065,7 +1065,7 @@ def eval(args):
 
     gbmodel.to(device)
     n_tsteps = args.n_tsteps
-    n_tsteps = 70
+    n_tsteps = 100
     t_start = 0
     t_end = 1.0
     gb_trajs = gbmodel.cc(torch.tensor(start_pts, dtype=torch.float32).to(device), 

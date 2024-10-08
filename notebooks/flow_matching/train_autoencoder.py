@@ -420,10 +420,11 @@ def main(args, run=None):
 
     # Load data and preprocess.
     if args.eb_h5ad_path:
-        data_dict = prepare_EB_data(preprocessed_eb_path=args.eb_h5ad_path, 
-                                    ambient_dim=args.ambient_dim, ambient_source=args.ambient_source, 
-                                    latent_dim=args.latent_dim, save_dir=args.data_save_dir)
-        pointcloud, distances, labels, phate_coords = data_dict['data'], data_dict['dist'], data_dict['colors'], data_dict['phate']
+        raise NotImplementedError("EB data not supported for now.")
+        # data_dict = prepare_EB_data(preprocessed_eb_path=args.eb_h5ad_path, 
+        #                             ambient_dim=args.ambient_dim, ambient_source=args.ambient_source, 
+        #                             latent_dim=args.latent_dim, save_dir=args.data_save_dir)
+        # pointcloud, distances, labels, phate_coords = data_dict['data'], data_dict['dist'], data_dict['colors'], data_dict['phate']
     else:
         data_dict = load_data(args.data_path)
         pointcloud, distances, labels, phate_coords = data_dict
@@ -540,7 +541,6 @@ if __name__ == "__main__":
     parser.add_argument("--mode", type=str, default='train', help="train|eval")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--eb_h5ad_path", type=str, default=None, help="Path to the preprocessed EB data")
-    parser.add_argument("--ambient_dim", type=int, default=50, help="Ambient dimension")
     parser.add_argument("--ambient_source", type=str, default='hvg', help="Ambient source")
     parser.add_argument("--data_save_dir", type=str, default='../../data/', help="Directory to save data")
     parser.add_argument("--data_path", type=str, default='../../data/eb_all.npz', help="Path to the data")
