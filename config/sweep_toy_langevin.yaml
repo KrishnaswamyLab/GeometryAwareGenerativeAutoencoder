@@ -1,0 +1,49 @@
+project: dmae
+program: train.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: validation/loss
+  goal: minimize
+parameters:
+  data.root: 
+    values: ['../notebooks/langevin/data/']
+  data.name:
+    # values: ['hemisphere_gaussian', 'saddle_gaussian', 'paraboloid_gaussian']
+    values: ['hemisphere_gaussian_heatgeo', 'hemisphere_uniform_heatgeo', 'paraboloid_gaussian_heatgeo', 'paraboloid_uniform_heatgeo', 'saddle_gaussian_heatgeo', 'saddle_uniform_heatgeo']
+  dimensions.latent:
+    # values: [2]
+    values: [3]
+  encoder.layer_widths: 
+    values: [[256,128,64]]
+  encoder.batch_norm: 
+    values: [true]
+  encoder.dropout: 
+    values: [0.]
+  decoder.layer_widths: 
+    values: [[64,128,256]]
+  decoder.batch_norm:
+    values: [true]
+  decoder.dropout:
+    values: [0.]
+  training.mode:
+    values: ['end2end']
+  training.max_epochs:
+    values: [50]
+  training.max_epochs:
+    values: [50]
+  loss.dist_mse_decay:
+    values: [0.75,1.0,1.25,1.5,1.75]
+  loss.weights.dist:
+    values: [1.]
+  loss.weights.reconstr:
+    values: [0.0001]
+  loss.weights.cycle:
+    values: [0.]
+  loss.weights.cycle_dist:
+    values: [0]
+  
+  

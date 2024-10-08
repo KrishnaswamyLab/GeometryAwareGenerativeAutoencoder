@@ -1,0 +1,60 @@
+project: dmae
+program: main.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val_dist_accuracy
+  goal: maximize
+parameters:
+  model.emb_dim:
+    values: [20]
+  model.type:
+    values: ['ae']
+  model.lr:
+    values: [1e-3]
+  model.weight_decay:
+    values: [1e-4]
+  model.dropout:
+    values: [0.2]
+  model.batch_norm:
+    values: [true]
+  model.layer_widths:
+    values: [[256,128,64]]
+  model.dist_reconstr_weights:
+    # values: [[0.,1.,0.]]
+    values: [[0.9,0.1,0]]
+    # values: [[77.4,0.32,0]]
+  model.use_dist_mse_decay:
+    values: [true]
+  model.dist_mse_decay:
+    values: [0.2]
+  model.cycle_weight:
+    values: [0.]
+  model.cycle_dist_weight:
+    values: [0.]
+  data.root:
+    values: ['/gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/hypergraph_scattering/data/hgsae_fim/coarse/']
+  data.name:
+    # values: ['swissroll0.1_phate']
+    # values: ['EB_DiffusionMap', 'EB_heatgeo', 'EB_heatgeo_Denoise.5', 'EB_heatgeo_Denoise1', 'EB_heatgeo_Harnack.75', 'EB_heatgeo_Harnack1.5', 'EB_heatgeo_Harnack']
+    values: ['H21.33.028.Cx28.MTG.02.007.1.02.02.h5ad','H21.33.032.CX24.MTG.02.007.1.01.04.h5ad','H21.33.023.Cx26.MTG.02.007.1.03.05.h5ad','H20.33.025.Cx28.MTG.02.007.1.01.02.h5ad','H20.33.035.Cx26.MTG.02.007.1.01.03.h5ad','H20.33.001.CX28.MTG.02.007.1.02.02.h5ad','H20.33.004.Cx26.MTG.02.007.1.01.04.h5ad','H20.33.004.Cx26.MTG.02.007.1.02.03.h5ad','H21.33.021.Cx26.MTG.02.007.1.06.h5ad','H21.33.019.Cx30.MTG.02.007.5.01.02.h5ad','H21.33.016.Cx26.MTG.02.007.3.01.02.h5ad','H21.33.014.CX26.MTG.02.007.1.02.02.h5ad','H21.33.028.Cx28.MTG.02.007.1.02.04.h5ad','H21.33.023.Cx26.MTG.02.007.1.03.01.h5ad','H20.33.044.Cx26.MTG.02.007.1.01.04.h5ad','H21.33.015.Cx26.MTG.02.007.1.2.h5ad','H21.33.025.CX26.MTG.02.007.4.01.06.h5ad','H21.33.012.Cx26.MTG.02.007.1.01.05.h5ad','H21.33.022.Cx26.MTG.02.007.2.M.03.h5ad','H21.33.006.Cx28.MTG.02.007.1.01.09.03.h5ad','H20.33.012.Cx24.MTG.02.007.1.01.01.h5ad','H21.33.011.Cx26.MTG.02.007.3.01.04.h5ad','H21.33.019.Cx30.MTG.02.007.5.01.01.h5ad','H21.33.038.Cx20.MTG.02.007.3.01.02.h5ad','H21.33.023.Cx26.MTG.02.007.1.03.04.h5ad','H21.33.015.Cx26.MTG.02.007.1.0.h5ad','H21.33.005.Cx18.MTG.02.007.02.03.h5ad','H21.33.025.CX26.MTG.02.007.4.01.04.h5ad','H20.33.001.CX28.MTG.02.007.1.02.03.h5ad','H21.33.011.Cx26.MTG.02.007.3.01.06.h5ad','H21.33.015.Cx26.MTG.02.007.1.1.h5ad','H20.33.035.Cx26.MTG.02.007.1.01.04.h5ad','H21.33.021.Cx26.MTG.02.007.1.04.h5ad','H21.33.012.Cx26.MTG.02.007.1.01.06.h5ad','H20.33.025.Cx28.MTG.02.007.1.01.04.h5ad','H20.33.004.Cx26.MTG.02.007.1.01.05.h5ad','H21.33.006.Cx28.MTG.02.007.1.01.09.04.h5ad','H20.33.025.Cx28.MTG.02.007.1.01.06.h5ad','H21.33.022.Cx26.MTG.02.007.2.M.04.h5ad','H20.33.001.Cx28.MTG.02.007.1.01.03.h5ad','H21.33.038.Cx20.MTG.02.007.3.01.04.h5ad','H21.33.012.Cx26.MTG.02.007.1.01.04.h5ad','H21.33.028.CX28.MTG.02.007.1.01.01.h5ad','H21.33.016.Cx26.MTG.02.007.3.01.01.h5ad','H20.33.040.Cx25.MTG.02.007.1.01.03.h5ad','H21.33.016.Cx26.MTG.02.007.3.01.03.h5ad','H20.33.044.Cx26.MTG.02.007.1.01.02.h5ad','H20.33.012.Cx24.MTG.02.007.1.03.03.h5ad','H21.33.011.Cx26.MTG.02.007.3.01.05.h5ad','H20.33.004.Cx26.MTG.02.007.1.02.04.h5ad','H21.33.022.Cx26.MTG.02.007.2.M.02.h5ad','H21.33.005.Cx18.MTG.02.007.02.04.h5ad','H21.33.025.CX26.MTG.02.007.4.01.02.h5ad','H21.33.006.Cx28.MTG.02.007.1.01.09.02.h5ad','H20.33.040.Cx25.MTG.02.007.1.01.04.h5ad','H20.33.044.Cx26.MTG.02.007.1.01.03.h5ad','H21.33.013.Cx24.MTG.02.007.1.06.h5ad','H20.33.012.Cx24.MTG.02.007.1.03.02.h5ad','H20.33.004.Cx26.MTG.02.007.1.02.02.h5ad']
+    # values: ['swissroll0.1_heatgeo']
+  training.match_potential:
+    values: [True]
+  # training.batch_size: 
+  #   values: [256]
+  # training.max_epochs: 
+  #   values: [100000]
+  # training.patience: 
+  #   values: [10000]
+  model.normalize:
+    values: [true]
+  model.normalize_dist:
+    values: [true]
+  model.componentwise_std:
+    values: [false]
+  data.preprocess:
+    values: ['none']

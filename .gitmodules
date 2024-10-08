@@ -1,3 +1,6 @@
 [submodule "src/autometric"]
 	path = src/autometric
 	url = git@github.com:professorwug/autometric.git
+[submodule "notebooks/langevin/volume_ld"]
+	path = notebooks/langevin/volume_ld
+	url = git@github.com:xingzhis/volume_ld.git

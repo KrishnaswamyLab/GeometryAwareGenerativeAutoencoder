@@ -1,0 +1,48 @@
+project: dmae
+program: train.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+method: grid  # or 'random', 'bayes'
+metric:
+  name: validation/loss
+  goal: minimize
+parameters:
+  data.root: 
+    values: ['../notebooks/langevin/']
+  data.name:
+    values: ['hemisphere_gaussian', 'hemisphere_uniform']
+  dimensions.latent:
+    # values: [2]
+    values: [2,3]
+  encoder.layer_widths: 
+    values: [[256,128,64]]
+  encoder.batch_norm: 
+    values: [true]
+  encoder.dropout: 
+    values: [0.]
+  decoder.layer_widths: 
+    values: [[64,128,256]]
+  decoder.batch_norm:
+    values: [true]
+  decoder.dropout:
+    values: [0.]
+  training.mode:
+    values: ['end2end']
+  training.max_epochs:
+    values: [50]
+  training.max_epochs:
+    values: [50]
+  loss.dist_mse_decay:
+    values: [0.5]
+  loss.weights.dist:
+    values: [1.]
+  loss.weights.reconstr:
+    values: [1.]
+  loss.weights.cycle:
+    values: [0.]
+  loss.weights.cycle_dist:
+    values: [0]
+  
+  

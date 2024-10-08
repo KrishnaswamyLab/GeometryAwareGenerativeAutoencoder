@@ -1,0 +1,11 @@
+project: dmae
+program: dm_eval_tuned_50000.py
+command:
+  - /gpfs/gibbs/pi/krishnaswamy_smita/xingzhi/.conda_envs/geosink/bin/python
+  - ${program}
+  - ${args_no_hyphens}
+
+method: grid 
+parameters:
+  idx:
+    values: ['9xtkqnkl','u98snjwi','9sapq4h8','m07wclny','p14vurq1','najohsy0','m2874yfn','4se1cs5d','islnpqz2','cbgj4rf2']
