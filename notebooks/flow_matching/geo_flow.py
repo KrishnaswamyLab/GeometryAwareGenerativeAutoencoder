@@ -18,10 +18,12 @@ import scipy.spatial as spatial
 sys.path.append('../../src/')
 from diffusionmap import DiffusionMap
 from negative_sampling import make_hi_freq_noise
-from model2 import Autoencoder, Discriminator as OldDiscriminator
+from model2 import Autoencoder as OldAutoencoder
+from model2 import Discriminator as OldDiscriminator
 from train_autoencoder import Autoencoder as LocalAutoencoder
 from off_manifolder import offmanifolder_maker_new
 from geodesic import GeodesicFM
+from train_autoencoder import PointCloudDataset, make_custom_collate_fn, split_pointcloud, Autoencoder
 
 import ot
 adjoint = False
@@ -178,6 +180,10 @@ class Discriminator(pl.LightningModule):
         return self(x)[:, 0]
 
 def train_discriminator(x, x_noisy, encoder, args):
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if torch.backends.mps.is_available():
+        device = 'mps'
+
     # Dataloader.
     X = torch.cat([x, x_noisy], dim=0)
     Y = torch.cat([torch.ones(x.shape[0]), torch.zeros(x_noisy.shape[0])], dim=0)
@@ -217,7 +223,8 @@ def train_discriminator(x, x_noisy, encoder, args):
                                                     dirpath=args.checkpoint_dir, filename='discriminator')
     
     trainer = pl.Trainer(max_epochs=args.disc_max_epochs, log_every_n_steps=args.disc_log_every_n_steps, 
-                         callbacks=[early_stop, model_checkpoint])
+                         callbacks=[early_stop, model_checkpoint],
+                         accelerator=device)
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
 
     # Test model.
@@ -227,14 +234,100 @@ def train_discriminator(x, x_noisy, encoder, args):
     best_model = Discriminator.load_from_checkpoint(model_checkpoint.best_model_path)
     
     return best_model
+
+def train_autoencoder(pointcloud, distances, labels, args):
+    print('[Train Autoencoder] pointcloud: ', pointcloud.shape, 'distances: ', distances.shape, 'labels: ', labels.shape)
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if torch.backends.mps.is_available():
+        device = 'mps'
+    # Split data into train and validation sets
+    train_pointcloud, train_distances, train_labels, val_pointcloud, val_distances, val_labels, test_pointcloud, test_distances, test_labels = split_pointcloud(pointcloud, distances, labels)
+    train_dataset = PointCloudDataset(train_pointcloud, train_distances)
+    val_dataset = PointCloudDataset(val_pointcloud, val_distances)
+    test_dataset = PointCloudDataset(test_pointcloud, test_distances)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=make_custom_collate_fn(train_dataset))
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=make_custom_collate_fn(val_dataset))
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=make_custom_collate_fn(test_dataset))
+
+    # Visualize each split colored by labels, in 3d.
+    fig, axs = plt.subplots(3, 2, figsize=(12, 8), subplot_kw={'projection': '3d'})
+    for i, (data, cur_labels) in enumerate([(train_pointcloud, train_labels), (val_pointcloud, val_labels), (test_pointcloud, test_labels)]):
+        print('data', data.shape, 'cur_labels', cur_labels.shape)
+        axs[i, 0].scatter(data[:, 0], data[:, 1], data[:, 2], c=cur_labels, cmap='viridis')
+        # axs[i, 1].scatter(phate_coords[:, 0], phate_coords[:, 1], phate_coords[:, 2], c=labels, cmap='viridis')
+        axs[i, 0].set_title(f'Pointcloud {i+1} Colored by Labels')
+        # axs[i, 1].set_title(f'Phate Coords Colored by Labels')
+        # axs[i].axis('off')
+    plt.tight_layout()
+    plt.savefig(f'{args.plots_save_dir}/AE_pointcloud_splits.png')
+
+    component_wise_normalization = args.ae_component_wise_normalization
+    if component_wise_normalization:
+        mean = pointcloud.mean(axis=0) # [D]
+        std = pointcloud.std(axis=0) # [D]
+    else:
+        mean = pointcloud.mean() # scalar
+        std = pointcloud.std() # scalar
+    dist_std = np.std(distances.flatten()) # scalar
+    # Init model.
+    ae_model = Autoencoder(data_dim=pointcloud.shape[1], latent_dim=args.ae_latent_dim, encoder_layer_width=args.ae_encoder_layer_width, decoder_layer_width=args.ae_decoder_layer_width, activation=args.ae_activation, 
+                           batch_norm=args.ae_batch_norm, dropout=args.ae_dropout, use_spectral_norm=args.ae_use_spectral_norm, 
+                           mean=mean, std=std, dist_std=dist_std,
+                           dist_mse_decay=args.ae_dist_mse_decay, lr=args.ae_lr, weight_decay=args.ae_weight_decay, 
+                           weights_dist=args.ae_weights_dist, weights_reconstr=args.ae_weights_reconstr, 
+                           weights_cycle=args.ae_weights_cycle, weights_cycle_dist=args.ae_weights_cycle_dist)
     
+    # Train.
+    early_stop = pl.callbacks.EarlyStopping(monitor='val/loss', patience=args.ae_early_stop_patience, mode='min')
+    model_checkpoint = pl.callbacks.ModelCheckpoint(monitor='val/loss', save_top_k=1, mode='min', 
+                                                    dirpath=args.checkpoint_dir, filename='autoencoder')
     
+    trainer = pl.Trainer(max_epochs=args.ae_max_epochs, log_every_n_steps=args.ae_log_every_n_steps, 
+                         callbacks=[early_stop, model_checkpoint],
+                         accelerator=device)
+    trainer.fit(ae_model, train_dataloaders=train_loader, val_dataloaders=val_loader)
+
+    # Test model.
+    trainer.test(ckpt_path="best", dataloaders=test_loader)
+
+    # Load best model.
+    best_ae_model = Autoencoder.load_from_checkpoint(model_checkpoint.best_model_path)
+
+    # Visualize latent space & reconstruction.
+    fig, axs = plt.subplots(3, 3, figsize=(12, 8))
+    best_ae_model.to(device)
+    for i, (data, labels) in enumerate([(train_pointcloud, train_labels), (val_pointcloud, val_labels), (test_pointcloud, test_labels)]):
+        z = best_ae_model.encoder(torch.tensor(data, dtype=torch.float32, device=device), normalize=True)
+        xhat_unnormalized = best_ae_model.decoder(z, unnormalize=True)
+        z = z.detach().cpu().numpy()
+        xhat_unnormalized = xhat_unnormalized.detach().cpu().numpy()
+        axs[i, 0].scatter(z[:, 0], z[:, 1], z[:, 2], c=labels, cmap='viridis')
+        axs[i, 0].set_title(f'Latent Space of Pointcloud {i+1}')
+        axs[i, 1].scatter(xhat_unnormalized[:, 0], xhat_unnormalized[:, 1], xhat_unnormalized[:, 2], c=labels, cmap='viridis')
+        axs[i, 1].set_title(f'Reconstruction of Pointcloud {i+1}')
+        axs[i, 2].scatter(data[:, 0], data[:, 1], data[:, 2], c=labels, cmap='viridis')
+        axs[i, 2].set_title(f'Ground Truth of Pointcloud {i+1}')
+    plt.tight_layout()
+    plt.savefig(f'{args.plots_save_dir}/AE_latent_space_reconstruction.png')
+
+    # plotly visualization
+    fig = go.Figure()
+    for i, (data, labels) in enumerate([(train_pointcloud, train_labels), (val_pointcloud, val_labels), (test_pointcloud, test_labels)]):
+        z = best_ae_model.encoder(torch.tensor(data, dtype=torch.float32, device=device), normalize=True)
+        xhat_unnormalized = best_ae_model.decoder(z, unnormalize=True)
+        z = z.detach().cpu().numpy()
+        xhat_unnormalized = xhat_unnormalized.detach().cpu().numpy()
+        fig.add_trace(go.Scatter3d(x=z[:, 0], y=z[:, 1], z=z[:, 2], mode='markers', marker=dict(size=2, color=labels, colorscale='viridis'), name=f'Latent Space of {i}'))
+    fig.write_html(f'{args.plots_save_dir}/AE_latent_space.html')
+
+    return best_ae_model
+
 
 def load_autoencoder(run_id, root_dir):
     run_path = os.path.join(root_dir, 'src/wandb/')
     run_path = glob(f"{run_path}/*{run_id}")[0]
     model_path = glob(f"{run_path}/files/*.ckpt")[0]
-    return Autoencoder.load_from_checkpoint(model_path)
+    return OldAutoencoder.load_from_checkpoint(model_path)
 
 def load_discriminator(run_id, root_dir):
     run_path = os.path.join(root_dir, 'src/wandb/')
@@ -245,9 +338,12 @@ def load_discriminator(run_id, root_dir):
 def load_local_autoencoder(checkpoint_path):
     return LocalAutoencoder.load_from_checkpoint(checkpoint_path)
 
+def load_unified_autoencoder(checkpoint_path):
+    return Autoencoder.load_from_checkpoint(checkpoint_path)
+
 def load_data(data_path):
     data = np.load(data_path)
-    return data['data'], data['colors']
+    return data['data'], data['dist'], data['colors'], data['phate']
 
 def encode_data(x, encoder, device):
     batch_size = 256
@@ -589,8 +685,30 @@ def main(args):
     if torch.backends.mps.is_available():
         device = 'mps'
 
+    # Load data.
+    x, x_dists, labels, phate_coords = load_data(args.data_path)
+    # Split into train/val/test.
+    train_idx, val_idx, test_idx = split_train_val_test(x, test_size=args.test_size, val_size=args.val_size)
+    train_x, train_labels = x[train_idx], labels[train_idx]
+    val_x, val_labels = x[val_idx], labels[val_idx]
+    test_x, test_labels = x[test_idx], labels[test_idx]
+    print(f'[Train] train_x: {train_x.shape}, train_labels: {train_labels.shape}')
+    print(f'[Val] val_x: {val_x.shape}, val_labels: {val_labels.shape}')
+    print(f'[Test] test_x: {test_x.shape}, test_labels: {test_labels.shape}')
+
     # Load models.
-    if args.use_local_ae:
+    if args.train_autoencoder:
+        print('Training autoencoder...')
+        train_leave_out_idx = np.where(train_labels != args.test_group)[0] # Leave out test group in training.
+        train_x_leave_out = train_x[train_leave_out_idx] 
+        train_x_dist = x_dists[train_idx][:, train_idx] # [N, N]
+        train_x_leave_out_labels = train_labels[train_leave_out_idx]
+        train_x_leave_out_dist = train_x_dist[train_leave_out_idx][:, train_leave_out_idx] # [N_leave_out, N_leave_out]
+        assert train_x_leave_out_dist.shape == (train_x_leave_out.shape[0], train_x_leave_out.shape[0])
+        print('Original train_x: ', train_x.shape)
+        print('After leaving out test group: ', train_x_leave_out.shape)
+        ae_model = train_autoencoder(train_x_leave_out, train_x_leave_out_dist, train_x_leave_out_labels, args)
+    elif args.use_local_ae:
         print('Loading local autoencoder...')
         #ae_model = load_local_autoencoder(args.ae_checkpoint_path)
         ae_model = load_local_autoencoder(f'{args.ae_checkpoint_dir}/{args.autoencoder_ckptname}')
@@ -598,17 +716,20 @@ def main(args):
         print('Loading autoencoder from wandb...')
         ae_model = load_autoencoder(args.ae_run_id, args.root_dir)
 
-    # Load data.
-    x, labels = load_data(args.data_path)
+    # X encodings.
+    # x, labels = load_data(args.data_path)
     x_encodings = encode_data(x, ae_model.encoder, device)
     print(f'[Data Loaded] x: {x.shape}, x_encodings: {x_encodings.shape}')
     print(f'[Data Loaded] Unique labels: {np.unique(labels)}')
+    train_x_encodings = x_encodings[train_idx]
+    val_x_encodings = x_encodings[val_idx]
+    test_x_encodings = x_encodings[test_idx]
 
     # Split into train/val/test.
-    train_idx, val_idx, test_idx = split_train_val_test(x, test_size=args.test_size, val_size=args.val_size)
-    train_x, train_x_encodings, train_labels = x[train_idx], x_encodings[train_idx], labels[train_idx]
-    val_x, val_x_encodings, val_labels = x[val_idx], x_encodings[val_idx], labels[val_idx]
-    test_x, test_x_encodings, test_labels = x[test_idx], x_encodings[test_idx], labels[test_idx]
+    # train_idx, val_idx, test_idx = split_train_val_test(x, test_size=args.test_size, val_size=args.val_size)
+    # train_x, train_x_encodings, train_labels = x[train_idx], x_encodings[train_idx], labels[train_idx]
+    # val_x, val_x_encodings, val_labels = x[val_idx], x_encodings[val_idx], labels[val_idx]
+    # test_x, test_x_encodings, test_labels = x[test_idx], x_encodings[test_idx], labels[test_idx]
     print(f'[Train] train_x: {train_x.shape}, train_x_encodings: {train_x_encodings.shape}, train_labels: {train_labels.shape}')
     print(f'[Val] val_x: {val_x.shape}, val_x_encodings: {val_x_encodings.shape}, val_labels: {val_labels.shape}')
     print(f'[Test] test_x: {test_x.shape}, test_x_encodings: {test_x_encodings.shape}, test_labels: {test_labels.shape}')
@@ -627,7 +748,6 @@ def main(args):
     # Leave out test group in training.
     print('Original train encodings shape: ', train_x_encodings.shape)
     train_x_encodings_leave_out = train_x_encodings[train_labels != args.test_group]
-    train_labels_leave_out = train_labels[train_labels != args.test_group]
     print('train_x_encodings_leave_out after removing test group: ', train_x_encodings_leave_out.shape)
 
     # Negative sampling.
@@ -922,7 +1042,10 @@ def eval(args):
         device = 'mps'
 
     # Load models
-    if args.use_local_ae:
+    if args.train_autoencoder:
+        print('Loading Unified-Trained autoencoder...')
+        ae_model = load_unified_autoencoder(f'{args.checkpoint_dir}/{args.autoencoder_ckptname}')
+    elif args.use_local_ae:
         print('Loading local autoencoder...')
         #ae_model = load_local_autoencoder(args.ae_checkpoint_path)
         ae_model = load_local_autoencoder(f'{args.ae_checkpoint_dir}/{args.autoencoder_ckptname}')
@@ -1200,6 +1323,29 @@ if __name__ == "__main__":
     parser.add_argument("--max_epochs", type=int, default=300, help="Maximum number of epochs")
     parser.add_argument("--log_every_n_steps", type=int, default=20, help="Log every n steps")
     parser.add_argument("--show_plot", action='store_true', help="Show plot")
+    # Autoencoder training
+    parser.add_argument("--train_autoencoder", action='store_true', help="Train autoencoder")
+    parser.add_argument("--ae_component_wise_normalization", action='store_true', help="Use component-wise normalization for autoencoder")
+    parser.add_argument("--ae_batch_size", type=int, default=256, help="Batch size for autoencoder")
+    parser.add_argument("--ae_max_epochs", type=int, default=200, help="Maximum number of epochs for training")
+    parser.add_argument("--ae_log_every_n_steps", type=int, default=100, help="Log every n steps for autoencoder")
+    parser.add_argument("--ae_early_stop_patience", type=int, default=50, help="Early stop patience for autoencoder")
+    parser.add_argument("--ae_latent_dim", type=int, default=3, help="Latent dimension")
+    parser.add_argument("--ae_batch_norm", action='store_true', help="Use batch normalization for autoencoder")
+    parser.add_argument("--ae_dropout", type=float, default=0.2, help="Dropout rate for autoencoder")
+    parser.add_argument("--ae_use_spectral_norm", action='store_true', help="Use spectral normalization for autoencoder")
+    parser.add_argument("--ae_dist_mse_decay", type=float, default=0.0, help="Decay rate for distance loss")
+    parser.add_argument("--ae_weights_dist", type=float, default=77.4, help="Weight for distance loss")
+    parser.add_argument("--ae_weights_reconstr", type=float, default=0.32, help="Weight for reconstruction loss")
+    parser.add_argument("--ae_weights_cycle", type=float, default=1, help="Weight for cycle loss")
+    parser.add_argument("--ae_weights_cycle_dist", type=float, default=0, help="Weight for cycle distance loss")
+    parser.add_argument("--ae_lr", type=float, default=1e-3, help="Learning rate for autoencoder")
+    parser.add_argument("--ae_weight_decay", type=float, default=1e-4, help="Weight decay for autoencoder")
+    parser.add_argument("--ambient_source", type=str, default='pca', help="Ambient source")
+    parser.add_argument("--ae_encoder_layer_width", type=int, nargs="+", default=[256, 128, 64], help="Encoder layer widths for autoencoder")
+    parser.add_argument("--ae_decoder_layer_width", type=int, nargs="+", default=[64, 128, 256], help="Decoder layer widths for autoencoder")
+    parser.add_argument("--ae_activation", type=str, default='relu', help="Activation function for autoencoder")
+
     # Add new arguments for discriminator training
     parser.add_argument("--disc_layer_widths", type=int, nargs="+", default=[256, 128, 64], help="Layer widths for discriminator")
     parser.add_argument("--disc_lr", type=float, default=1e-3, help="Learning rate for discriminator")
