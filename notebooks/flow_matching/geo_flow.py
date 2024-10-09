@@ -624,6 +624,12 @@ def main(args):
     plt.savefig(os.path.join(args.plots_save_dir, 'latent_space.png'))
 
 
+    # Leave out test group in training.
+    print('Original train encodings shape: ', train_x_encodings.shape)
+    train_x_encodings = train_x_encodings[train_labels != args.test_group]
+    train_labels = train_labels[train_labels != args.test_group]
+    print('Train encodings shape after removing test group: ', train_x_encodings.shape)
+
     # Negative sampling.
     if args.neg_method == 'add':
         #x_noisy = neg_sample_using_additive(x_encodings, args.noise_levels, noise_rate=args.noise_rate, seed=args.seed, noise=args.noise_type)
@@ -881,7 +887,6 @@ def main(args):
     # TODO: which samples to use for real data/generated data.
     real_idx = np.where(test_labels == test_group)[0]
     real_data = test_x[real_idx]
-    # traj = traj[10:-10, : , :]
     generated_data = traj.flatten(0,1) # [n_tsteps*n_samples, ambient_dim]
     print('[Eval] Real data shape: ', real_data.shape, 'Generated data shape: ', generated_data.shape)
     # TODO: do we need to have the same number of samples for real and generated data?
