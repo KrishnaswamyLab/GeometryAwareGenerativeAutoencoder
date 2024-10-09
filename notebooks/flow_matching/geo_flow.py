@@ -1118,6 +1118,8 @@ def eval(args):
     # TODO: which samples to use for real data/generated data.
     real_idx = np.where(test_labels == test_group)[0]
     real_data = test_x[real_idx]
+    # real_idx = np.where(labels != test_group)[0]
+    # real_data = x[real_idx]
     #traj = traj[5:-5, : , :]
     # sampled_ts = [int(n_tsteps * 0.2), int(n_tsteps * 0.9)]
     # traj = traj[sampled_ts[0]:sampled_ts[1], :, :] # [sampled_n_tsteps, n_samples, ambient_dim]
