@@ -1056,7 +1056,7 @@ def eval(args):
     wd_model = Discriminator.load_from_checkpoint(f'{args.checkpoint_dir}/{args.discriminator_ckptname}')
 
     # Load data
-    x, labels = load_data(args.data_path)
+    x, x_distances, labels, phate_coords = load_data(args.data_path)
     x_encodings = encode_data(x, ae_model.encoder, device)
     train_idx, val_idx, test_idx = split_train_val_test(x, test_size=args.test_size, val_size=args.val_size)
     train_x, train_x_encodings, train_labels = x[train_idx], x_encodings[train_idx], labels[train_idx]

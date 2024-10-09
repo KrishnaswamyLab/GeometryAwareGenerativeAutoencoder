@@ -428,9 +428,22 @@ def main(args, run=None):
     else:
         data_dict = load_data(args.data_path)
         pointcloud, distances, labels, phate_coords = data_dict
+    
+    # Leave one out from the train
+    print('Original pointcloud: ', pointcloud.shape, distances.shape, labels.shape)
+    test_group = args.test_group
+    pointcloud_leave_out_idx = np.where(labels != test_group)[0]
+    pointcloud_leave_out = pointcloud[pointcloud_leave_out_idx]
+    pointcloud_leave_out_distances = distances[pointcloud_leave_out_idx][:, pointcloud_leave_out_idx]
+    pointcloud_leave_out_labels = labels[pointcloud_leave_out_idx]
+
+    print('After removing test group: ', 'x: ', pointcloud_leave_out.shape, 'x_dist: ', pointcloud_leave_out_distances.shape, 'x_labels: ', pointcloud_leave_out_labels.shape)
+
 
     # Split data into train and validation sets
-    train_pointcloud, train_distances, train_labels, val_pointcloud, val_distances, val_labels, test_pointcloud, test_distances, test_labels = split_pointcloud(pointcloud, distances, labels)
+    train_pointcloud, train_distances, train_labels, val_pointcloud, val_distances, val_labels, test_pointcloud, test_distances, test_labels = split_pointcloud(pointcloud_leave_out, 
+                                                                                                                                                                pointcloud_leave_out_distances, 
+                                                                                                                                                                pointcloud_leave_out_labels)
     train_dataset = PointCloudDataset(train_pointcloud, train_distances)
     val_dataset = PointCloudDataset(val_pointcloud, val_distances)
     test_dataset = PointCloudDataset(test_pointcloud, test_distances)
@@ -540,6 +553,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Autoencoder")
     parser.add_argument("--mode", type=str, default='train', help="train|eval")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--test_group", type=int, help="Test group for leave-one-out Experiment")
     parser.add_argument("--eb_h5ad_path", type=str, default=None, help="Path to the preprocessed EB data")
     parser.add_argument("--ambient_source", type=str, default='hvg', help="Ambient source")
     parser.add_argument("--data_save_dir", type=str, default='../../data/', help="Directory to save data")
