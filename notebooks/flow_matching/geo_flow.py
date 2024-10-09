@@ -626,17 +626,17 @@ def main(args):
 
     # Leave out test group in training.
     print('Original train encodings shape: ', train_x_encodings.shape)
-    train_x_encodings = train_x_encodings[train_labels != args.test_group]
-    train_labels = train_labels[train_labels != args.test_group]
-    print('Train encodings shape after removing test group: ', train_x_encodings.shape)
+    train_x_encodings_leave_out = train_x_encodings[train_labels != args.test_group]
+    train_labels_leave_out = train_labels[train_labels != args.test_group]
+    print('train_x_encodings_leave_out after removing test group: ', train_x_encodings_leave_out.shape)
 
     # Negative sampling.
     if args.neg_method == 'add':
         #x_noisy = neg_sample_using_additive(x_encodings, args.noise_levels, noise_rate=args.noise_rate, seed=args.seed, noise=args.noise_type)
-        x_noisy = neg_sample_using_additive(train_x_encodings, args.noise_levels, noise_rate=args.noise_rate, seed=args.seed, noise=args.noise_type)
+        x_noisy = neg_sample_using_additive(train_x_encodings_leave_out, args.noise_levels, noise_rate=args.noise_rate, seed=args.seed, noise=args.noise_type)
     elif args.neg_method == 'diffusion':
         #x_noisy = neg_sample_using_diffusion(x_encodings, args.t, args.num_steps, args.beta_start, args.beta_end, seed=args.seed)
-        x_noisy = neg_sample_using_diffusion(train_x_encodings, args.t, args.num_steps, args.beta_start, args.beta_end, seed=args.seed)
+        x_noisy = neg_sample_using_diffusion(train_x_encodings_leave_out, args.t, args.num_steps, args.beta_start, args.beta_end, seed=args.seed)
     else:
         raise ValueError(f"Invalid negative sampling method: {args.neg_method}")
     assert x_noisy.shape[-1] == x_encodings.shape[-1]
@@ -644,7 +644,7 @@ def main(args):
     if args.sampling_rejection:
         #rejected_idx = sampling_rejection(x_encodings, x_noisy, 
         #                                  method=args.sampling_rejection_method, k=args.sampling_rejection_k, threshold=args.sampling_rejection_threshold)
-        rejected_idx = sampling_rejection(train_x_encodings, x_noisy, 
+        rejected_idx = sampling_rejection(train_x_encodings_leave_out, x_noisy, 
                                           method=args.sampling_rejection_method, k=args.sampling_rejection_k, threshold=args.sampling_rejection_threshold)
         all_x_noisy = x_noisy.copy()
         x_noisy = x_noisy[~rejected_idx]
@@ -652,7 +652,7 @@ def main(args):
 
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(x_encodings[:,0], x_encodings[:,1], x_encodings[:,2], c='gray', cmap='viridis', alpha=0.8)
+    ax.scatter(train_x_encodings_leave_out[:,0], train_x_encodings_leave_out[:,1], train_x_encodings_leave_out[:,2], c='gray', cmap='viridis', alpha=0.8)
     ax.scatter(x_noisy[:,0], x_noisy[:,1], x_noisy[:,2], c='red', cmap='viridis', alpha=0.6)
     if args.sampling_rejection:
         ax.scatter(all_x_noisy[rejected_idx,0], all_x_noisy[rejected_idx,1], all_x_noisy[rejected_idx,2], c='green', cmap='viridis', alpha=0.4)
@@ -664,7 +664,7 @@ def main(args):
         raise NotImplementedError('GP not implemented.')
     else:
         print('Training new discriminator using standard CE loss.')
-        wd_model = train_discriminator(torch.tensor(train_x_encodings, dtype=torch.float32), # NOTE: x_encodings vs train_x_encodings.
+        wd_model = train_discriminator(torch.tensor(train_x_encodings_leave_out, dtype=torch.float32), # NOTE: x_encodings vs train_x_encodings.
                                         torch.tensor(x_noisy, dtype=torch.float32),
                                         ae_model.encoder,
                                         args) # TODO: we may want to use the same split on x here for geodesicFM?
