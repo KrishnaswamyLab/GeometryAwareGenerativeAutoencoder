@@ -3,7 +3,7 @@
 conda activate yale529
 
 python geo_flow.py \
-    --max_epochs 50 \
+    --max_epochs 1 \
     --visualize_training \
     --neg_method add \
     --num_samples 128 \
@@ -22,16 +22,41 @@ python geo_flow.py \
     --embed_t \
     --plotly \
     --test_group 1 \
-    --data_path ../../data/cite_D-50_d-3_pca.npz \
     --start_idx 736 \
     --end_idx 2543 \
     --start_group 0 \
     --end_group 2 \
     --range_size 0.3 \
     --use_all_group_points \
-    --use_local_ae \
-    --ae_checkpoint_path ./ae_checkpoints/autoencoder-v17.ckpt \
-    --mode eval \
+    --data_path ../../data/cite_all_D-1000_d-3_hvg.npz \
+    --train_autoencoder \
+    --ae_max_epochs 200 \
+    --ae_early_stop_patience 50 \
+    --ae_latent_dim 3 \
+    --ae_batch_norm \
+    --ae_use_spectral_norm \
+    --ae_dropout 0.2 \
+    --ae_dist_mse_decay 0.0 \
+    --ae_weights_dist 77.4 \
+    --ae_weights_reconstr 0.32 \
+    --ae_weights_cycle 1 \
+    --ae_weights_cycle_dist 0 \
+    --ae_lr 1e-3 \
+    --ae_weight_decay 1e-4 \
+    --ambient_source hvg \
+    # --autoencoder_ckptname autoencoder-v1.ckpt \
+    # --discriminator_ckptname discriminator-v1.ckpt \
+    # --gbmodel_ckptname gbmodel.ckpt \
+    # --mode eval \
+    # --use_local_ae \
+    # --ae_checkpoint_dir ./ae_checkpoints \
+    # --autoencoder_ckptname autoencoder-v1.ckpt \
+    # --discriminator_ckptname discriminator-v1.ckpt \
+    # --gbmodel_ckptname gbmodel.ckpt \
+    # --mode eval \
+
+
+    # --data_path ../../data/eb_subset_all.npz \
 
 # python latent_discriminator.py \
 #     --max_epochs 50 \

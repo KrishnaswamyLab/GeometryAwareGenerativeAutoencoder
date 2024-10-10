@@ -3,7 +3,7 @@
 conda activate yale529
 
 python train_autoencoder.py \
-    --ae_max_epochs 100 \
+    --ae_max_epochs 200 \
     --ae_early_stop_patience 50 \
     --latent_dim 3 \
     --batch_norm \
@@ -16,10 +16,15 @@ python train_autoencoder.py \
     --weights_cycle_dist 0 \
     --lr 1e-3 \
     --weight_decay 1e-4 \
-    --ambient_dim 50 \
     --ambient_source pca \
+    --test_group 2 \
     --data_save_dir ../../data/ \
-    --data_path ../../data/cite_D-50_d-3_pca.npz \
+    --data_path ../../data/multi_D-100_d-3_pca.npz \
+    # --data_path ../../data/multi_D-100_d-3_pca.npz \
+    # --data_path ../../data/cite_all_D-50_d-3_pca.npz \
+    # --data_path ../../data/cite_all_D-100_d-3_pca.npz \
+    # --data_path ../../data/cite_all_D-50_d-3_pca.npz \
+    # --data_path ../../data/eb_subset_all.npz \
+    # --data_path ../../data/cite_D-50_d-3_pca.npz \
     # --eb_h5ad_path ../../data/eb.h5ad \
-    # --data_path ../../data/eb_all.npz \
     # --mode eval \

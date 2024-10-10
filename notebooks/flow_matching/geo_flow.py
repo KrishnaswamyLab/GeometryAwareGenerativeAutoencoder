@@ -818,6 +818,7 @@ def main(args):
 
 
     ''' ====== Train GeodesicFM ====== '''
+    device = 'cpu'
     if args.use_all_group_points: # Use all points in the start/end group.
         train_start_pts = train_x[train_labels == args.start_group]
         train_end_pts = train_x[train_labels == args.end_group]
@@ -879,7 +880,7 @@ def main(args):
     distance_func_in_latent = lambda z: torch.exp(alpha * (1 - wd_model.positive_prob(z)))
     ofm = offmanifolder_maker_new(enc_func, disc_func, 
                                   disc_factor=args.disc_factor, 
-                                  data_encodings=torch.tensor(x_encodings, dtype=torch.float32).to(device))
+                                  data_encodings=None)
     # Visualize offmanifolder.
     # ofm_scores = distance_func_in_latent(torch.tensor(x_encodings, dtype=torch.float32).to(device)).cpu().detach().numpy()
     # ofm_scores_noisy = distance_func_in_latent(torch.tensor(x_noisy, dtype=torch.float32).to(device)).cpu().detach().numpy()
