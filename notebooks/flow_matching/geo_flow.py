@@ -636,22 +636,19 @@ def visualize_generated(generated_data, real_data, x_encodings, labels, save_pat
         print('[Visualization] Saving plotly plot to ', f'{file_dir}/{file_basename}.html')
         fig.write_html(f'{file_dir}/{file_basename}.html')
 
-def eval_distributions(generated_data, real_data, cost_metric='euclidean', use_pca=True):
+def eval_distributions(generated_data, real_data, cost_metric='euclidean'):
     """
         Compute the Wasserstein 1 distancebetween the generated and real data.
         generated_data: [N, latent_dim]
         real_data: [N, latent_dim]
     """
     print('Computing Wasserstein 1 distance... generated: ', generated_data.shape, 'real: ', real_data.shape)
-    if use_pca:
-        pca_op = PCA(n_components=5)
-        generated_data = pca_op.fit_transform(generated_data)
-        real_data = pca_op.fit_transform(real_data)
 
     if not isinstance(generated_data, torch.Tensor):
         generated_data = torch.tensor(generated_data, dtype=torch.float32)
     if not isinstance(real_data, torch.Tensor):
         real_data = torch.tensor(real_data, dtype=torch.float32)
+
     if cost_metric == 'euclidean':
         # cost_matrix = torch.cdist(generated_data, real_data)
         cost_matrix = ot.dist(generated_data, real_data, metric='euclidean')
@@ -1016,7 +1013,7 @@ def main(args):
     # real_samples_idx = np.random.choice(np.arange(real_data.shape[0]), size=num_samples, replace=False)
     # real_data = real_data[real_samples_idx]
     
-    wasserstein_distance = eval_distributions(generated_data, real_data, cost_metric='euclidean', use_pca=False)
+    wasserstein_distance = eval_distributions(generated_data, real_data, cost_metric='euclidean')
     print('[Eval] Wasserstein-1 distance: ', wasserstein_distance.item())
     log(f'[Eval] Wasserstein-1 distance with target test group {test_group}: {wasserstein_distance.item()}', os.path.join(args.plots_save_dir, 'eval.log'))
 
@@ -1257,7 +1254,7 @@ def eval(args):
     print('[Eval] Real data shape: ', real_data.shape, 'Generated data shape: ', generated_data.shape)
     log(f'[Eval] Real data shape: {real_data.shape}, Generated data shape: {generated_data.shape}', os.path.join(args.plots_save_dir, 'eval.log'))
     
-    wasserstein_distance = eval_distributions(generated_data, real_data, cost_metric='euclidean', use_pca=False)
+    wasserstein_distance = eval_distributions(generated_data, real_data, cost_metric='euclidean')
     print('[Eval] Wasserstein-1 distance: ', wasserstein_distance.item())
     log(f'[Eval] W1 distance with target group {test_group}: {wasserstein_distance.item()}', os.path.join(args.plots_save_dir, 'eval.log'))
     # Plot the generated and real data in latent space.
@@ -1378,9 +1375,9 @@ if __name__ == "__main__":
 
     data_filename = os.path.basename(args.data_path)
     data_name = data_filename.split('.')[0]
-    args.plots_save_dir = f"{data_name}_alpha-{args.alpha}_factor-{args.disc_factor}_{os.path.basename(args.plots_save_dir)}"
-    args.checkpoint_dir = f"{data_name}_alpha-{args.alpha}_factor-{args.disc_factor}_{os.path.basename(args.checkpoint_dir)}"
-    args.ae_checkpoint_dir = f"{data_name}_{os.path.basename(args.ae_checkpoint_dir)}"
+    args.plots_save_dir = f"{data_name}_t-{args.test_group}_alpha-{args.alpha}_factor-{args.disc_factor}_{os.path.basename(args.plots_save_dir)}"
+    args.checkpoint_dir = f"{data_name}_t-{args.test_group}_alpha-{args.alpha}_factor-{args.disc_factor}_{os.path.basename(args.checkpoint_dir)}"
+    args.ae_checkpoint_dir = f"{data_name}_t-{args.test_group}_{os.path.basename(args.ae_checkpoint_dir)}"
     print('args.plots_save_dir: ', args.plots_save_dir)
     print('args.checkpoint_dir: ', args.checkpoint_dir)
     print('args.ae_checkpoint_dir: ', args.ae_checkpoint_dir)

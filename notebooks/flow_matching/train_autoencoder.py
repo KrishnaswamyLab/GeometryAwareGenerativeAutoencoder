@@ -587,8 +587,8 @@ if __name__ == "__main__":
 
     data_filename = os.path.basename(args.data_path)
     data_name = data_filename.split('.')[0]
-    args.checkpoint_dir = f"{data_name}_{os.path.basename(args.checkpoint_dir)}"
-    args.plots_save_dir = f"{data_name}_{os.path.basename(args.plots_save_dir)}"
+    args.checkpoint_dir = f"{data_name}_t-{args.test_group}_{os.path.basename(args.checkpoint_dir)}"
+    args.plots_save_dir = f"{data_name}_t-{args.test_group}_{os.path.basename(args.plots_save_dir)}"
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     os.makedirs(args.plots_save_dir, exist_ok=True)
 
