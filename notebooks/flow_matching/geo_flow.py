@@ -709,6 +709,9 @@ def main(args):
         print('Loading local autoencoder...')
         #ae_model = load_local_autoencoder(args.ae_checkpoint_path)
         ae_model = load_local_autoencoder(f'{args.ae_checkpoint_dir}/{args.autoencoder_ckptname}')
+    elif args.ae_use_pretrained:
+        print('Loading pretrained Unified autoencoder...')
+        ae_model = load_unified_autoencoder(f'{args.checkpoint_dir}/{args.autoencoder_ckptname}')
     else:
         print('Loading autoencoder from wandb...')
         ae_model = load_autoencoder(args.ae_run_id, args.root_dir)
@@ -779,6 +782,9 @@ def main(args):
     ''' Train new discriminator. '''
     if args.disc_use_gp:
         raise NotImplementedError('GP not implemented.')
+    elif args.disc_use_pretrained:
+        print('Loading pretrained discriminator...')
+        wd_model = Discriminator.load_from_checkpoint(f'{args.checkpoint_dir}/{args.discriminator_ckptname}')
     else:
         print('Training new discriminator using standard CE loss.')
         wd_model = train_discriminator(torch.tensor(train_x_encodings_leave_out, dtype=torch.float32), # NOTE: x_encodings vs train_x_encodings.
@@ -1210,7 +1216,7 @@ def eval(args):
 
     ''' Neural ODE to integrate the learned flow/vector field. '''
     print('=========== Running ODE on learned vector field ==========')
-    n_samples = min(100, start_pts.shape[0])
+    # n_samples = min(100, start_pts.shape[0])
     flow_ode = ODEFuncWrapper(gbmodel.flow_model).to('cpu')
     log(f'[Eval] Running ODE on learned vector field ...', os.path.join(args.plots_save_dir, 'eval.log'))
     log(f'[Eval] Start Group: {args.start_group}, End Group: {args.end_group}, Test Group: {args.test_group}', os.path.join(args.plots_save_dir, 'eval.log'))
@@ -1321,6 +1327,7 @@ if __name__ == "__main__":
     parser.add_argument("--log_every_n_steps", type=int, default=20, help="Log every n steps")
     parser.add_argument("--show_plot", action='store_true', help="Show plot")
     # Autoencoder training
+    parser.add_argument("--ae_use_pretrained", action='store_true', help="Use pretrained autoencoder")
     parser.add_argument("--train_autoencoder", action='store_true', help="Train autoencoder")
     parser.add_argument("--ae_component_wise_normalization", action='store_true', help="Use component-wise normalization for autoencoder")
     parser.add_argument("--ae_batch_size", type=int, default=256, help="Batch size for autoencoder")
@@ -1344,6 +1351,7 @@ if __name__ == "__main__":
     parser.add_argument("--ae_activation", type=str, default='relu', help="Activation function for autoencoder")
 
     # Add new arguments for discriminator training
+    parser.add_argument("--disc_use_pretrained", action='store_true', help="Use pretrained discriminator")
     parser.add_argument("--disc_layer_widths", type=int, nargs="+", default=[256, 128, 64], help="Layer widths for discriminator")
     parser.add_argument("--disc_lr", type=float, default=1e-3, help="Learning rate for discriminator")
     parser.add_argument("--disc_weight_decay", type=float, default=1e-4, help="Weight decay for discriminator")
