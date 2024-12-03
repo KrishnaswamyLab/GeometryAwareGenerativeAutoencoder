@@ -167,3 +167,11 @@ synthetic_data/
 notebooks/affinity_matching/
 
 jobs/*
+
+*.txt
+*.html
+*.bak
+*.ckpt
+*.tar.gz
+src/model_unet.py
+*.png
