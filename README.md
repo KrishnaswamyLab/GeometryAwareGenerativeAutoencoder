@@ -41,3 +41,15 @@ python data_script.py
 # example with overwriting the default parameters. Config file: separate_affinityae.yaml
 python separate_affinityae.py logger.use_wandb=true data.name=swiss_roll model.prob_method=heat_kernel
 ```
+
+## Geodesic Flow Matching with CITE Data in 100 PCA Dimension
+- Train the model
+```sh
+cd notebooks/flow_matching
+./train.sh
+```
+- Evaluate the model
+```sh
+cd notebooks/flow_matching
+./eval.sh
+```

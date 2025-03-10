@@ -1033,7 +1033,7 @@ class GeodesicBridgeDensityEuc(GeodesicBridgeDensity):
 
 import plotly.graph_objects as go
 import os
-import moviepy.editor as mpy
+# import moviepy.editor as mpy
 class GeodesicFM(GeodesicBridgeOverfit):
     def __init__(self,
                 func,
@@ -1268,19 +1268,19 @@ class GeodesicFM(GeodesicBridgeOverfit):
         os.makedirs(self.training_save_dir, exist_ok=True)
         fig.write_image(f'{self.training_save_dir}/trajs_epoch_{self.current_epoch+1:04d}.png')
     
-    def on_train_end(self):
-        if self.visualize_training is False:
-            return
-        self.frame_dir = self.training_save_dir
-        self.video_output_path = f'{self.training_save_dir}/../trajs.mp4'
-        # Create video from saved frames
-        frames = [f for f in os.listdir(self.frame_dir) if f.endswith('.png')]
-        frames.sort()
+    # def on_train_end(self):
+    #     if self.visualize_training is False:
+    #         return
+    #     self.frame_dir = self.training_save_dir
+    #     self.video_output_path = f'{self.training_save_dir}/../trajs.mp4'
+    #     # Create video from saved frames
+    #     frames = [f for f in os.listdir(self.frame_dir) if f.endswith('.png')]
+    #     frames.sort()
         
-        clip = mpy.ImageSequenceClip([os.path.join(self.frame_dir, f) for f in frames], fps=2)
-        clip.write_videofile(self.video_output_path, audio=False)
+    #     clip = mpy.ImageSequenceClip([os.path.join(self.frame_dir, f) for f in frames], fps=2)
+    #     clip.write_videofile(self.video_output_path, audio=False)
 
-        # Clean up frame directory
-        for f in frames:
-            os.remove(os.path.join(self.frame_dir, f))
-        os.rmdir(self.frame_dir)
+    #     # Clean up frame directory
+    #     for f in frames:
+    #         os.remove(os.path.join(self.frame_dir, f))
+    #     os.rmdir(self.frame_dir)

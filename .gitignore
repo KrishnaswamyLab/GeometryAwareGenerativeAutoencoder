@@ -1,10 +1,7 @@
-/notebooks/flow_matching/*.pdf
-/notebooks/flow_matching/eb_fm/
-/notebooks/flow_matching/*.png
-/notebooks/flow_matching/*/*.png
-/notebooks/flow_matching/*/*.mp4
-/notebooks/flow_matching/*.h5ad
-/notebooks/flow_matching/*/plots/
+/notebooks/flow_matching/*
+!/notebooks/flow_matching/*.py
+!/notebooks/flow_matching/*.sh
+!/notebooks/flow_matching/*.ipynb
 /src/comparison/*
 !/src/comparison/*.py
 !/src/comparison/*.ipynb
