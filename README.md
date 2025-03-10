@@ -1,3 +1,21 @@
+# [AISTATS 2025] Geometry-Aware Generative Autoencoder (GAGA)
+This is the code for the paper: [AISTATS 2025] Geometry-Aware Generative Autoencoder for Warped Riemannian
+Metric Learning and Generative Modeling on Data Manifolds. 
+
+# Citation
+If you find this work useful in your research, please consider citing:
+```bibtex
+@misc{sun2025geometryawaregenerativeautoencoderswarped,
+      title={Geometry-Aware Generative Autoencoders for Warped Riemannian Metric Learning and Generative Modeling on Data Manifolds}, 
+      author={Xingzhi Sun and Danqi Liao and Kincaid MacDonald and Yanlei Zhang and Chen Liu and Guillaume Huguet and Guy Wolf and Ian Adelstein and Tim G. J. Rudner and Smita Krishnaswamy},
+      year={2025},
+      eprint={2410.12779},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2410.12779}, 
+}
+```
+
 # Installation
 ```sh
 conda create -n dmae -c conda-forge python=3.11.5
@@ -10,7 +28,8 @@ If you also want to use jupyter notebooks, install
 conda install -c anaconda ipykernel
 python -m ipykernel install --user --name=dmae
 ```
-# Getting Started:
+
+# Visualizing the geometry-aware data encoder
 ## Example with toy swiss roll data (npy format)
 - Generate the data: [notebooks/swiss_roll_data.ipynb](notebooks/swiss_roll_data.ipynb)
 - run the model:
@@ -29,26 +48,17 @@ python main.py logger.use_wandb=False data.file_type=h5ad data.require_phate=Fal
 ```
 - check the results: [notebooks/BMMC_myeloid_result.ipynb](notebooks/BMMC_myeloid_result.ipynb)
 
-## Train Affinity Matching AE
-- generate data
-```sh
-# Data Config file: af_data.yaml. The data will be saved in the '../data' folder.
-python data_script.py
 
-```
-- train Affinity Matching AE. The decoder is trained separately from the encoder.
-```sh
-# example with overwriting the default parameters. Config file: separate_affinityae.yaml
-python separate_affinityae.py logger.use_wandb=true data.name=swiss_roll model.prob_method=heat_kernel
-```
-
-## Geodesic Flow Matching with CITE Data in 100 PCA Dimension
-- Train the model
+# Transporting population for Multi, CITE single-cell data
+## Prepare the data
+- Download the data from [kaggle](https://www.kaggle.com/competitions/open-problems-multimodal/data)
+- Prepare the data with [notebooks/multi_data.ipynb](notebooks/multi_data.ipynb) and [notebooks/cite_data.ipynb](notebooks/cite_data.ipynb)
+- Train the model (the example is for CITE data in 100 PCA dimension)
 ```sh
 cd notebooks/flow_matching
 ./train.sh
 ```
-- Evaluate the model
+- Evaluate the model (the example is for CITE data in 100 PCA dimension)
 ```sh
 cd notebooks/flow_matching
 ./eval.sh

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Train the model on CITE data
 
-conda activate mioflow
+conda activate dmae
 
 python geo_flow.py \
     --max_epochs 1 \
