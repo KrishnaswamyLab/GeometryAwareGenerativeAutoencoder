@@ -165,13 +165,55 @@ def offmanifolder6_maker(
     encoder_, 
     discriminator_, 
     disc_factor = 4,
+    data_encodings = None,
     # max_prob=1.
 ):
+    def distance_penalty(z):
+        dist = torch.cdist(z, data_encodings) # [n, n]
+        k = 20
+        nearest_dist = torch.topk(dist, k, largest=False, sorted=False)[0][:,1:] # [n, 1]
+        print('[top 20] nearest_dist mean: ', torch.mean(nearest_dist))
+        return torch.mean(nearest_dist, dim=1) # [n]
+        #return nearest_dist 
+        
     def ofm_(x):
         z = encoder_(x)
-        # weighting_factor1 = (max_prob-discriminator_(x))/max_prob*disc_factor
-        # weighting_factor2 = torch.exp(weighting_factor1)
+        #_distance_penalty = distance_penalty(encoder_(x))
+        #return torch.cat([z, (discriminator_(x) + _distance_penalty).unsqueeze(1).repeat(1, 1)], dim=1)
         return torch.cat([z, (discriminator_(x) * disc_factor).unsqueeze(1).repeat(1, 1)], dim=1)
     return ofm_
 
+def offmanifolder_density_maker(
+    encoder_, 
+    discriminator_, 
+    disc_factor = 4,
+    data_encodings = None,
+    # max_prob=1.
+):
+    def distance_penalty(z):
+        dist = torch.cdist(z, data_encodings) # [n, n]
+        k = 5
+        nearest_dist = torch.topk(dist, k, largest=False, sorted=False)[0][:,1] # [n, 1]
+        print('[top1] nearest_dist mean: ', torch.mean(nearest_dist))
+        #return torch.mean(nearest_dist, dim=1) # [n]
+        return nearest_dist
+
+    def extended_dim(x):
+        z = encoder_(x)
+        density_penalty = distance_penalty(z) # [n]
+        extended_dims = (density_penalty * disc_factor).unsqueeze(1).repeat(1, 1)
+        print('extended_dims shape: ', extended_dims.shape)
+        return extended_dims
+
+    def ofm_(x):
+        z = encoder_(x)
+        density_penalty = distance_penalty(z) # [n]
+        extended = (density_penalty * disc_factor).unsqueeze(1).repeat(1, 1)
+
+        return torch.cat([z, extended], dim=1)
+    
+    return ofm_, extended_dim
+
+
 offmanifolder_maker_new = offmanifolder6_maker
+offmanifolder_density_maker = offmanifolder_density_maker
