@@ -1,6 +1,6 @@
 # [AISTATS 2025] Geometry-Aware Generative Autoencoder (GAGA)
-This is the code for the paper: [AISTATS 2025] Geometry-Aware Generative Autoencoder for Warped Riemannian
-Metric Learning and Generative Modeling on Data Manifolds. 
+This is the code for the paper: [AISTATS 2025] [Geometry-Aware Generative Autoencoder for Warped Riemannian
+Metric Learning and Generative Modeling on Data Manifolds](https://arxiv.org/abs/2410.12779). 
 
 # Citation
 If you find this work useful in your research, please consider citing:
@@ -50,7 +50,6 @@ python main.py logger.use_wandb=False data.file_type=h5ad data.require_phate=Fal
 
 
 # Transporting population for Multi, CITE single-cell data
-## Prepare the data
 - Download the data from [kaggle](https://www.kaggle.com/competitions/open-problems-multimodal/data)
 - Prepare the data with [notebooks/multi_data.ipynb](notebooks/multi_data.ipynb) and [notebooks/cite_data.ipynb](notebooks/cite_data.ipynb)
 - Train the model (the example is for CITE data in 100 PCA dimension)
