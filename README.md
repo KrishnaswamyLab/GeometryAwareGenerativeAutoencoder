@@ -1,6 +1,6 @@
-# [AISTATS 2025] Geometry-Aware Generative Autoencoder (GAGA)
-This is the code for the paper: [AISTATS 2025] [Geometry-Aware Generative Autoencoder for Warped Riemannian
-Metric Learning and Generative Modeling on Data Manifolds](https://arxiv.org/abs/2410.12779). 
+# [AISTATS 2025] Geometry-Aware Generative Autoencoder (GAGA) 💃🪩
+This is the code for the paper [Geometry-Aware Generative Autoencoder for Warped Riemannian
+Metric Learning and Generative Modeling on Data Manifolds](https://arxiv.org/abs/2410.12779), AISTATS 2025.
 
 # Citation
 If you find this work useful in your research, please consider citing:

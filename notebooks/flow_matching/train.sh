@@ -4,7 +4,7 @@
 conda activate dmae
 
 python geo_flow.py \
-    --max_epochs 1 \
+    --max_epochs 10 \
     --neg_method add \
     --num_samples 128 \
     --batch_size 32 \
@@ -15,7 +15,7 @@ python geo_flow.py \
     --disc_batch_size 128 \
     --disc_layer_widths 256 128 64 \
     --disc_factor 10 \
-    --disc_max_epochs 1 \
+    --disc_max_epochs 100 \
     --alpha 8.0 \
     --fixed_pot \
     --embed_t \
@@ -26,7 +26,7 @@ python geo_flow.py \
     --use_all_group_points \
     --data_path ../../data/cite_all_D-100_d-3_pca.npz \
     --train_autoencoder \
-    --ae_max_epochs 2 \
+    --ae_max_epochs 100 \
     --ae_early_stop_patience 50 \
     --ae_latent_dim 3 \
     --ae_batch_norm \
