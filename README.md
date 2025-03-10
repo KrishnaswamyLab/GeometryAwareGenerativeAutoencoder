@@ -29,13 +29,19 @@ conda install -c anaconda ipykernel
 python -m ipykernel install --user --name=dmae
 ```
 
-# Visualizing the geometry-aware data encoder
+# Visualizing the geometry-aware encoder
 ## Example with toy swiss roll data (npy format)
 - Generate the data: [notebooks/swiss_roll_data.ipynb](notebooks/swiss_roll_data.ipynb)
 - run the model:
 ```sh
 cd src
-python main.py logger.use_wandb=False data.file_type=npy data.require_phate=False data.datapath=../data/swiss_roll.npy data.phatepath=../data/swiss_roll_phate.npy training.max_epochs=5
+python main.py \
+    logger.use_wandb=False \
+    data.file_type=npy \
+    data.require_phate=False \
+    data.datapath=../data/swiss_roll.npy \
+    data.phatepath=../data/swiss_roll_phate.npy \
+    training.max_epochs=5
 ```
 - check the results: [notebooks/swiss_roll_result.ipynb](notebooks/swiss_roll_result.ipynb)
 ## Example with BMMC myeloid data (anndata format)
@@ -44,7 +50,11 @@ python main.py logger.use_wandb=False data.file_type=npy data.require_phate=Fals
 - run the model:
 ```sh
 cd src
-python main.py logger.use_wandb=False data.file_type=h5ad data.require_phate=False data.datapath=../data/BMMC_myeloid.h5ad
+python main.py \
+    logger.use_wandb=False \
+    data.file_type=h5ad \
+    data.require_phate=False \
+    data.datapath=../data/BMMC_myeloid.h5ad
 ```
 - check the results: [notebooks/BMMC_myeloid_result.ipynb](notebooks/BMMC_myeloid_result.ipynb)
 
@@ -52,12 +62,12 @@ python main.py logger.use_wandb=False data.file_type=h5ad data.require_phate=Fal
 # Transporting population for Multi, CITE single-cell data
 - Download the data from [kaggle](https://www.kaggle.com/competitions/open-problems-multimodal/data)
 - Prepare the data with [notebooks/multi_data.ipynb](notebooks/multi_data.ipynb) and [notebooks/cite_data.ipynb](notebooks/cite_data.ipynb)
-- Train the model (the example is for CITE data in 100 PCA dimension)
+- Train the model (the example runs for CITE data in 100 PCA dimension)
 ```sh
 cd notebooks/flow_matching
 ./train.sh
 ```
-- Evaluate the model (the example is for CITE data in 100 PCA dimension)
+- Evaluate the model (the example runs for CITE data in 100 PCA dimension)
 ```sh
 cd notebooks/flow_matching
 ./eval.sh
