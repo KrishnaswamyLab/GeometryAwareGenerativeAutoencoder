@@ -59,7 +59,7 @@ python main.py \
 - check the results: [notebooks/BMMC_myeloid_result.ipynb](notebooks/BMMC_myeloid_result.ipynb)
 
 
-# Transporting population for Multi, CITE single-cell data
+# Transporting population for single-cell data
 - Download the data from [kaggle](https://www.kaggle.com/competitions/open-problems-multimodal/data)
 - Prepare the data with [notebooks/multi_data.ipynb](notebooks/multi_data.ipynb) and [notebooks/cite_data.ipynb](notebooks/cite_data.ipynb)
 - Train the model (the example runs for CITE data in 100 PCA dimension)
