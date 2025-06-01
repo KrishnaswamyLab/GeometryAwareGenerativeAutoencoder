@@ -3,7 +3,8 @@
 </h1>
 
 <div align="center">
-  <b>G</b>eometry-<b>A</b>ware <b>G</b>enerative <b>A</b>utoencoder for Warped Riemannian Metric Learning and Generative Modeling on Data Manifolds
+  <b>G</b>eometry-<b>A</b>ware <b>G</b>enerative <b>A</b>utoencoder for<br>
+  Warped Riemannian Metric Learning and Generative Modeling on Data Manifolds
 </div>
 <br>
 
