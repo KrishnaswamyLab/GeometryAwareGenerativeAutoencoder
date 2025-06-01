@@ -6,10 +6,9 @@
   <b>G</b>eometry-<b>A</b>ware <b>G</b>enerative <b>A</b>utoencoder for<br>
   Warped Riemannian Metric Learning and Generative Modeling on Data Manifolds
 </div>
-<br>
 
 <div align="center">
-
+  
 [![ArXiv](https://img.shields.io/badge/ArXiv-GAGA-firebrick)](https://arxiv.org/abs/2410.12779)
 [![AISTATS](https://img.shields.io/badge/AISTATS-lightgray)](https://proceedings.mlr.press/v258/sun25c.html)
 [![Twitter](https://img.shields.io/twitter/follow/KrishnaswamyLab.svg?style=social)](https://twitter.com/KrishnaswamyLab)
