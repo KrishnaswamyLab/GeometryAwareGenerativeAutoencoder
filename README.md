@@ -1,18 +1,29 @@
-# [AISTATS 2025] Geometry-Aware Generative Autoencoder (GAGA) 💃🪩
-This is the code for the paper [Geometry-Aware Generative Autoencoder for Warped Riemannian
-Metric Learning and Generative Modeling on Data Manifolds](https://arxiv.org/abs/2410.12779), AISTATS 2025.
+<h1 align="center">
+[AISTATS 2025] GAGA 💃🪩
+</h1>
+
+<div align="center">
+  <b>G</b>eometry-<b>A</b>ware <b>G</b>enerative <b>A</b>utoencoder for Warped Riemannian Metric Learning and Generative Modeling on Data Manifolds
+</div>
+<br>
+
+<div align="center">
+
+[![ArXiv](https://img.shields.io/badge/ArXiv-GAGA-firebrick)](https://arxiv.org/abs/2410.12779)
+[![AISTATS](https://img.shields.io/badge/AISTATS-lightgray)](https://proceedings.mlr.press/v258/sun25c.html)
+[![Twitter](https://img.shields.io/twitter/follow/KrishnaswamyLab.svg?style=social)](https://twitter.com/KrishnaswamyLab)
+</div>
+
 
 # Citation
 If you find this work useful in your research, please consider citing:
 ```bibtex
-@misc{sun2025geometryawaregenerativeautoencoderswarped,
-      title={Geometry-Aware Generative Autoencoders for Warped Riemannian Metric Learning and Generative Modeling on Data Manifolds}, 
-      author={Xingzhi Sun and Danqi Liao and Kincaid MacDonald and Yanlei Zhang and Chen Liu and Guillaume Huguet and Guy Wolf and Ian Adelstein and Tim G. J. Rudner and Smita Krishnaswamy},
-      year={2025},
-      eprint={2410.12779},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2410.12779}, 
+@inproceedings{sun2025geometry,
+  title={Geometry-Aware Generative Autoencoders for Warped Riemannian Metric Learning and Generative Modeling on Data Manifolds}, 
+  author={Xingzhi Sun and Danqi Liao and Kincaid MacDonald and Yanlei Zhang and Chen Liu and Guillaume Huguet and Guy Wolf and Ian Adelstein and Tim G. J. Rudner and Smita Krishnaswamy},
+  booktitle={International Conference on Artificial Intelligence and Statistics},
+  year={2025},
+  organization={PMLR},      
 }
 ```
 
