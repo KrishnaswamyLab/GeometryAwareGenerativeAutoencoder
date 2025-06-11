@@ -20,7 +20,7 @@ If you find this work useful in your research, please consider citing:
 ```bibtex
 @inproceedings{sun2025geometry,
   title={Geometry-Aware Generative Autoencoders for Warped Riemannian Metric Learning and Generative Modeling on Data Manifolds}, 
-  author={Xingzhi Sun and Danqi Liao and Kincaid MacDonald and Yanlei Zhang and Chen Liu and Guillaume Huguet and Guy Wolf and Ian Adelstein and Tim G. J. Rudner and Smita Krishnaswamy},
+  author={Sun, Xingzhi and Liao, Danqi and MacDonald, Kincaid and Zhang, Yanlei and Liu, Chen and Huguet, Guillaume and Wolf, Guy and Adelstein, Ian and Rudner, Tim GJ and Krishnaswamy, Smita},
   booktitle={International Conference on Artificial Intelligence and Statistics},
   year={2025},
   organization={PMLR},      
